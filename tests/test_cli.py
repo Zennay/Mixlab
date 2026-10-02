@@ -21,6 +21,8 @@ class WorkflowTests(unittest.TestCase):
         review = self.root / "pack/review"
         self.assertEqual(len(list(review.glob("*.wav"))), 6)
         page = (review / "index.html").read_text()
+        self.assertEqual(len(info["pack_id"]), 64)
+        self.assertIn(info["pack_id"], page)
         for word in ("bass_swap", "echo_exit", "hard_cut", "baseline"):
             self.assertNotIn(word, page)
         self.assertFalse((review / "answer-key.json").exists())
@@ -54,6 +56,22 @@ class WorkflowTests(unittest.TestCase):
         (self.root / "existing").mkdir()
         with self.assertRaises(FileExistsError):
             benchmark(self.manifest, self.root / "existing")
+
+    def test_invalid_pair_recipe_rejected_before_render(self):
+        data = json.loads(self.manifest.read_text())
+        data["pairs"][0]["beats"] = True
+        self.manifest.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            benchmark(self.manifest, self.root / "bad-pack")
+        self.assertFalse((self.root / "bad-pack").exists())
+
+    def test_segment_bounds_rejected_before_render(self):
+        data = json.loads(self.manifest.read_text())
+        data["pairs"][0]["a_start"] = 7
+        self.manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "too short"):
+            benchmark(self.manifest, self.root / "bad-pack")
+        self.assertFalse((self.root / "bad-pack").exists())
 
 
 if __name__ == "__main__":

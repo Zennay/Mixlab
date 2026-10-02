@@ -6,7 +6,7 @@ Status: founding implementation design, 2 October 2026. This document describes 
 
 MixLab's product is rendered musical transitions, eventually discovering surprising track/segment combinations and constructing coherent sets. M0 begins with a private, offline, deterministic transition engine and review artifacts. A synthetic audio fixture demonstrates the pipeline without requiring music downloads. It does not establish musical quality.
 
-The initial Python standard-library implementation accepts explicit track metadata, segment positions and manually supplied BPM. Its planned families are linear/equal-power crossfade baselines, bass swap, echo exit and hard cut. Low/high frequency filtering is not source separation. Manual metadata is not MIR analysis. Equal BPM or declared compatible timing is not proof of measured beat/phrase alignment. Unsupported sample formats, channel layouts, tempo conversion and metadata must fail clearly rather than silently changing musical intent.
+The initial Python standard-library implementation accepts explicit track metadata, segment positions and manually supplied BPM. Its implemented families are equal-power crossfade baseline, bass swap, echo exit and hard cut. Low/high frequency filtering is not source separation. Manual metadata is not MIR analysis. Equal BPM or declared compatible timing is not proof of measured beat/phrase alignment. Unsupported sample formats, channel layouts, tempo conversion and metadata must fail clearly rather than silently changing musical intent.
 
 ## Component boundaries
 

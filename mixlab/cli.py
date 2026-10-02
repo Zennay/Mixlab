@@ -80,8 +80,10 @@ def validate_library(manifest_path):
         bpm = track.get("bpm")
         if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or not math.isfinite(bpm) or not 30 <= bpm <= 300:
             raise ValueError("Manual BPM between 30 and 300 required")
-        load_wav(path)
-        tracks[track["id"]] = {**track, "resolved_path": path}
+        rate, frames = load_wav(path)
+        tracks[track["id"]] = {**track, "resolved_path": path, "sample_rate": rate,
+                               "frame_count": len(frames), "channels": len(frames[0])}
+        del frames
     pairs = manifest.get("pairs", [])
     if not 1 <= len(pairs) <= 10:
         raise ValueError("Register 1–10 explicit pairs")
@@ -95,6 +97,15 @@ def validate_library(manifest_path):
         bpm = pair.get("bpm")
         if bpm != tracks[pair["a"]]["bpm"] or bpm != tracks[pair["b"]]["bpm"]:
             raise ValueError("Prototype requires equal manually verified BPM; no time stretch implemented")
+        recipe = Recipe(bpm=bpm, beats=pair.get("beats", 8), a_start=pair.get("a_start", 0.),
+                        b_start=pair.get("b_start", 0.))
+        a, b = tracks[pair["a"]], tracks[pair["b"]]
+        if (a["sample_rate"], a["channels"]) != (b["sample_rate"], b["channels"]):
+            raise ValueError("Pair must have identical sample rates and channels")
+        count = round(recipe.beats * 60 / recipe.bpm * a["sample_rate"])
+        for track, start in ((a, recipe.a_start), (b, recipe.b_start)):
+            if round(start * track["sample_rate"]) + count > track["frame_count"]:
+                raise ValueError("Pair excerpt is too short for its recipe")
     return manifest, tracks
 
 
@@ -119,6 +130,7 @@ def benchmark(manifest_path, destination, seed=None):
                             a_bpm=a["bpm"], b_bpm=b["bpm"])
             path = private / f"{pair_index:03d}-{family}.wav"
             metrics = render(a["resolved_path"], b["resolved_path"], path, recipe)
+            metrics["source_permission_declarations"] = {"a": a["rights"], "b": b["rights"]}
             outputs[family] = path
             evidence.append({"pair": pair["id"], "family": family,
                              "recipe": asdict(recipe), "metrics": metrics,
@@ -134,18 +146,22 @@ def benchmark(manifest_path, destination, seed=None):
                 shutil.copyfile(outputs[variant], review / f"{trial}-{label}.wav")
             cards.append(trial)
             answers.append({"trial": trial, "pair": pair["id"], "A": order[0], "B": order[1]})
+    pack_id = hashlib.sha256(json.dumps({"manifest": digest(manifest_path), "answers": answers,
+                                       "outputs": [e["output_sha256"] for e in evidence]},
+                                      sort_keys=True).encode()).hexdigest()
     dump(private / "answer-key.json", answers)
     dump(private / "evidence.json", {"schema_version": 1, "kind": manifest.get("purpose", "development-pilot"),
                                       "manifest_sha256": digest(manifest_path), "renders": evidence,
+                                      "pack_id": pack_id, "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random"},
                                       "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
-    write_review(review / "index.html", cards)
-    dump(root / "receipt.json", {"schema_version": 1, "trial_count": len(cards),
+    write_review(review / "index.html", cards, pack_id)
+    dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
                                  "render_count": len(evidence), "status": "rendered-not-listener-validated",
                                  "manifest_sha256": digest(manifest_path)})
     return root / "receipt.json"
 
 
-def write_review(path, trials):
+def write_review(path, trials, pack_id):
     sections = []
     for trial in trials:
         tid = html.escape(trial)
@@ -156,8 +172,8 @@ def write_review(path, trials):
 <title>MixLab · Listening Lab</title><style>
 body{font:17px system-ui;background:#11141b;color:#eff1f5;max-width:740px;margin:auto;padding:32px 20px}h1{font-size:40px;letter-spacing:-1px}p{color:#bec6d4;line-height:1.6}fieldset{border:1px solid #3b4352;border-radius:16px;margin:24px 0;padding:24px}legend{color:#c4b5fd}label{display:block;margin:12px 0}audio{display:block;width:100%;margin:10px 0}select,button,input{font:inherit;padding:12px;background:#282e3b;color:white;border:1px solid #596174;border-radius:8px}button{background:#c4b5fd;color:#11141b;font-weight:700;cursor:pointer}small{color:#c8cfdb}</style>
 <small>MIXLAB / TRANSITION LAB</small><h1>Which transition works?</h1><p>Listen to both clips at a comfortable volume. Choose the transition you prefer. This is a development pilot; synthetic clips test the pipeline, not musical quality.</p>
-<form><label>Anonymous reviewer code <input name="reviewer" required maxlength="40" placeholder="e.g. listener-01"></label>''' + ''.join(sections) + '''<button>Download my ratings</button><p id="status" aria-live="polite">Ratings stay on this device until you share the JSON file.</p></form>
-<script>document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);const reviewer=f.get('reviewer');const ratings=[...document.querySelectorAll('[data-trial]')].map(el=>({trial:el.dataset.trial,preference:f.get(el.dataset.trial)}));const blob=new Blob([JSON.stringify({schema_version:1,reviewer,ratings},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='mixlab-ratings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);document.getElementById('status').textContent='Ratings downloaded. Keep the answer key hidden until all ratings are locked.'});</script></html>'''
+<form data-pack-id="''' + html.escape(pack_id, quote=True) + '''"><label>Anonymous reviewer code <input name="reviewer" required maxlength="40" placeholder="e.g. listener-01"></label>''' + ''.join(sections) + '''<button>Download my ratings</button><p id="status" aria-live="polite">Ratings stay on this device until you share the JSON file.</p></form>
+<script>document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);const reviewer=f.get('reviewer');const pack_id=e.target.dataset.packId;const ratings=[...document.querySelectorAll('[data-trial]')].map(el=>({trial:el.dataset.trial,preference:f.get(el.dataset.trial)}));const blob=new Blob([JSON.stringify({schema_version:1,pack_id,reviewer,ratings},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='mixlab-ratings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);document.getElementById('status').textContent='Ratings downloaded. Keep the answer key hidden until all ratings are locked.'});</script></html>'''
     Path(path).write_text(page)
 
 
