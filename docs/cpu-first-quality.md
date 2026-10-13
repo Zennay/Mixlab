@@ -1,0 +1,64 @@
+# MixLab ML-07 — CPU-first audio preflight
+
+## Purpose
+This is a **technical smoke/level-confound screen**, not a musical score,
+automatic DJ, beat/key detector, signal repair tool, or substitute for a
+blinded A/B human preference test. The listener decides whether a transition
+is good; this tool catches incomparable / suspicious renders before a test.
+
+## Run locally (Python 3.10+, standard library only)
+
+Use the existing renderer / benchmark to produce two or more short, private
+PCM16 WAV renders. Preserve the neutral A/B and private answer-key boundary.
+
+    python3 -m mixlab.quality /private/baseline.wav /private/candidate.wav
+    python3 -m mixlab.quality /private/baseline.wav /private/a.wav /private/b.wav --window-ms 100 --loudness-tolerance-db 1.5
+
+The command reads the WAVs and prints JSON to stdout. It **does not change audio**
+or automatically select a winning transition. Redirect locally to a
+restricted destination if retention is needed. It emits opaque candidate IDs
+rather than source paths, samples, source hashes or private recording metadata.
+CLI failures may mention an invalid argument path via normal Python errors;
+keep CLI logs private when passing confidential file locations.
+
+## Contract and interpretations
+- Bounded per input: at most 32 MiB and 2,000,000 PCM16 frames; supported
+  sample rate 8–96 kHz, one or two channels; reads at most 4096 frames per
+  chunk. Reuses existing bounded WAV constraints, no numpy/torch or GPU.
+- Exact same rate, channels and frame count are required for candidates.
+  Mismatches fail closed instead of silently time-stretching or resampling.
+- RMS and peak are basic sample-domain dBFS, **not** integrated loudness (LUFS).
+  An RMS delta above 1.5 dB is a *possible level confound*, not a proof
+  of audible bias and not a suggested gain change. Check a real loudness
+  standard before frozen tests; do not simply boost into clipping.
+- A sample near digital full-scale is flagged for inspection, not labeled
+  proven clipped; intentional silence and percussive jumps can be musical.
+  No psychoacoustic, phase, low-end-masking, key, phrase or crowd-response
+  judgment is inferred.
+- Every result retains "requires_human_review" and
+  "human_preference_test_required". There is deliberately **no quality
+  winner, model score or automatically fabricated DJ preference**.
+- Treat synthetic tests as engineering proof only. A natural-music benchmark,
+  blind listener data and independent review remain [ML-05](https://github.com/Zennay/Mixlab/issues/5)
+  / [ML-06](https://github.com/Zennay/Mixlab/issues/6) acceptance gates.
+
+## Reproduce the tests
+
+    python3 -m unittest -v tests.test_quality
+    python3 -m unittest discover -s tests -v
+
+No music sources, copyrighted stems or real render recordings are checked into
+this repository or uploaded to GitHub Actions. The module is isolated from
+shared ML-02 ingest, ML-03 analysis, ML-04 renderer and ML-05 A/B code.
+
+## CPU-first milestone linkage
+- [Notion execution plan](https://app.notion.com/p/3f89e19ac95581299d47f11dffb12266)
+- [MixLab HQ](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
+- [Existing roadmap](https://app.notion.com/p/3e79e19ac9558150a32cf32a96fb1f64)
+- [ML-07 issue](https://github.com/Zennay/Mixlab/issues/7)
+
+ML-07 is an independent preflight slice. It does not complete M1. Later,
+after the approved private library and matched-loudness method exist, the
+integration owner may explicitly wire this into evaluation preflight. Until
+then it remains an optional read-only CLI; no zCloud worker launch or
+production deployment is implied by merging the code.
