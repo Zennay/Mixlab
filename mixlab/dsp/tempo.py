@@ -72,7 +72,6 @@ def prepare(source_path, output_path, *, source_bpm, target_bpm):
                    "-n", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
                    "-f", "wav", "-i", str(source), "-map", "0:a:0", "-vn", "-sn", "-dn",
                    "-af", filter_graph, "-ar", str(rate), "-ac", str(channels),
-                   "-t", f"{min(MAX_FRAMES/rate, expected/rate+.05):.9f}",
                    "-c:a", "pcm_f32le", "-f", "f32le", str(floating)]
         try:
             subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

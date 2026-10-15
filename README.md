@@ -62,3 +62,13 @@ The analyzer proposes a constant beatgrid from regular percussive excerpts and a
 > Werk verder aan MixLab. Kijk in Notion naar de huidige fase en wat er nog moet gebeuren, claim een vrije taak en werk die uit.
 
 Detailed coordination belongs in [AGENTS.md](AGENTS.md) and the worker plan. GitHub holds code and task specifications; the zCloud VPS SQLite queue holds live claims and scheduling. Notion is the product/decision/handoff mirror. Do not infer a live queue entry from an issue or a plan file.
+
+## Explicit different-tempo transitions (optional installed backend)
+
+An additional opt-in renderer uses an already installed FFmpeg build with Rubber Band, within a 0.90–1.10 tempo ratio per source and pitch scale 1. It checks float output for clipping before PCM16 publication. No package or model is installed automatically.
+
+```bash
+python3 -m mixlab.dsp.tempo a.wav b.wav mix.wav --a-bpm 120 --b-bpm 124 --target-bpm 122 --beats 8 --family bass_swap
+```
+
+Supply verified original BPM and cue offsets. The existing benchmark command continues to require equal tempos; it never silently changes a frozen recipe. The optional wrapper changes tempo explicitly and records transformations. Transient/vocal artifacts and musical quality require real listening. See [tempo backend decision](docs/adr/tempo-backend.md).
