@@ -1,3 +1,4 @@
+from array import array
 import math
 import os
 from pathlib import Path
@@ -37,6 +38,23 @@ class TempoContractTests(unittest.TestCase):
             result=render_pair(self.source,self.source,self.root/"mix.wav",Recipe(beats=2),a_bpm=120,b_bpm=120)
         self.assertEqual(result["tempo_transforms"][0]["backend"],"identity")
         self.assertEqual(result["frames"],16000)
+
+    def test_invalid_backend_audio_is_not_published(self):
+        before=self.source.read_bytes()
+        for case in ("duration", "nonfinite"):
+            out=self.root/(case+".wav")
+            def invalid_audio(command, **kwargs):
+                frames=4 if case=="duration" else round(64000/1.05)
+                values=array("f",[float("nan") if case=="nonfinite" else .1])*frames
+                Path(command[-1]).write_bytes(values.tobytes())
+            backend={"available":True,"executable":"test-ffmpeg","version":"test"}
+            with patch("mixlab.dsp.tempo.capabilities",return_value=backend), \
+                 patch("mixlab.dsp.tempo.subprocess.run",side_effect=invalid_audio):
+                with self.assertRaises(ValueError):
+                    prepare(self.source,out,source_bpm=120,target_bpm=126)
+            self.assertFalse(out.exists())
+            self.assertEqual(list(self.root.glob(".mixlab-*")),[])
+            self.assertEqual(self.source.read_bytes(),before)
 
 class TempoBackendTests(unittest.TestCase):
     @classmethod

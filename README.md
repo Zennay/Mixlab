@@ -22,7 +22,7 @@ An offline AI-DJ research project: understand track segments, discover surprisin
 - Replaceable analysis provider, measured regular-tempo proposals, manual cue/key annotations, content-addressed private feature cache and beat-error evaluation.
 - Streaming transition renderer with exclusive complete-file publication, clipping rejection and post-PCM metrics.
 - Checksum-bound rating aggregation with duplicate/coverage validation and explicit volume confounds.
-- No runtime dependencies beyond Python 3.10+ standard library.
+- Core runtime uses only Python 3.10+ standard library; explicit tempo conversion additionally requires FFmpeg with Rubber Band.
 
 ## Reproduce on the VPS runner
 
@@ -37,7 +37,7 @@ python3 -m mixlab benchmark /tmp/mixlab-example-library/library.json /tmp/mixlab
 
 Use fresh output directories; existing packs are never overwritten. Open `review/index.html` locally. Only the `review/` directory goes to listeners; `private/` contains identity mappings, recipes, source paths and metrics. Omit `--seed` for real listening pilots. The synthetic fixture is **not** a music benchmark.
 
-Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding and tempo stretching are not implemented. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
+Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding is not implemented. Explicit tempo stretching is available through the separate optional backend below. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. VPS proof for PR #9 passed 51 tests and rendered 32 seconds of 48 kHz stereo in 8.997 seconds at 21,992 KiB peak RSS; see [proof run](https://github.com/Zennay/Ftmo/actions/runs/38754003251). These are synthetic correctness/performance results.
 
 The current pilot uses common gain, not matched perceived loudness; this is a known listening confound to fix before a milestone-quality benchmark. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
 
