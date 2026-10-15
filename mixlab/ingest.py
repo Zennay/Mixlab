@@ -112,7 +112,7 @@ def _pairs(pairs, tracks):
         a, b = tracks[a_id], tracks[b_id]
         bpm = number(pair.get("bpm"), "pair bpm", 30, 300)
         if bpm != a["bpm"] or bpm != b["bpm"]:
-            raise ValueError("Source tempos must match; time stretching is not implemented")
+            raise ValueError("Prototype requires equal source tempos; time stretching is not implemented")
         beats = pair.get("beats", 8)
         if type(beats) is not int or not 1 <= beats <= 64:
             raise ValueError("beats must be an integer from 1 to 64")
@@ -127,7 +127,7 @@ def _pairs(pairs, tracks):
         for track, key in ((a, "a_start"), (b, "b_start")):
             start = number(pair.get(key, 0), key, 0, 250)
             if round(start * track["sample_rate"]) + count > track["frame_count"]:
-                raise ValueError("Pair exceeds source clip")
+                raise ValueError("Pair excerpt is too short for its recipe")
         if a.get("partition") != b.get("partition"):
             raise ValueError("Pair crosses dataset partitions")
 
@@ -168,7 +168,7 @@ def validate_library(manifest_path):
             raise ValueError("Path must be a relative POSIX path")
         relative = Path(raw)
         if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError("Path traversal rejected")
+            raise ValueError("Source path must remain within the library directory; traversal rejected")
         path = (source.parent / relative).resolve()
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")

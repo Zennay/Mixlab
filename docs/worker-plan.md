@@ -30,3 +30,7 @@ Record task ID, owner, scope, branch/commit, files changed, acceptance criteria 
 > Werk verder aan MixLab. Lees de actuele fase en handoff in Notion en controleer de repo. Claim de eerstvolgende vrije taak in de zCloud SQLite-queue en werk die concreet uit binnen je eigen bestandsscope. Gebruik de VPS-runner voor tests/renders; leg commit, run-ID en bewijs vast. Muziek blijft privé. Sluit M1 pas na echte audio en blinde menselijke voorkeurstests.
 
 The infrastructure/worker contract carries detailed rules so the repeated prompt can remain short. Preserve project claims and non-overlapping file scopes in orchestration rather than sending long repeated instructions to workers.
+
+## Serial engine implementation — 15 October 2026
+
+User explicitly requested a multi-iteration engine build. One serial integration owner on `feat/engine-foundation-20261015` owns ML-02/03/04 and the shared CLI wiring for PR #9. At start no open MixLab PRs; zCloud registration #1343 remains draft and current main projects.json has no MixLab entry. This is isolated source work, not a live lease or scheduler activation. No other worker scopes or portfolio allocations changed. The existing quality module and reference renderer remain intact. Runtime promotion still requires exact-source VPS evidence. A separate proof branch in zCloud executes only the pinned MixLab code, with canonical host guard, low scheduling priority, one CPU affinity, 512 MiB virtual-memory cap and no private audio upload.
