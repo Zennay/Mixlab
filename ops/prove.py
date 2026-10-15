@@ -32,6 +32,9 @@ def main():
         receipt = json.loads((pack / "receipt.json").read_text())
         wavs = sorted((pack / "review").glob("*.wav"))
         assert receipt["render_count"] == 4 and receipt["trial_count"] == 3 and len(wavs) == 6
+        measurement = subprocess.run([sys.executable, "-m", "ops.measure_streaming"],
+                                     check=True, capture_output=True, text=True, timeout=120)
+        receipt["streaming_budget"] = json.loads(measurement.stdout)
         receipt.update({"tested_commit": os.environ.get("MIXLAB_SHA", "unknown"),
                         "workflow_run_id": os.environ.get("GITHUB_RUN_ID", "local-unbound"),
                         "duration_seconds": round(time.monotonic() - started, 3),

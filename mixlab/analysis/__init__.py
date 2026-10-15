@@ -3,6 +3,8 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
+import os
+import tempfile
 from pathlib import Path
 import statistics
 from typing import Protocol
@@ -167,6 +169,7 @@ class ManualProvider:
 def analyze_cached(path, cache_directory, provider=None):
     """Content/config-addressed private feature cache. No original paths saved."""
     provider = provider or EnergyOnsetProvider()
+    inspect_wav(path)
     source_hash = digest(path)
     identity = {"source": source_hash, "provider": type(provider).__module__ + "." + type(provider).__qualname__,
                 "version": provider.version, "schema": 1}
@@ -182,14 +185,22 @@ def analyze_cached(path, cache_directory, provider=None):
     result = provider.analyze(path).to_dict()
     if digest(path) != source_hash or result["source_sha256"] != source_hash:
         raise ValueError("Source changed during analysis")
-    # Exclusive create; one project analysis worker. Never replace a frozen entry.
+    # Publish only complete JSON. A killed analysis must not poison the cache.
+    fd, temporary = tempfile.mkstemp(prefix=".analysis-", dir=root)
     try:
-        with target.open("x", encoding="utf-8") as stream:
-            json.dump({"cache_identity": identity, "analysis": result}, stream, sort_keys=True, allow_nan=False)
-    except FileExistsError:
-        existing = json.loads(target.read_text())
-        if existing.get("cache_identity") != identity or existing.get("analysis") != json.loads(json.dumps(result)):
-            raise ValueError("Conflicting cache entry")
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"cache_identity": identity, "analysis": result}, stream,
+                      sort_keys=True, allow_nan=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            existing = json.loads(target.read_text())
+            if existing.get("cache_identity") != identity or existing.get("analysis") != json.loads(json.dumps(result)):
+                raise ValueError("Conflicting cache entry")
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return json.loads(json.dumps(result))
 
 
