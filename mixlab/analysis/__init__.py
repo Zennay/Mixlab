@@ -10,7 +10,7 @@ import statistics
 from typing import Protocol
 from ..ingest import digest, inspect_wav, number, pcm_blocks
 
-VERSION = "energy-onset-v1"
+VERSION = "energy-onset-v2"
 
 
 @dataclass(frozen=True)
@@ -89,9 +89,28 @@ class EnergyOnsetProvider:
             yy = sum(v*v for v in onset[:-lag])
             score = xy / math.sqrt(xx * yy) if xx * yy > 1e-16 else 0.
             correlations.append((score, lag))
-        best, lag = max(correlations, key=lambda item: (round(item[0], 8), -item[1]))
-        period = lag * step
         times = [i * step for i in peaks]
+        def pulse_fit(item):
+            correlation, lag = item
+            period = lag * step
+            tolerance = max(.025, period * .08)
+            # Correlation alone can prefer two-beat repetition over one beat
+            # when consecutive onset strengths differ. Penalize both ignored
+            # onsets (half tempo) and unsupported grid beats (double tempo).
+            best_fit = 0.
+            for anchor in times[:min(16, len(times))]:
+                phase = anchor % period
+                explained = sum(abs((t-phase+period/2) % period-period/2) <= tolerance for t in times)
+                grid_count = max(0, math.ceil((info["duration_seconds"]-phase)/period))
+                matched = sum(any(abs(t-(phase+n*period)) <= tolerance for t in times)
+                              for n in range(grid_count))
+                recall = explained/len(times)
+                precision = matched/grid_count if grid_count else 0.
+                fit = 2*precision*recall/(precision+recall) if precision+recall else 0.
+                best_fit = max(best_fit, fit)
+            return correlation * best_fit
+        best, lag = max(correlations, key=lambda item: (round(pulse_fit(item), 8), -item[1]))
+        period = lag * step
         # Refine against observed onset gaps to reduce hop-quantization error.
         gaps = []
         for a, b in zip(times, times[1:]):
