@@ -100,10 +100,15 @@ class EnergyOnsetProvider:
             best_fit = 0.
             for anchor in times[:min(16, len(times))]:
                 phase = anchor % period
-                explained = sum(abs((t-phase+period/2) % period-period/2) <= tolerance for t in times)
                 grid_count = max(0, math.ceil((info["duration_seconds"]-phase)/period))
-                matched = sum(any(abs(t-(phase+n*period)) <= tolerance for t in times)
-                              for n in range(grid_count))
+                supported = set()
+                explained = 0
+                for t in times:
+                    n = round((t-phase)/period)
+                    if 0 <= n < grid_count and abs(t-(phase+n*period)) <= tolerance:
+                        explained += 1
+                        supported.add(n)
+                matched = len(supported)
                 recall = explained/len(times)
                 precision = matched/grid_count if grid_count else 0.
                 fit = 2*precision*recall/(precision+recall) if precision+recall else 0.
