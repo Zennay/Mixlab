@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MixLab private PCM16 library",
+  "description": "Structural contract; mixlab.ingest additionally validates bytes, hashes, bounds, path confinement and split leakage.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tracks",
+    "pairs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "tracks": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "bpm",
+          "rights",
+          "provenance"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relative POSIX WAV path confined to library directory"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bpm": {
+            "type": "number",
+            "minimum": 30,
+            "maximum": 300
+          },
+          "rights": {
+            "enum": [
+              "synthetic",
+              "licensed",
+              "user-permitted",
+              "public-domain"
+            ]
+          },
+          "provenance": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "recording_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "partition": {
+            "enum": [
+              "development",
+              "evaluation"
+            ]
+          },
+          "downbeat_seconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "pairs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "a",
+          "b",
+          "bpm"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "a": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "b": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"
+          },
+          "bpm": {
+            "type": "number",
+            "minimum": 30,
+            "maximum": 300
+          },
+          "beats": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 8
+          },
+          "a_start": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 250,
+            "default": 0
+          },
+          "b_start": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 250,
+            "default": 0
+          }
+        }
+      }
+    }
+  }
+}

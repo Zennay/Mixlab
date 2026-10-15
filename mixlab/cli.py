@@ -9,7 +9,9 @@ from pathlib import Path
 import random
 import shutil
 
-from .engine import FAMILY_NAMES, load_wav, render, write_wav
+from .engine import FAMILY_NAMES, write_wav
+from .ingest import validate_library
+from .dsp import render
 from .models import Recipe
 
 
@@ -51,62 +53,6 @@ def fixture(destination):
                            "a_start": 0., "b_start": 0., "bpm": 120., "beats": 8}]}
     dump(root / "library.json", manifest)
     return root / "library.json"
-
-
-def validate_library(manifest_path):
-    source = Path(manifest_path).resolve()
-    manifest = json.loads(source.read_text())
-    if manifest.get("schema_version") != 1:
-        raise ValueError("Unsupported library schema")
-    if not 2 <= len(manifest.get("tracks", [])) <= 50:
-        raise ValueError("Library must have 2–50 explicitly registered tracks")
-    tracks = {}
-    for track in manifest["tracks"]:
-        if not isinstance(track.get("id"), str) or not track["id"] or track["id"] in tracks:
-            raise ValueError("Track IDs must be unique nonempty strings")
-        if track.get("rights") not in {"synthetic", "licensed", "user-permitted", "public-domain"}:
-            raise ValueError("Explicit permitted rights status required")
-        if not isinstance(track.get("provenance"), str) or not track["provenance"].strip():
-            raise ValueError("Provenance required")
-        path = (source.parent / track["path"]).resolve()
-        if not path.is_relative_to(source.parent):
-            raise ValueError("Source path must remain within the library directory")
-        if path.suffix.lower() != ".wav" or not path.is_file():
-            raise ValueError("Source must be an existing WAV")
-        if path.stat().st_size > 32 * 1024 * 1024:
-            raise ValueError("Source exceeds 32 MiB prototype cap; prepare a shorter excerpt")
-        if digest(path) != track.get("sha256"):
-            raise ValueError("Source checksum mismatch")
-        bpm = track.get("bpm")
-        if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or not math.isfinite(bpm) or not 30 <= bpm <= 300:
-            raise ValueError("Manual BPM between 30 and 300 required")
-        rate, frames = load_wav(path)
-        tracks[track["id"]] = {**track, "resolved_path": path, "sample_rate": rate,
-                               "frame_count": len(frames), "channels": len(frames[0])}
-        del frames
-    pairs = manifest.get("pairs", [])
-    if not 1 <= len(pairs) <= 10:
-        raise ValueError("Register 1–10 explicit pairs")
-    ids = set()
-    for pair in pairs:
-        if not isinstance(pair.get("id"), str) or not pair["id"] or pair["id"] in ids:
-            raise ValueError("Pair IDs must be unique nonempty strings")
-        ids.add(pair["id"])
-        if pair.get("a") not in tracks or pair.get("b") not in tracks or pair["a"] == pair["b"]:
-            raise ValueError("Pair must reference two distinct registered tracks")
-        bpm = pair.get("bpm")
-        if bpm != tracks[pair["a"]]["bpm"] or bpm != tracks[pair["b"]]["bpm"]:
-            raise ValueError("Prototype requires equal manually verified BPM; no time stretch implemented")
-        recipe = Recipe(bpm=bpm, beats=pair.get("beats", 8), a_start=pair.get("a_start", 0.),
-                        b_start=pair.get("b_start", 0.))
-        a, b = tracks[pair["a"]], tracks[pair["b"]]
-        if (a["sample_rate"], a["channels"]) != (b["sample_rate"], b["channels"]):
-            raise ValueError("Pair must have identical sample rates and channels")
-        count = round(recipe.beats * 60 / recipe.bpm * a["sample_rate"])
-        for track, start in ((a, recipe.a_start), (b, recipe.b_start)):
-            if round(start * track["sample_rate"]) + count > track["frame_count"]:
-                raise ValueError("Pair excerpt is too short for its recipe")
-    return manifest, tracks
 
 
 def benchmark(manifest_path, destination, seed=None):
