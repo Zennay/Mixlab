@@ -52,6 +52,12 @@ keep CLI logs private when passing confidential file locations.
   listener preference, true-peak measure, phase correction or guaranteed
   mono-compatibility score. Complete cancellation reports a null global loss
   with a true risk flag; mono files also use null where not applicable.
+- Unexpected adjacent-sample jumps >=50% full scale are counted, including
+  across the internal 4096-frame read boundary, and receive a technical pop
+  warning. DC offset exceeding 3% full scale on any channel receives an
+  inspect-for-headroom warning. Both diagnostics apply equally to baseline and
+  candidates; intentional hard cuts, asymmetrical signals and drums may
+  produce legitimate results, so they never auto-reject music.
 - A sample near digital full-scale is flagged for inspection, not labeled
   proven clipped; intentional silence and percussive jumps can be musical.
   No psychoacoustic, phase, low-end-masking, key, phrase or crowd-response
