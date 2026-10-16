@@ -115,6 +115,29 @@ class QualityTests(unittest.TestCase):
         self.assertAlmostEqual(3.01, metrics["mono_fold_down_loss_db"], delta=0.1)
         self.assertEqual(metrics, scan_wav(stereo, window_ms=100))
 
+    def test_short_interior_silence_triggers_warning_below_majority_silence(self):
+        # A dropped 300 ms section would be missed by the existing >50%-silent rule.
+        wav(self.candidate, self.samples[:2400] + [0] * 2400 + self.samples[4800:])
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertLess(row["metrics"]["silent_window_fraction"], 0.5)
+        self.assertEqual(300.0, row["metrics"]["longest_interior_silent_gap_ms"])
+        self.assertTrue(row["metrics"]["interior_silent_gap_risk"])
+        self.assertIn("interior_silent_gap_inspect_for_dropouts", row["warnings"])
+
+    def test_leading_trailing_silence_and_single_short_gap_are_not_interior_dropouts(self):
+        wav(self.candidate, [0] * 1600 + self.samples[1600:6400] + [0] * 1600)
+        metrics = scan_wav(self.candidate)
+        self.assertEqual(0.0, metrics["longest_interior_silent_gap_ms"])
+        self.assertFalse(metrics["interior_silent_gap_risk"])
+        wav(self.candidate, self.samples[:3200] + [0] * 800 + self.samples[4000:])
+        metrics = scan_wav(self.candidate)
+        self.assertEqual(100.0, metrics["longest_interior_silent_gap_ms"])
+        self.assertFalse(metrics["interior_silent_gap_risk"])
+        wav(self.candidate, [0] * len(self.samples))
+        metrics = scan_wav(self.candidate)
+        self.assertEqual(0.0, metrics["longest_interior_silent_gap_ms"])
+        self.assertFalse(metrics["interior_silent_gap_risk"])
+
     def test_mismatched_duration_rate_and_format_are_fail_closed(self):
         wav(self.candidate, self.samples[:-10])
         with self.assertRaisesRegex(ValueError, "frames"):
