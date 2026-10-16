@@ -31,6 +31,10 @@ DC_OFFSET_RISK = 0.03
 # means downmixing to mono may suppress an important part of the sound.
 MONO_FOLD_DOWN_RISK_DB = 9.0
 MONO_FOLD_DOWN_RISK_POWER_RATIO = 10 ** (-MONO_FOLD_DOWN_RISK_DB / 10)
+# Short-term RMS is not LUFS: flag only large, persistent relative
+# deviations (>=9 dB for >=25% of audible windows) for human inspection.
+SHORT_WINDOW_LEVEL_MISMATCH_DB = 9.0
+SHORT_WINDOW_LEVEL_MISMATCH_FRACTION = 0.25
 
 
 def _dbfs(value: float) -> float | None:
@@ -38,8 +42,8 @@ def _dbfs(value: float) -> float | None:
     return round(20 * math.log10(value), 3) if value > 0 else None
 
 
-def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[dict, bytes]:
-    """Scan bounded PCM16 and privately hash exactly the PCM frames read.
+def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[dict, bytes, list[float]]:
+    """Scan bounded PCM16 with private frame fingerprints and RMS windows.
 
     Window RMS and short-term silence are simplistic signal diagnostics, not
     beat detection, musical quality or a BS.1770/LUFS measurement.
@@ -208,7 +212,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
         "mono_fold_down_cancellation_risk": phase_risk_windows > 0,
     }
-    return metrics, pcm_digest.digest()
+    return metrics, pcm_digest.digest(), window_peaks
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -217,7 +221,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -243,6 +247,25 @@ def _signal_warnings(metrics: dict) -> list[str]:
     return warnings
 
 
+def _short_window_level_confound(baseline_windows: list[float],
+                                 candidate_windows: list[float]) -> tuple[float | None, bool]:
+    """Compare aligned RMS windows without returning any private envelope."""
+    if len(baseline_windows) != len(candidate_windows):
+        raise ValueError("Candidate window count differs from baseline")
+    audible_windows = 0
+    mismatched_windows = 0
+    for base_rms, candidate_rms in zip(baseline_windows, candidate_windows):
+        if max(base_rms, candidate_rms) < SILENT_WINDOW_RMS:
+            continue
+        audible_windows += 1
+        if min(base_rms, candidate_rms) < SILENT_WINDOW_RMS or (
+            abs(20 * math.log10(candidate_rms / base_rms)) >= SHORT_WINDOW_LEVEL_MISMATCH_DB
+        ):
+            mismatched_windows += 1
+    fraction = round(mismatched_windows / audible_windows, 6) if audible_windows else None
+    return fraction, audible_windows >= 3 and mismatched_windows / audible_windows >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -258,14 +281,14 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
-    base, base_digest = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
     seen_candidate_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest = _scan_wav_with_digest(candidate, window_ms=window_ms)
+        metrics, candidate_digest, candidate_windows = _scan_wav_with_digest(candidate, window_ms=window_ms)
         for field in ("sample_rate", "channels", "frames"):
             if metrics[field] != base[field]:
                 raise ValueError(f"Candidate {index} {field} differs from baseline")
@@ -273,6 +296,11 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         if base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None:
             level_difference = round(metrics["rms_dbfs"] - base["rms_dbfs"], 3)
         warnings = _signal_warnings(metrics)
+        short_window_level_mismatch_fraction, short_window_level_mismatch_risk = _short_window_level_confound(
+            base_windows, candidate_windows
+        )
+        if short_window_level_mismatch_risk:
+            warnings.append("short_window_rms_level_confound_inspect_not_lufs")
         duplicate_pcm_of = None
         if candidate_digest == base_digest:
             duplicate_pcm_of = "baseline"
@@ -290,6 +318,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "candidate_id": f"candidate-{index:02d}",
             "metrics": metrics,
             "rms_delta_db_vs_baseline": level_difference,
+            "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
+            "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
             "warnings": warnings,
             "duplicate_pcm_of": duplicate_pcm_of,
             "requires_human_review": True,
