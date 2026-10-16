@@ -38,6 +38,12 @@ keep CLI logs private when passing confidential file locations.
   and sub-200 ms interior gaps do not raise this specific warning. Durations
   are window-resolution estimates; intentional dramatic silence remains a
   creative choice for human review, not a quality failure verdict.
+- The baseline receives `baseline_warnings` using the same artifact checks
+  applied to candidates. An apparently clean candidate cannot hide a
+  clipped, silent, phase-cancelling or interrupted baseline.
+  Both sides flag a likely lost stereo channel when its whole-file RMS is
+  below -55 dBFS while the other exceeds -35 dBFS; deliberate hard panning
+  is not automatically rejected. `channel_rms_dbfs` is diagnostic only.
 - On stereo inputs, phase correlation and mono-fold-down loss (positive dB)
   are measured from streaming PCM samples. Each non-silent RMS window with
   >=9 dB mono-fold-down loss raises a technical warning, including brief
