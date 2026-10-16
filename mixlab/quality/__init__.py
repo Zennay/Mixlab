@@ -7,6 +7,7 @@ The module intentionally does not open or write output audio files.
 from __future__ import annotations
 
 from array import array
+import hashlib
 import math
 from pathlib import Path
 import sys
@@ -37,8 +38,8 @@ def _dbfs(value: float) -> float | None:
     return round(20 * math.log10(value), 3) if value > 0 else None
 
 
-def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
-    """Read at most 32 MiB of PCM16 WAV using bounded chunks.
+def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[dict, bytes]:
+    """Scan bounded PCM16 and privately hash exactly the PCM frames read.
 
     Window RMS and short-term silence are simplistic signal diagnostics, not
     beat detection, musical quality or a BS.1770/LUFS measurement.
@@ -59,6 +60,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
             if not 1 <= nframes <= MAX_SOURCE_FRAMES:
                 raise ValueError("Frames must be between 1 and 2,000,000")
             window_frames = max(1, round(rate * window_ms / 1000))
+            pcm_digest = hashlib.sha256()
             peak_sample = 0
             near_full_scale = 0
             total_samples = 0
@@ -118,6 +120,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
                 raw = src.readframes(count)
                 if len(raw) != count * channels * 2:
                     raise ValueError("Truncated PCM16 WAV")
+                pcm_digest.update(raw)
                 values = array("h")
                 values.frombytes(raw)
                 if sys.byteorder != "little":
@@ -177,7 +180,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
             )
         if eligible_stereo_windows:
             risky_window_fraction = round(phase_risk_windows / eligible_stereo_windows, 6)
-    return {
+    metrics = {
         "sample_rate": rate,
         "channels": channels,
         "frames": nframes,
@@ -205,6 +208,17 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
         "mono_fold_down_cancellation_risk": phase_risk_windows > 0,
     }
+    return metrics, pcm_digest.digest()
+
+
+def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
+    """Read at most 32 MiB of PCM16 WAV using bounded chunks.
+
+    Returned diagnostics exclude fingerprints, music samples and private paths.
+    Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
+    """
+    metrics, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    return metrics
 
 
 def _signal_warnings(metrics: dict) -> list[str]:
@@ -244,11 +258,14 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
-    base = scan_wav(baseline, window_ms=window_ms)
+    base, base_digest = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
+    # Digests stay in memory, never in output. PCM-only means a changed WAV
+    # container header cannot conceal an identical listening waveform.
+    seen_candidate_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics = scan_wav(candidate, window_ms=window_ms)
+        metrics, candidate_digest = _scan_wav_with_digest(candidate, window_ms=window_ms)
         for field in ("sample_rate", "channels", "frames"):
             if metrics[field] != base[field]:
                 raise ValueError(f"Candidate {index} {field} differs from baseline")
@@ -256,6 +273,15 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         if base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None:
             level_difference = round(metrics["rms_dbfs"] - base["rms_dbfs"], 3)
         warnings = _signal_warnings(metrics)
+        duplicate_pcm_of = None
+        if candidate_digest == base_digest:
+            duplicate_pcm_of = "baseline"
+            warnings.append("identical_pcm_to_baseline_inspect_for_noop")
+        elif candidate_digest in seen_candidate_digests:
+            duplicate_pcm_of = seen_candidate_digests[candidate_digest]
+            warnings.append("duplicate_candidate_pcm_inspect")
+        else:
+            seen_candidate_digests[candidate_digest] = f"candidate-{index:02d}"
         if level_difference is None:
             warnings.append("silence_prevents_rms_level_comparison")
         elif abs(level_difference) > loudness_tolerance_db:
@@ -265,6 +291,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "metrics": metrics,
             "rms_delta_db_vs_baseline": level_difference,
             "warnings": warnings,
+            "duplicate_pcm_of": duplicate_pcm_of,
             "requires_human_review": True,
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
         })
