@@ -70,6 +70,13 @@ media private regardless of sanitized CLI output.
   Both sides flag a likely lost stereo channel when its whole-file RMS is
   below -55 dBFS while the other exceeds -35 dBFS; deliberate hard panning
   is not automatically rejected. `channel_rms_dbfs` is diagnostic only.
+- Stereo channel checks also examine each non-silent RMS window. A channel
+  below -55 dBFS while the other exceeds -35 dBFS in >=20% of eligible
+  windows (at least two of three or more) warns about partial channel loss
+  even if both *whole-file* channels have healthy RMS. Single brief pans and
+  silent sections are excluded; results show only a window fraction/flag,
+  never the private per-window channel levels. Musical hard panning may be
+  intentional and must be judged by a listener.
 - On stereo inputs, phase correlation and mono-fold-down loss (positive dB)
   are measured from streaming PCM samples. Each non-silent RMS window with
   >=9 dB mono-fold-down loss raises a technical warning, including brief
