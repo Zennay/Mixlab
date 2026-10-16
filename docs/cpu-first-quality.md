@@ -31,6 +31,13 @@ keep CLI logs private when passing confidential file locations.
   An RMS delta above 1.5 dB is a *possible level confound*, not a proof
   of audible bias and not a suggested gain change. Check a real loudness
   standard before frozen tests; do not simply boost into clipping.
+- Consecutive below -55 dBFS RMS windows are tracked in streaming mode.
+  A gap >=200 ms **between** audible sections raises
+  `interior_silent_gap_inspect_for_dropouts`, even when fewer than half of
+  the windows are silent. Leading/trailing silence, an entirely silent file
+  and sub-200 ms interior gaps do not raise this specific warning. Durations
+  are window-resolution estimates; intentional dramatic silence remains a
+  creative choice for human review, not a quality failure verdict.
 - On stereo inputs, phase correlation and mono-fold-down loss (positive dB)
   are measured from streaming PCM samples. Each non-silent RMS window with
   >=9 dB mono-fold-down loss raises a technical warning, including brief
