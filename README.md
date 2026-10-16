@@ -16,6 +16,7 @@ An offline AI-DJ research project: understand track segments, discover surprisin
 - Validated, checksum-bound local audio manifests with explicit permission declarations.
 - Deterministic PCM16 mono/stereo renderer: equal-power baseline, bass swap, echo exit and hard cut.
 - Peak, RMS, clipping, DC offset and sample-jump diagnostics; identical render length and common gain across recipes.
+- Streaming ITU-R BS.1770-4 integrated loudness and per-pair, attenuation-only loudness matching of every A/B listening file (`python3 -m mixlab loudness <wav>...`).
 - Original synthetic fixtures for reproducible infrastructure tests.
 - Neutral A/B audio filenames, a local listening page, separate answer key and downloadable ratings.
 - Strict streaming ingest with recording/PCM split-leakage checks and a JSON Schema.
@@ -39,7 +40,7 @@ Use fresh output directories; existing packs are never overwritten. Open `review
 
 Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding and tempo stretching are not implemented. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
 
-The current pilot uses common gain, not matched perceived loudness; this is a known listening confound to fix before a milestone-quality benchmark. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
+Renders use common gain; `benchmark` then attenuates every family of a pair to the quietest family's BS.1770-4 integrated loudness before packaging, and aggregation re-measures the frozen listening files ([loudness decisions](docs/adr/loudness-matching.md)). This removes the whole-clip level confound only: true peak and short-term loudness inside the transition are not equalized. `--no-loudness-match` is for diagnostics only. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
 
 ## Local library manifest
 
