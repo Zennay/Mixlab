@@ -76,6 +76,45 @@ class QualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "channels"):
             compare_wavs(self.base, [stereo])
 
+    def test_stereo_antiphase_cancels_in_mono_without_false_musical_claim(self):
+        stereo = self.root / "antiphase.wav"
+        wav(stereo, [v for x in self.samples for v in (x, -x)], channels=2)
+        metrics = scan_wav(stereo)
+        self.assertEqual(-1.0, metrics["stereo_phase_correlation"])
+        self.assertIsNone(metrics["mono_fold_down_loss_db"])  # Exact zero mono energy.
+        self.assertEqual(1.0, metrics["mono_fold_down_risky_window_fraction"])
+        self.assertTrue(metrics["mono_fold_down_cancellation_risk"])
+        row = compare_wavs(stereo, [stereo])["candidates"][0]
+        self.assertIn("stereo_mono_fold_down_cancellation_inspect", row["warnings"])
+        self.assertTrue(row["level_comparable_for_blind_ab"])
+        self.assertNotIn(str(self.root), json.dumps(row))
+
+    def test_stereo_in_phase_or_one_silent_channel_are_not_cancellation(self):
+        stereo = self.root / "stereo.wav"
+        wav(stereo, [v for x in self.samples for v in (x, x)], channels=2)
+        metrics = scan_wav(stereo)
+        self.assertEqual(1.0, metrics["stereo_phase_correlation"])
+        self.assertEqual(0.0, metrics["mono_fold_down_loss_db"])
+        self.assertEqual(0.0, metrics["mono_fold_down_risky_window_fraction"])
+        self.assertFalse(metrics["mono_fold_down_cancellation_risk"])
+        wav(stereo, [v for x in self.samples for v in (x, 0)], channels=2)
+        metrics = scan_wav(stereo)
+        self.assertIsNone(metrics["stereo_phase_correlation"])
+        self.assertAlmostEqual(3.01, metrics["mono_fold_down_loss_db"], delta=0.02)
+        self.assertFalse(metrics["mono_fold_down_cancellation_risk"])
+        wav(stereo, [0] * (len(self.samples) * 2), channels=2)
+        self.assertFalse(scan_wav(stereo)["mono_fold_down_cancellation_risk"])
+
+    def test_temporary_antiphase_is_detected_even_if_average_loss_is_small(self):
+        stereo = self.root / "temporary.wav"
+        wav(stereo, [v for i, x in enumerate(self.samples)
+                     for v in (x, x if i < 4000 else -x)], channels=2)
+        metrics = scan_wav(stereo, window_ms=100)
+        self.assertTrue(metrics["mono_fold_down_cancellation_risk"])
+        self.assertAlmostEqual(0.5, metrics["mono_fold_down_risky_window_fraction"], delta=0.01)
+        self.assertAlmostEqual(3.01, metrics["mono_fold_down_loss_db"], delta=0.1)
+        self.assertEqual(metrics, scan_wav(stereo, window_ms=100))
+
     def test_mismatched_duration_rate_and_format_are_fail_closed(self):
         wav(self.candidate, self.samples[:-10])
         with self.assertRaisesRegex(ValueError, "frames"):

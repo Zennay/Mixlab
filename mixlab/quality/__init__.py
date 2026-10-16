@@ -15,6 +15,10 @@ import wave
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
 SILENT_WINDOW_RMS = 10 ** (-55 / 20)
+# Screening heuristic: a loss >= 9 dB during a non-silent stereo window
+# means downmixing to mono may suppress an important part of the sound.
+MONO_FOLD_DOWN_RISK_DB = 9.0
+MONO_FOLD_DOWN_RISK_POWER_RATIO = 10 ** (-MONO_FOLD_DOWN_RISK_DB / 10)
 
 
 def _dbfs(value: float) -> float | None:
@@ -49,22 +53,36 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
             total_samples = 0
             sum_squares = 0
             sum_samples = [0] * channels
+            channel_sum_squares = [0] * channels
+            stereo_cross_product = 0
+            stereo_mid_sum_squares = 0.0
             max_jump = 0
             previous = None
             window_sum_squares = 0
+            window_mid_sum_squares = 0.0
             window_samples = 0
             window_peaks = []
             silent_windows = 0
             windows = 0
+            eligible_stereo_windows = 0
+            phase_risk_windows = 0
 
             def finish_window():
-                nonlocal window_sum_squares, window_samples, silent_windows, windows
+                nonlocal window_sum_squares, window_mid_sum_squares, window_samples
+                nonlocal silent_windows, windows, eligible_stereo_windows, phase_risk_windows
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
                     window_peaks.append(wrms)
                     silent_windows += wrms < SILENT_WINDOW_RMS
+                    if channels == 2 and wrms >= SILENT_WINDOW_RMS:
+                        eligible_stereo_windows += 1
+                        # Compare mono (L+R)/2 power to original per-channel power.
+                        # Silent windows must not trigger false cancellation alerts.
+                        if 2 * window_mid_sum_squares <= MONO_FOLD_DOWN_RISK_POWER_RATIO * window_sum_squares:
+                            phase_risk_windows += 1
                     windows += 1
                     window_sum_squares = 0
+                    window_mid_sum_squares = 0.0
                     window_samples = 0
 
             remaining = nframes
@@ -84,10 +102,17 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
                         peak_sample = max(peak_sample, magnitude)
                         near_full_scale += magnitude >= 32760
                         sum_squares += sample * sample
+                        channel_sum_squares[ch] += sample * sample
                         sum_samples[ch] += sample
                         if previous is not None:
                             max_jump = max(max_jump, abs(sample - previous[ch]))
                     previous = frame
+                    if channels == 2:
+                        left, right = frame
+                        stereo_cross_product += left * right
+                        mid_squared = ((left + right) / 2) ** 2
+                        stereo_mid_sum_squares += mid_squared
+                        window_mid_sum_squares += mid_squared
                     window_sum_squares += sum(x * x for x in frame)
                     window_samples += channels
                     total_samples += channels
@@ -100,6 +125,20 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
 
     rms = math.sqrt(sum_squares / total_samples) / 32768
     peak = peak_sample / 32768
+    phase_correlation = None
+    mono_loss_db = None
+    risky_window_fraction = None
+    if channels == 2:
+        if channel_sum_squares[0] and channel_sum_squares[1]:
+            phase_correlation = round(
+                stereo_cross_product / math.sqrt(channel_sum_squares[0] * channel_sum_squares[1]), 6
+            )
+        if sum_squares and stereo_mid_sum_squares:
+            mono_loss_db = round(
+                10 * math.log10(sum_squares / (2 * stereo_mid_sum_squares)), 3
+            )
+        if eligible_stereo_windows:
+            risky_window_fraction = round(phase_risk_windows / eligible_stereo_windows, 6)
     return {
         "sample_rate": rate,
         "channels": channels,
@@ -116,6 +155,10 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "min_window_rms_dbfs": _dbfs(min(window_peaks)),
         "max_window_rms_dbfs": _dbfs(max(window_peaks)),
         "max_adjacent_sample_jump": round(max_jump / 32768, 6),
+        "stereo_phase_correlation": phase_correlation,
+        "mono_fold_down_loss_db": mono_loss_db,
+        "mono_fold_down_risky_window_fraction": risky_window_fraction,
+        "mono_fold_down_cancellation_risk": phase_risk_windows > 0,
     }
 
 
@@ -153,6 +196,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             warnings.append("near_full_scale_samples_inspect_for_clipping")
         if metrics["silent_window_fraction"] > 0.5:
             warnings.append("many_low_level_windows_inspect_for_silence")
+        if metrics["mono_fold_down_cancellation_risk"]:
+            warnings.append("stereo_mono_fold_down_cancellation_inspect")
         results.append({
             "candidate_id": f"candidate-{index:02d}",
             "metrics": metrics,

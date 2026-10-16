@@ -31,6 +31,14 @@ keep CLI logs private when passing confidential file locations.
   An RMS delta above 1.5 dB is a *possible level confound*, not a proof
   of audible bias and not a suggested gain change. Check a real loudness
   standard before frozen tests; do not simply boost into clipping.
+- On stereo inputs, phase correlation and mono-fold-down loss (positive dB)
+  are measured from streaming PCM samples. Each non-silent RMS window with
+  >=9 dB mono-fold-down loss raises a technical warning, including brief
+  anti-phase passages hidden by otherwise healthy overall RMS. Fully silent
+  windows are excluded. The rule is a screening heuristic, **not** a measured
+  listener preference, true-peak measure, phase correction or guaranteed
+  mono-compatibility score. Complete cancellation reports a null global loss
+  with a true risk flag; mono files also use null where not applicable.
 - A sample near digital full-scale is flagged for inspection, not labeled
   proven clipped; intentional silence and percussive jumps can be musical.
   No psychoacoustic, phase, low-end-masking, key, phrase or crowd-response
