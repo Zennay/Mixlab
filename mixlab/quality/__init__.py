@@ -18,6 +18,9 @@ SILENT_WINDOW_RMS = 10 ** (-55 / 20)
 # Investigate gaps of at least 200 ms between audible sections, even if
 # the rest of an otherwise valid transition is loud.
 INTERIOR_SILENT_GAP_WARNING_MS = 200
+# Flag apparent stereo channel loss, not artistic panning: one channel
+# below -55 dBFS while the other is clearly active above -35 dBFS.
+ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
 # Screening heuristic: a loss >= 9 dB during a non-silent stereo window
 # means downmixing to mono may suppress an important part of the sound.
 MONO_FOLD_DOWN_RISK_DB = 9.0
@@ -145,6 +148,11 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     peak = peak_sample / 32768
     # The pending trailing gap is intentionally excluded until sound resumes.
     interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
+    channel_rms = [math.sqrt(x / nframes) / 32768 for x in channel_sum_squares]
+    stereo_channel_silence_risk = channels == 2 and (
+        (channel_rms[0] < SILENT_WINDOW_RMS and channel_rms[1] > ACTIVE_CHANNEL_RMS)
+        or (channel_rms[1] < SILENT_WINDOW_RMS and channel_rms[0] > ACTIVE_CHANNEL_RMS)
+    )
     phase_correlation = None
     mono_loss_db = None
     risky_window_fraction = None
@@ -169,6 +177,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "rms": round(rms, 8),
         "rms_dbfs": _dbfs(rms),
         "dc_per_channel": [round(x / nframes / 32768, 7) for x in sum_samples],
+        "channel_rms_dbfs": [_dbfs(x) for x in channel_rms],
+        "stereo_channel_silence_risk": stereo_channel_silence_risk,
         "near_full_scale_fraction": round(near_full_scale / total_samples, 8),
         "silent_window_fraction": round(silent_windows / windows, 6),
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
@@ -182,6 +192,24 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
         "mono_fold_down_cancellation_risk": phase_risk_windows > 0,
     }
+
+
+def _signal_warnings(metrics: dict) -> list[str]:
+    """Apply the same technical artifact checks to baseline and candidates."""
+    warnings = []
+    if metrics["rms_dbfs"] is None:
+        warnings.append("fully_silent_audio_inspect")
+    if metrics["near_full_scale_fraction"] > 0:
+        warnings.append("near_full_scale_samples_inspect_for_clipping")
+    if metrics["silent_window_fraction"] > 0.5:
+        warnings.append("many_low_level_windows_inspect_for_silence")
+    if metrics["interior_silent_gap_risk"]:
+        warnings.append("interior_silent_gap_inspect_for_dropouts")
+    if metrics["mono_fold_down_cancellation_risk"]:
+        warnings.append("stereo_mono_fold_down_cancellation_inspect")
+    if metrics["stereo_channel_silence_risk"]:
+        warnings.append("stereo_silent_channel_inspect")
+    return warnings
 
 
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
@@ -200,6 +228,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
     base = scan_wav(baseline, window_ms=window_ms)
+    baseline_warnings = _signal_warnings(base)
     results = []
     for index, candidate in enumerate(candidates, start=1):
         metrics = scan_wav(candidate, window_ms=window_ms)
@@ -209,19 +238,11 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         level_difference = None
         if base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None:
             level_difference = round(metrics["rms_dbfs"] - base["rms_dbfs"], 3)
-        warnings = []
+        warnings = _signal_warnings(metrics)
         if level_difference is None:
             warnings.append("silence_prevents_rms_level_comparison")
         elif abs(level_difference) > loudness_tolerance_db:
             warnings.append("rms_level_mismatch_not_lufs")
-        if metrics["near_full_scale_fraction"] > 0:
-            warnings.append("near_full_scale_samples_inspect_for_clipping")
-        if metrics["silent_window_fraction"] > 0.5:
-            warnings.append("many_low_level_windows_inspect_for_silence")
-        if metrics["interior_silent_gap_risk"]:
-            warnings.append("interior_silent_gap_inspect_for_dropouts")
-        if metrics["mono_fold_down_cancellation_risk"]:
-            warnings.append("stereo_mono_fold_down_cancellation_inspect")
         results.append({
             "candidate_id": f"candidate-{index:02d}",
             "metrics": metrics,
@@ -237,6 +258,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         "window_ms": window_ms,
         "loudness_tolerance_db": loudness_tolerance_db,
         "baseline": base,
+        "baseline_warnings": baseline_warnings,
         "candidates": results,
         "human_preference_test_required": True,
         "contains_source_paths_or_audio": False,
