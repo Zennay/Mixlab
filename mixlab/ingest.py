@@ -145,8 +145,14 @@ def validate_library(manifest_path):
                 raise ValueError("Duplicate JSON key")
             result[key] = value
         return result
-    manifest = _object(json.loads(source.read_text(), parse_constant=reject_constant,
-                                  object_pairs_hook=unique_keys), "manifest")
+    try:
+        parsed = json.loads(source.read_text(), parse_constant=reject_constant,
+                            object_pairs_hook=unique_keys)
+    except RecursionError as exc:
+        # Untrusted, deeply nested JSON is a validation failure, not an
+        # uncaught traceback from the CLI or an ambiguous runner crash.
+        raise ValueError("Manifest JSON nesting limit exceeded") from exc
+    manifest = _object(parsed, "manifest")
     if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
         raise ValueError("Unsupported library schema")
     records = manifest.get("tracks")
