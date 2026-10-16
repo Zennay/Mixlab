@@ -50,6 +50,13 @@ media private regardless of sanitized CLI output.
   An RMS delta above 1.5 dB is a *possible level confound*, not a proof
   of audible bias and not a suggested gain change. Check a real loudness
   standard before frozen tests; do not simply boost into clipping.
+- Equal whole-file RMS does not guarantee fair short-term balance. The
+  bounded scanner privately compares time-aligned RMS windows against the
+  baseline and warns when >=25% of non-silent windows differ by >=9 dB or
+  one side is silent. Output exposes only a fraction and technical flag,
+  **not** the underlying private waveform/envelope. This is not
+  BS.1770/LUFS, does not normalize audio, and may flag intentional dramatic
+  transitions. The LUFS matching work remains separately owned.
 - Consecutive below -55 dBFS RMS windows are tracked in streaming mode.
   A gap >=200 ms **between** audible sections raises
   `interior_silent_gap_inspect_for_dropouts`, even when fewer than half of
