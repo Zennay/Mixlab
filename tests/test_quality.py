@@ -232,6 +232,25 @@ class QualityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "32 MiB"):
                 scan_wav(self.base)
 
+    def test_cli_optional_strict_gate_preserves_json_and_default_exit(self):
+        args = [sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)]
+        clean = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(0, clean.returncode)
+        self.assertFalse(json.loads(clean.stdout)["baseline_warnings"])
+        wav(self.candidate, [0] * len(self.samples))
+        default = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(0, default.returncode)
+        strict = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(2, strict.returncode)
+        self.assertTrue(json.loads(strict.stdout)["candidates"][0]["warnings"])
+        self.assertNotIn(str(self.root), strict.stdout + strict.stderr)
+        wav(self.candidate, self.samples)
+        wav(self.base, [32767] * len(self.samples))
+        baseline_strict = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(2, baseline_strict.returncode)
+        self.assertIn("near_full_scale_samples_inspect_for_clipping",
+                      json.loads(baseline_strict.stdout)["baseline_warnings"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)

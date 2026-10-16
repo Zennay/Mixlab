@@ -13,11 +13,18 @@ PCM16 WAV renders. Preserve the neutral A/B and private answer-key boundary.
 
     python3 -m mixlab.quality /private/baseline.wav /private/candidate.wav
     python3 -m mixlab.quality /private/baseline.wav /private/a.wav /private/b.wav --window-ms 100 --loudness-tolerance-db 1.5
+    python3 -m mixlab.quality /private/baseline.wav /private/candidate.wav --fail-on-warnings
 
 The command reads the WAVs and prints JSON to stdout. It **does not change audio**
 or automatically select a winning transition. Redirect locally to a
 restricted destination if retention is needed. It emits opaque candidate IDs
 rather than source paths, samples, source hashes or private recording metadata.
+Without `--fail-on-warnings`, a well-formed report exits 0 even if it warns.
+The opt-in flag returns 0 for a clean report and 2 for any candidate **or
+baseline** warning, but always prints the full anonymized JSON to stdout
+before exiting. Treat this as an optional technical CI gate: musical hard
+cuts, phase effects and intentional silence may need human override, and
+a clean report never proves a musically good transition.
 CLI failures may mention an invalid argument path via normal Python errors;
 keep CLI logs private when passing confidential file locations.
 
