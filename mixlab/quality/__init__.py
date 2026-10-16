@@ -15,6 +15,9 @@ import wave
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
 SILENT_WINDOW_RMS = 10 ** (-55 / 20)
+# Investigate gaps of at least 200 ms between audible sections, even if
+# the rest of an otherwise valid transition is loud.
+INTERIOR_SILENT_GAP_WARNING_MS = 200
 # Screening heuristic: a loss >= 9 dB during a non-silent stereo window
 # means downmixing to mono may suppress an important part of the sound.
 MONO_FOLD_DOWN_RISK_DB = 9.0
@@ -64,16 +67,31 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
             window_peaks = []
             silent_windows = 0
             windows = 0
+            seen_audible_window = False
+            pending_interior_silence_frames = 0
+            longest_interior_silence_frames = 0
             eligible_stereo_windows = 0
             phase_risk_windows = 0
 
             def finish_window():
                 nonlocal window_sum_squares, window_mid_sum_squares, window_samples
                 nonlocal silent_windows, windows, eligible_stereo_windows, phase_risk_windows
+                nonlocal seen_audible_window, pending_interior_silence_frames, longest_interior_silence_frames
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
                     window_peaks.append(wrms)
-                    silent_windows += wrms < SILENT_WINDOW_RMS
+                    is_silent = wrms < SILENT_WINDOW_RMS
+                    silent_windows += is_silent
+                    if is_silent:
+                        if seen_audible_window:
+                            pending_interior_silence_frames += window_samples // channels
+                    else:
+                        if seen_audible_window:
+                            longest_interior_silence_frames = max(
+                                longest_interior_silence_frames, pending_interior_silence_frames
+                            )
+                        seen_audible_window = True
+                        pending_interior_silence_frames = 0
                     if channels == 2 and wrms >= SILENT_WINDOW_RMS:
                         eligible_stereo_windows += 1
                         # Compare mono (L+R)/2 power to original per-channel power.
@@ -125,6 +143,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
 
     rms = math.sqrt(sum_squares / total_samples) / 32768
     peak = peak_sample / 32768
+    # The pending trailing gap is intentionally excluded until sound resumes.
+    interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
     phase_correlation = None
     mono_loss_db = None
     risky_window_fraction = None
@@ -151,6 +171,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "dc_per_channel": [round(x / nframes / 32768, 7) for x in sum_samples],
         "near_full_scale_fraction": round(near_full_scale / total_samples, 8),
         "silent_window_fraction": round(silent_windows / windows, 6),
+        "longest_interior_silent_gap_ms": interior_silent_gap_ms,
+        "interior_silent_gap_risk": interior_silent_gap_ms >= INTERIOR_SILENT_GAP_WARNING_MS,
         "window_count": windows,
         "min_window_rms_dbfs": _dbfs(min(window_peaks)),
         "max_window_rms_dbfs": _dbfs(max(window_peaks)),
@@ -196,6 +218,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             warnings.append("near_full_scale_samples_inspect_for_clipping")
         if metrics["silent_window_fraction"] > 0.5:
             warnings.append("many_low_level_windows_inspect_for_silence")
+        if metrics["interior_silent_gap_risk"]:
+            warnings.append("interior_silent_gap_inspect_for_dropouts")
         if metrics["mono_fold_down_cancellation_risk"]:
             warnings.append("stereo_mono_fold_down_cancellation_inspect")
         results.append({
