@@ -57,6 +57,35 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(row["level_comparable_for_blind_ab"])
         self.assertNotIn("score", json.dumps(report))
 
+    def test_temporal_level_bias_hidden_by_equal_whole_file_rms(self):
+        # The halves balance in overall power despite a 20 dB quiet first half.
+        candidate = [int(x * 0.1) for x in self.samples[:4000]] + [
+            int(x * 1.4) for x in self.samples[4000:]
+        ]
+        wav(self.candidate, candidate)
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertLess(abs(row["rms_delta_db_vs_baseline"]), 1.5)
+        self.assertTrue(row["level_comparable_for_blind_ab"])
+        self.assertTrue(row["short_window_level_mismatch_risk"])
+        self.assertGreaterEqual(row["short_window_level_mismatch_fraction"], 0.4)
+        self.assertIn("short_window_rms_level_confound_inspect_not_lufs", row["warnings"])
+        self.assertNotIn(str(self.root), json.dumps(row))
+        self.assertNotIn("window_envelope", json.dumps(row))
+
+    def test_moderate_level_changes_do_not_trigger_temporal_bias_warning(self):
+        candidate = [int(x * 0.98) for x in self.samples[:4000]] + [
+            int(x * 1.02) for x in self.samples[4000:]
+        ]
+        wav(self.candidate, candidate)
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertFalse(row["short_window_level_mismatch_risk"])
+        self.assertEqual(0.0, row["short_window_level_mismatch_fraction"])
+        self.assertNotIn("short_window_rms_level_confound_inspect_not_lufs", row["warnings"])
+        wav(self.candidate, [0] * len(self.samples))
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertEqual(1.0, row["short_window_level_mismatch_fraction"])
+        self.assertTrue(row["short_window_level_mismatch_risk"])
+
     def test_silent_and_near_full_scale_candidates(self):
         wav(self.candidate, [0] * 8000)
         row = compare_wavs(self.base, [self.candidate])["candidates"][0]
