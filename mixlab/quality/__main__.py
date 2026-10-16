@@ -16,9 +16,14 @@ def main():
         help="Exit 2 on any baseline/candidate warning (optional technical CI gate, not a music score)",
     )
     args = parser.parse_args()
-    report = compare_wavs(args.baseline, args.candidates,
-                          window_ms=args.window_ms,
-                          loudness_tolerance_db=args.loudness_tolerance_db)
+    try:
+        report = compare_wavs(args.baseline, args.candidates,
+                              window_ms=args.window_ms,
+                              loudness_tolerance_db=args.loudness_tolerance_db)
+    except (OSError, ValueError):
+        # Exception messages (and Python tracebacks) may expose private WAV
+        # paths. Never echo exception text to shared CI or shell logs.
+        parser.exit(3, "quality preflight: invalid or unreadable WAV input (details withheld)\n")
     print(json.dumps(report, indent=2, sort_keys=True, allow_nan=False))
     if args.fail_on_warnings and (
         report["baseline_warnings"] or any(row["warnings"] for row in report["candidates"])
