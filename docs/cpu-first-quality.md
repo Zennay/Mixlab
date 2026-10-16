@@ -25,8 +25,12 @@ baseline** warning, but always prints the full anonymized JSON to stdout
 before exiting. Treat this as an optional technical CI gate: musical hard
 cuts, phase effects and intentional silence may need human override, and
 a clean report never proves a musically good transition.
-CLI failures may mention an invalid argument path via normal Python errors;
-keep CLI logs private when passing confidential file locations.
+Unreadable, missing, corrupt and mismatched WAV inputs now fail with exit code
+**3** and one sanitized stderr diagnostic; no absolute paths, exception
+messages, or traceback are logged. No JSON is produced for an invalid pack,
+which must not be mistaken for a successful comparison. Exit code **2**
+continues to mean only the *opt-in* technical warning gate. Keep source
+media private regardless of sanitized CLI output.
 
 ## Contract and interpretations
 - Bounded per input: at most 32 MiB and 2,000,000 PCM16 frames; supported

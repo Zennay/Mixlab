@@ -251,6 +251,43 @@ class QualityTests(unittest.TestCase):
         self.assertIn("near_full_scale_samples_inspect_for_clipping",
                       json.loads(baseline_strict.stdout)["baseline_warnings"])
 
+    def test_cli_failed_inputs_never_echo_private_audio_paths(self):
+        args = [sys.executable, "-m", "mixlab.quality"]
+        missing = self.root / "private-recording-do-not-leak.wav"
+        for baseline, candidate in (
+            (missing, self.candidate),
+            (self.base, missing),
+        ):
+            with self.subTest(baseline=baseline == missing):
+                result = subprocess.run(args + [str(baseline), str(candidate)],
+                                        capture_output=True, text=True)
+                self.assertEqual(3, result.returncode)
+                self.assertFalse(result.stdout)
+                self.assertIn("invalid or unreadable WAV", result.stderr)
+                self.assertNotIn(str(self.root), result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertNotIn("FileNotFoundError", result.stderr)
+        bad = self.root / "secret-track.wav"
+        bad.write_bytes(b"not a WAV")
+        result = subprocess.run(args + [str(self.base), str(bad)],
+                                capture_output=True, text=True)
+        self.assertEqual(3, result.returncode)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_failed_format_and_parameter_checks_do_not_leak_paths(self):
+        args = [sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)]
+        for option in (["--window-ms", "10"], ["--loudness-tolerance-db", "NaN"]):
+            with self.subTest(option=option):
+                result = subprocess.run(args + option, capture_output=True, text=True)
+                self.assertEqual(3, result.returncode)
+                self.assertNotIn(str(self.root), result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+        wav(self.candidate, self.samples[:-1])
+        mismatch = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(3, mismatch.returncode)
+        self.assertNotIn(str(self.root), mismatch.stdout + mismatch.stderr)
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
