@@ -36,6 +36,14 @@ media private regardless of sanitized CLI output.
 - Bounded per input: at most 32 MiB and 2,000,000 PCM16 frames; supported
   sample rate 8–96 kHz, one or two channels; reads at most 4096 frames per
   chunk. Reuses existing bounded WAV constraints, no numpy/torch or GPU.
+- An in-memory SHA-256 fingerprint of **PCM frames only** detects candidates
+  that are acoustically identical to the baseline or to an earlier candidate,
+  including WAV files with different container metadata. The report contains
+  only neutral references (`duplicate_pcm_of`: `baseline` or
+  `candidate-XX`) and inspection warnings, **never** the digest, source
+  filenames or audio. Duplicate detection is not an automatic DJ quality
+  score; it prevents meaningless blind comparisons. Strict mode treats these
+  warnings like other technical preflight warnings.
 - Exact same rate, channels and frame count are required for candidates.
   Mismatches fail closed instead of silently time-stretching or resampling.
 - RMS and peak are basic sample-domain dBFS, **not** integrated loudness (LUFS).
