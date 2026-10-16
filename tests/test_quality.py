@@ -2,6 +2,7 @@ import array
 import json
 import math
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from unittest.mock import patch
 import wave
 
 from mixlab.quality import compare_wavs, scan_wav
+from mixlab.quality.pack import inspect_review_pack
 
 
 def wav(path, samples, *, rate=8000, channels=1, width=2):
@@ -381,6 +383,111 @@ class QualityTests(unittest.TestCase):
         mismatch = subprocess.run(args, capture_output=True, text=True)
         self.assertEqual(3, mismatch.returncode)
         self.assertNotIn(str(self.root), mismatch.stdout + mismatch.stderr)
+
+    def test_review_pack_pair_integrity_privacy_and_strict_cli(self):
+        review = self.root / "review"
+        private = self.root / "private"
+        review.mkdir()
+        private.mkdir()
+        (private / "answer-key.json").write_text("secret-should-not-be-read")
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", self.samples)
+        other = self.samples.copy()
+        other[140] += 1
+        wav(review / "trial-002-A.wav", self.samples)
+        wav(review / "trial-002-B.wav", other)
+        (review / "index.html").write_text("<p>private blind-review UI</p>")
+        report = inspect_review_pack(review)
+        self.assertEqual(2, report["trial_count"])
+        self.assertEqual(1, report["warning_trial_count"])
+        self.assertEqual(["trial-001", "trial-002"], [r["trial_id"] for r in report["trials"]])
+        self.assertIn("identical_pcm_between_A_and_B", report["trials"][0]["B"]["warnings"])
+        self.assertFalse(report["trials"][1]["technical_warnings_present"])
+        self.assertFalse(report["answer_key_opened"])
+        self.assertTrue(report["human_preference_test_required"])
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("answer-key", serialized)
+        self.assertNotIn("secret-should-not-be-read", serialized)
+        self.assertNotIn("sha256", serialized)
+        args = [sys.executable, "-m", "mixlab.quality.pack", str(review)]
+        default = subprocess.run(args, capture_output=True, text=True)
+        strict = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(0, default.returncode)
+        self.assertEqual(2, strict.returncode)
+        self.assertEqual(report, json.loads(strict.stdout))
+        self.assertNotIn(str(self.root), strict.stdout + strict.stderr)
+        (review / "trial-001-B.wav").unlink()
+        self.assertEqual(3, subprocess.run(args, capture_output=True, text=True).returncode)
+
+    def test_review_pack_rejects_untrusted_incomplete_or_oversized_inventories(self):
+        review = self.root / "review"
+        review.mkdir()
+        a = review / "trial-001-A.wav"
+        b = review / "trial-001-B.wav"
+        wav(a, self.samples)
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            inspect_review_pack(review)
+        wav(b, self.samples)
+        unexpected = review / "secret-source.wav"
+        wav(unexpected, self.samples)
+        with self.assertRaisesRegex(ValueError, "unexpected WAV"):
+            inspect_review_pack(review)
+        unexpected.unlink()
+        b.unlink()
+        b.symlink_to(self.candidate)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            inspect_review_pack(review)
+        b.unlink()
+        wav(b, self.samples)
+        with patch("mixlab.quality.pack.MAX_TRIALS", 0):
+            with self.assertRaisesRegex(ValueError, "trial limit"):
+                inspect_review_pack(review)
+        with self.assertRaisesRegex(ValueError, "real directory"):
+            inspect_review_pack(self.candidate)
+        linked = self.root / "review-link"
+        linked.symlink_to(review, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            inspect_review_pack(linked)
+        (review / "trial-000-A.wav").write_bytes(b"invalid")
+        with self.assertRaisesRegex(ValueError, "unexpected WAV"):
+            inspect_review_pack(review)
+
+    def test_renderer_to_blind_review_quality_preflight_integration(self):
+        # Exercise the actual streaming renderer, not only hand-built WAV
+        # fixtures. No real copyrighted source media or private key is needed.
+        from mixlab.dsp import render
+        from mixlab.engine import write_wav
+        from mixlab.models import FAMILY_NAMES, Recipe
+        sources = [self.root / "source-a.wav", self.root / "source-b.wav"]
+        write_wav(sources[0], 8000, [(0.2 * math.sin(i * 0.11), 0.17 * math.cos(i * 0.17))
+                                     for i in range(8000)])
+        write_wav(sources[1], 8000, [(0.11 * math.sin(i * 0.13), 0.18 * math.cos(i * 0.09))
+                                     for i in range(8000)])
+        before = [p.read_bytes() for p in sources]
+        outputs = {}
+        for family in FAMILY_NAMES:
+            output = self.root / f"{family}.wav"
+            metadata = render(*sources, output, Recipe(family=family, beats=1),
+                              block_frames=127)
+            self.assertEqual(2, metadata["channels"])
+            self.assertEqual(4000, metadata["frames"])
+            outputs[family] = output
+        review = self.root / "review"
+        review.mkdir()
+        for trial, first, second in (
+            ("trial-001", "baseline", "bass_swap"),
+            ("trial-002", "echo_exit", "hard_cut"),
+        ):
+            shutil.copyfile(outputs[first], review / f"{trial}-A.wav")
+            shutil.copyfile(outputs[second], review / f"{trial}-B.wav")
+        receipts = inspect_review_pack(review, window_ms=50)
+        self.assertEqual(2, receipts["trial_count"])
+        self.assertEqual([4000, 4000], [x["A"]["metrics"]["frames"] for x in receipts["trials"]])
+        self.assertFalse(any(x["identical_pcm"] for x in receipts["trials"]))
+        self.assertTrue(receipts["human_preference_test_required"])
+        self.assertNotIn(str(self.root), json.dumps(receipts))
+        self.assertEqual(before, [p.read_bytes() for p in sources])
 
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],

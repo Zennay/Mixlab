@@ -32,6 +32,33 @@ which must not be mistaken for a successful comparison. Exit code **2**
 continues to mean only the *opt-in* technical warning gate. Keep source
 media private regardless of sanitized CLI output.
 
+## Complete blind A/B review-pack preflight
+
+The existing benchmark produces neutral `review/trial-###-A.wav` and
+`review/trial-###-B.wav` files. Inspect the **review directory only**;
+do not supply the private answer-key folder or any recording/source library.
+
+    python3 -m mixlab.quality.pack /private/pack/review
+    python3 -m mixlab.quality.pack /private/pack/review --fail-on-warnings
+
+The pack inspector rejects empty, incomplete, improperly named, linked or
+excessive (more than 60) trial WAV inventories and errors out with a
+path-free diagnostic (exit **3**). A and B are deliberately neutral: the
+tool never determines which is the baseline or accesses `private/answer-key.json`.
+Anonymized JSON contains the trial IDs, two sets of technical metrics,
+a B-vs-A RMS comparison, local-level mismatch and duplicate-PCM flags.
+It **does not** export paths, sample arrays, PCM fingerprints, envelope windows
+or the private answer key. Unexpected non-WAV assets such as `index.html`
+are ignored. It reads and checks only regular, non-symlink WAV files.
+
+By default it exits **0** with JSON regardless of nonfatal warnings.
+With `--fail-on-warnings`, it exits **2** when any review pair raises a
+technical warning (including identical A/B PCM) but still prints the JSON.
+Good technical preflight is not evidence of listener preference or of a
+musically superior transition, and intentional DJ effects may be flagged.
+A synthetic regression also renders actual DSP transition families before
+feeding a review directory into this quality gate.
+
 ## Contract and interpretations
 - Bounded per input: at most 32 MiB and 2,000,000 PCM16 frames; supported
   sample rate 8–96 kHz, one or two channels; reads at most 4096 frames per
