@@ -41,6 +41,7 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(0, report["candidates"][0]["rms_delta_db_vs_baseline"])
         self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
         self.assertFalse(report["candidates"][0]["warnings"])
+        self.assertFalse(report["baseline_warnings"])
         self.assertTrue(report["human_preference_test_required"])
         self.assertNotIn(str(self.root), json.dumps(report))
         self.assertEqual(before, self.candidate.read_bytes())
@@ -63,6 +64,38 @@ class QualityTests(unittest.TestCase):
         wav(self.candidate, [32767] * 8000)
         row = compare_wavs(self.base, [self.candidate])["candidates"][0]
         self.assertIn("near_full_scale_samples_inspect_for_clipping", row["warnings"])
+
+    def test_corrupt_baseline_is_flagged_even_if_candidate_clean(self):
+        wav(self.base, [32767] * 8000)
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("near_full_scale_samples_inspect_for_clipping", report["baseline_warnings"])
+        self.assertNotIn("near_full_scale_samples_inspect_for_clipping", report["candidates"][0]["warnings"])
+        wav(self.base, [0] * 8000)
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("fully_silent_audio_inspect", report["baseline_warnings"])
+        self.assertIn("silence_prevents_rms_level_comparison", report["candidates"][0]["warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_one_silent_stereo_channel_is_flagged_on_both_sides(self):
+        stereo_base = self.root / "stereo_base.wav"
+        stereo_candidate = self.root / "stereo_candidate.wav"
+        stereo_clean = [value for sample in self.samples for value in (sample, sample)]
+        stereo_missing = [value for sample in self.samples for value in (sample, 0)]
+        wav(stereo_base, stereo_missing, channels=2)
+        wav(stereo_candidate, stereo_clean, channels=2)
+        report = compare_wavs(stereo_base, [stereo_candidate])
+        self.assertTrue(report["baseline"]["stereo_channel_silence_risk"])
+        self.assertIn("stereo_silent_channel_inspect", report["baseline_warnings"])
+        self.assertFalse(report["candidates"][0]["metrics"]["stereo_channel_silence_risk"])
+        self.assertNotIn("stereo_silent_channel_inspect", report["candidates"][0]["warnings"])
+        self.assertIsNone(report["baseline"]["channel_rms_dbfs"][1])
+        wav(stereo_base, stereo_clean, channels=2)
+        wav(stereo_candidate, stereo_missing, channels=2)
+        report = compare_wavs(stereo_base, [stereo_candidate])
+        self.assertFalse(report["baseline_warnings"])
+        self.assertIn("stereo_silent_channel_inspect", report["candidates"][0]["warnings"])
+        wav(stereo_candidate, [0] * (2 * len(self.samples)), channels=2)
+        self.assertFalse(scan_wav(stereo_candidate)["stereo_channel_silence_risk"])
 
     def test_stereo_stream_windows_and_determinism(self):
         stereo = self.root / "stereo.wav"
