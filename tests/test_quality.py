@@ -97,6 +97,31 @@ class QualityTests(unittest.TestCase):
         wav(stereo_candidate, [0] * (2 * len(self.samples)), channels=2)
         self.assertFalse(scan_wav(stereo_candidate)["stereo_channel_silence_risk"])
 
+    def test_sample_splice_click_detected_across_stream_read_boundary(self):
+        samples = self.samples.copy()
+        samples[4095], samples[4096], samples[4097] = 0, 22000, 0
+        wav(self.candidate, samples)
+        report = compare_wavs(self.base, [self.candidate])
+        row = report["candidates"][0]
+        self.assertGreaterEqual(row["metrics"]["severe_adjacent_jump_count"], 2)
+        self.assertGreater(row["metrics"]["max_adjacent_sample_jump"], 0.5)
+        self.assertIn("severe_sample_discontinuity_inspect_for_pops", row["warnings"])
+        self.assertNotIn("severe_sample_discontinuity_inspect_for_pops", report["baseline_warnings"])
+
+    def test_dc_offset_warns_on_both_sides_without_audio_repair(self):
+        wav(self.base, [2500] * len(self.samples))
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(report["baseline"]["dc_offset_risk"])
+        self.assertIn("dc_offset_inspect_for_headroom", report["baseline_warnings"])
+        self.assertFalse(report["candidates"][0]["metrics"]["dc_offset_risk"])
+        self.assertNotIn("dc_offset_inspect_for_headroom", report["candidates"][0]["warnings"])
+        wav(self.base, self.samples)
+        wav(self.candidate, [-2500] * len(self.samples))
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertFalse(report["baseline_warnings"])
+        self.assertIn("dc_offset_inspect_for_headroom", report["candidates"][0]["warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
     def test_stereo_stream_windows_and_determinism(self):
         stereo = self.root / "stereo.wav"
         interleaved = [sample for x in self.samples for sample in (x, -x)]

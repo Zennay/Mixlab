@@ -21,6 +21,11 @@ INTERIOR_SILENT_GAP_WARNING_MS = 200
 # Flag apparent stereo channel loss, not artistic panning: one channel
 # below -55 dBFS while the other is clearly active above -35 dBFS.
 ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
+# A >50% full-scale adjacent PCM step is suspicious for a splice pop,
+# but percussion and intentional cuts still require human inspection.
+SEVERE_SAMPLE_JUMP = 0.5 * 32768
+# DC >3% full scale can reduce headroom or produce a pop when the file ends.
+DC_OFFSET_RISK = 0.03
 # Screening heuristic: a loss >= 9 dB during a non-silent stereo window
 # means downmixing to mono may suppress an important part of the sound.
 MONO_FOLD_DOWN_RISK_DB = 9.0
@@ -63,6 +68,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
             stereo_cross_product = 0
             stereo_mid_sum_squares = 0.0
             max_jump = 0
+            severe_jump_count = 0
             previous = None
             window_sum_squares = 0
             window_mid_sum_squares = 0.0
@@ -126,7 +132,9 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
                         channel_sum_squares[ch] += sample * sample
                         sum_samples[ch] += sample
                         if previous is not None:
-                            max_jump = max(max_jump, abs(sample - previous[ch]))
+                            jump = abs(sample - previous[ch])
+                            max_jump = max(max_jump, jump)
+                            severe_jump_count += jump >= SEVERE_SAMPLE_JUMP
                     previous = frame
                     if channels == 2:
                         left, right = frame
@@ -149,6 +157,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     # The pending trailing gap is intentionally excluded until sound resumes.
     interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
     channel_rms = [math.sqrt(x / nframes) / 32768 for x in channel_sum_squares]
+    dc_per_channel = [x / nframes / 32768 for x in sum_samples]
+    dc_offset_risk = any(abs(x) > DC_OFFSET_RISK for x in dc_per_channel)
     stereo_channel_silence_risk = channels == 2 and (
         (channel_rms[0] < SILENT_WINDOW_RMS and channel_rms[1] > ACTIVE_CHANNEL_RMS)
         or (channel_rms[1] < SILENT_WINDOW_RMS and channel_rms[0] > ACTIVE_CHANNEL_RMS)
@@ -176,7 +186,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "peak_dbfs": _dbfs(peak),
         "rms": round(rms, 8),
         "rms_dbfs": _dbfs(rms),
-        "dc_per_channel": [round(x / nframes / 32768, 7) for x in sum_samples],
+        "dc_per_channel": [round(x, 7) for x in dc_per_channel],
+        "dc_offset_risk": dc_offset_risk,
         "channel_rms_dbfs": [_dbfs(x) for x in channel_rms],
         "stereo_channel_silence_risk": stereo_channel_silence_risk,
         "near_full_scale_fraction": round(near_full_scale / total_samples, 8),
@@ -187,6 +198,8 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
         "min_window_rms_dbfs": _dbfs(min(window_peaks)),
         "max_window_rms_dbfs": _dbfs(max(window_peaks)),
         "max_adjacent_sample_jump": round(max_jump / 32768, 6),
+        "severe_adjacent_jump_count": severe_jump_count,
+        "severe_sample_discontinuity_risk": severe_jump_count > 0,
         "stereo_phase_correlation": phase_correlation,
         "mono_fold_down_loss_db": mono_loss_db,
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
@@ -209,6 +222,10 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("stereo_mono_fold_down_cancellation_inspect")
     if metrics["stereo_channel_silence_risk"]:
         warnings.append("stereo_silent_channel_inspect")
+    if metrics["dc_offset_risk"]:
+        warnings.append("dc_offset_inspect_for_headroom")
+    if metrics["severe_sample_discontinuity_risk"]:
+        warnings.append("severe_sample_discontinuity_inspect_for_pops")
     return warnings
 
 
