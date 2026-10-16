@@ -40,7 +40,9 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(report["baseline"], report["candidates"][0]["metrics"])
         self.assertEqual(0, report["candidates"][0]["rms_delta_db_vs_baseline"])
         self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
-        self.assertFalse(report["candidates"][0]["warnings"])
+        self.assertEqual(["identical_pcm_to_baseline_inspect_for_noop"],
+                         report["candidates"][0]["warnings"])
+        self.assertEqual("baseline", report["candidates"][0]["duplicate_pcm_of"])
         self.assertFalse(report["baseline_warnings"])
         self.assertTrue(report["human_preference_test_required"])
         self.assertNotIn(str(self.root), json.dumps(report))
@@ -232,8 +234,40 @@ class QualityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "32 MiB"):
                 scan_wav(self.base)
 
+    def test_identical_pcm_detection_ignores_wav_container_metadata(self):
+        second = self.root / "same-audio-different-container.wav"
+        copy = self.root / "same-other-candidate.wav"
+        modified = self.samples.copy()
+        modified[123] += 1
+        wav(self.candidate, modified)
+        wav(copy, modified)
+        # Exact PCM bytes with different trailing container bytes: still a duplicate.
+        with copy.open("ab") as out:
+            out.write(b"non_audio_container_metadata")
+        wav(second, self.samples)
+        report = compare_wavs(self.base, [self.candidate, copy, second])
+        first, duplicate, baseline = report["candidates"]
+        self.assertIsNone(first["duplicate_pcm_of"])
+        self.assertFalse(first["warnings"])
+        self.assertEqual("candidate-01", duplicate["duplicate_pcm_of"])
+        self.assertIn("duplicate_candidate_pcm_inspect", duplicate["warnings"])
+        self.assertEqual("baseline", baseline["duplicate_pcm_of"])
+        self.assertIn("identical_pcm_to_baseline_inspect_for_noop", baseline["warnings"])
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("sha256", serialized)
+        self.assertNotIn("non_audio_container_metadata", serialized)
+        self.assertNotIn("duplicate_pcm_of", json.dumps(scan_wav(self.base)))
+        # No source rewrite during fingerprinting.
+        self.assertTrue(copy.read_bytes().endswith(b"non_audio_container_metadata"))
+
     def test_cli_optional_strict_gate_preserves_json_and_default_exit(self):
         args = [sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)]
+        # Exactly identical baseline/candidate PCM is an invalid blind A/B
+        # comparison, so make this clean fixture differ by a benign sample.
+        modified = self.samples.copy()
+        modified[123] += 1
+        wav(self.candidate, modified)
         clean = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
         self.assertEqual(0, clean.returncode)
         self.assertFalse(json.loads(clean.stdout)["baseline_warnings"])
