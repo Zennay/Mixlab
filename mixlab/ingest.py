@@ -132,6 +132,34 @@ def _pairs(pairs, tracks):
             raise ValueError("Pair crosses dataset partitions")
 
 
+def _reject_excessive_json_nesting(raw, max_depth=64):
+    """Bound JSON containers independently of interpreter recursion limits.
+
+    Count only brackets outside quoted strings, respecting JSON escapes.
+    Leave full syntax validation to json.loads; this is an early DoS guard.
+    """
+    depth = 0
+    quoted = False
+    escaped = False
+    for char in raw:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+            continue
+        if char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > max_depth:
+                raise ValueError("Manifest JSON nesting limit exceeded")
+        elif char in "]}":
+            depth -= 1
+
+
 def validate_library(manifest_path):
     source = Path(manifest_path).resolve()
     if source.stat().st_size > 1024 * 1024:
@@ -145,8 +173,10 @@ def validate_library(manifest_path):
                 raise ValueError("Duplicate JSON key")
             result[key] = value
         return result
+    raw = source.read_text()
+    _reject_excessive_json_nesting(raw)
     try:
-        parsed = json.loads(source.read_text(), parse_constant=reject_constant,
+        parsed = json.loads(raw, parse_constant=reject_constant,
                             object_pairs_hook=unique_keys)
     except RecursionError as exc:
         # Untrusted, deeply nested JSON is a validation failure, not an
