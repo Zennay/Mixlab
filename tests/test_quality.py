@@ -128,6 +128,37 @@ class QualityTests(unittest.TestCase):
         wav(stereo_candidate, [0] * (2 * len(self.samples)), channels=2)
         self.assertFalse(scan_wav(stereo_candidate)["stereo_channel_silence_risk"])
 
+    def test_partial_stereo_channel_dropout_detected_with_normal_whole_file_rms(self):
+        # Left remains audible; right drops for half the file, but whole-file
+        # right RMS is still far above the missing-channel threshold.
+        base = self.root / "balanced.wav"
+        candidate = self.root / "partial.wav"
+        wav(base, [v for x in self.samples for v in (x, x)], channels=2)
+        wav(candidate, [v for i, x in enumerate(self.samples)
+                        for v in (x, x if i < 4000 else 0)], channels=2)
+        metrics = scan_wav(candidate)
+        self.assertFalse(metrics["stereo_channel_silence_risk"])
+        self.assertTrue(metrics["partial_stereo_channel_loss_risk"])
+        self.assertAlmostEqual(.5, metrics["partial_stereo_channel_loss_fraction"], delta=.01)
+        report = compare_wavs(base, [candidate])
+        self.assertFalse(report["baseline_warnings"])
+        self.assertIn("partial_stereo_channel_loss_inspect", report["candidates"][0]["warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_stereo_channel_dropout_ignores_isolated_and_fully_silent_windows(self):
+        sample_count = len(self.samples)
+        stereo = self.root / "isolated.wav"
+        wav(stereo, [v for i, x in enumerate(self.samples)
+                     for v in (x, 0 if 3200 <= i < 4000 else x)], channels=2)
+        metrics = scan_wav(stereo)
+        self.assertEqual(.1, metrics["partial_stereo_channel_loss_fraction"])
+        self.assertFalse(metrics["partial_stereo_channel_loss_risk"])
+        wav(stereo, [0] * (2 * sample_count), channels=2)
+        metrics = scan_wav(stereo)
+        self.assertIsNone(metrics["partial_stereo_channel_loss_fraction"])
+        self.assertFalse(metrics["partial_stereo_channel_loss_risk"])
+        self.assertIsNone(scan_wav(self.base)["partial_stereo_channel_loss_fraction"])
+
     def test_sample_splice_click_detected_across_stream_read_boundary(self):
         samples = self.samples.copy()
         samples[4095], samples[4096], samples[4097] = 0, 22000, 0
