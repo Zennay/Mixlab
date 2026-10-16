@@ -22,6 +22,9 @@ INTERIOR_SILENT_GAP_WARNING_MS = 200
 # Flag apparent stereo channel loss, not artistic panning: one channel
 # below -55 dBFS while the other is clearly active above -35 dBFS.
 ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
+# Flag sustained *partial* channel loss even when whole-file channel RMS
+# remains healthy. Short creative pans still require human interpretation.
+STEREO_CHANNEL_LOSS_MIN_FRACTION = 0.2
 # A >50% full-scale adjacent PCM step is suspicious for a splice pop,
 # but percussion and intentional cuts still require human inspection.
 SEVERE_SAMPLE_JUMP = 0.5 * 32768
@@ -77,6 +80,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             severe_jump_count = 0
             previous = None
             window_sum_squares = 0
+            window_channel_sum_squares = [0] * channels
             window_mid_sum_squares = 0.0
             window_samples = 0
             window_peaks = []
@@ -87,10 +91,12 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             longest_interior_silence_frames = 0
             eligible_stereo_windows = 0
             phase_risk_windows = 0
+            partial_channel_loss_windows = 0
 
             def finish_window():
-                nonlocal window_sum_squares, window_mid_sum_squares, window_samples
+                nonlocal window_sum_squares, window_channel_sum_squares, window_mid_sum_squares, window_samples
                 nonlocal silent_windows, windows, eligible_stereo_windows, phase_risk_windows
+                nonlocal partial_channel_loss_windows
                 nonlocal seen_audible_window, pending_interior_silence_frames, longest_interior_silence_frames
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
@@ -109,12 +115,20 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         pending_interior_silence_frames = 0
                     if channels == 2 and wrms >= SILENT_WINDOW_RMS:
                         eligible_stereo_windows += 1
+                        frames_in_window = window_samples // channels
+                        left_rms, right_rms = (
+                            math.sqrt(s / frames_in_window) / 32768 for s in window_channel_sum_squares
+                        )
+                        if ((left_rms < SILENT_WINDOW_RMS and right_rms > ACTIVE_CHANNEL_RMS)
+                                or (right_rms < SILENT_WINDOW_RMS and left_rms > ACTIVE_CHANNEL_RMS)):
+                            partial_channel_loss_windows += 1
                         # Compare mono (L+R)/2 power to original per-channel power.
                         # Silent windows must not trigger false cancellation alerts.
                         if 2 * window_mid_sum_squares <= MONO_FOLD_DOWN_RISK_POWER_RATIO * window_sum_squares:
                             phase_risk_windows += 1
                     windows += 1
                     window_sum_squares = 0
+                    window_channel_sum_squares = [0] * channels
                     window_mid_sum_squares = 0.0
                     window_samples = 0
 
@@ -137,6 +151,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         near_full_scale += magnitude >= 32760
                         sum_squares += sample * sample
                         channel_sum_squares[ch] += sample * sample
+                        window_channel_sum_squares[ch] += sample * sample
                         sum_samples[ch] += sample
                         if previous is not None:
                             jump = abs(sample - previous[ch])
@@ -173,6 +188,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     phase_correlation = None
     mono_loss_db = None
     risky_window_fraction = None
+    partial_channel_loss_fraction = None
     if channels == 2:
         if channel_sum_squares[0] and channel_sum_squares[1]:
             phase_correlation = round(
@@ -184,6 +200,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             )
         if eligible_stereo_windows:
             risky_window_fraction = round(phase_risk_windows / eligible_stereo_windows, 6)
+            partial_channel_loss_fraction = round(
+                partial_channel_loss_windows / eligible_stereo_windows, 6
+            )
     metrics = {
         "sample_rate": rate,
         "channels": channels,
@@ -197,6 +216,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "dc_offset_risk": dc_offset_risk,
         "channel_rms_dbfs": [_dbfs(x) for x in channel_rms],
         "stereo_channel_silence_risk": stereo_channel_silence_risk,
+        "partial_stereo_channel_loss_fraction": partial_channel_loss_fraction,
+        "partial_stereo_channel_loss_risk": (
+            eligible_stereo_windows >= 3 and partial_channel_loss_windows >= 2
+            and partial_channel_loss_windows / eligible_stereo_windows >= STEREO_CHANNEL_LOSS_MIN_FRACTION
+        ),
         "near_full_scale_fraction": round(near_full_scale / total_samples, 8),
         "silent_window_fraction": round(silent_windows / windows, 6),
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
@@ -240,6 +264,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("stereo_mono_fold_down_cancellation_inspect")
     if metrics["stereo_channel_silence_risk"]:
         warnings.append("stereo_silent_channel_inspect")
+    if metrics["partial_stereo_channel_loss_risk"]:
+        warnings.append("partial_stereo_channel_loss_inspect")
     if metrics["dc_offset_risk"]:
         warnings.append("dc_offset_inspect_for_headroom")
     if metrics["severe_sample_discontinuity_risk"]:
