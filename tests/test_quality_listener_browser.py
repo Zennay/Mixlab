@@ -529,7 +529,7 @@ class BrowserFormTests(unittest.TestCase):
                 self.fail("bounded Chromium offline decode timed out")
             self.assertEqual(done.returncode, 0, "Chromium decode process failed")
             match = re.search(
-                r'<html\\b[^>]*data-mixlab-full-decode-check="([^"]+)"',
+                r'<html\b[^>]*data-mixlab-full-decode-check="([^"]+)"',
                 done.stdout, flags=re.IGNORECASE
             )
             self.assertIsNotNone(match, "browser PCM decoder marker missing")
