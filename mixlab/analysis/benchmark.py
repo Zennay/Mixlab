@@ -137,8 +137,11 @@ def main(argv=None):
     try:
         number(args.tolerance, "tolerance", .001, .5)
         result = evaluate(args.annotations, args.tolerance)
-    except (OSError, ValueError, TypeError) as exc:
+    except ValueError as exc:
         parser.exit(2, f"MixLab analysis benchmark: {exc}\n")
+    except (OSError, TypeError):
+        # OS errors carry private operator paths; never echo them.
+        parser.exit(2, "MixLab analysis benchmark: input unavailable (details withheld)\n")
     print(json.dumps(result, allow_nan=False, sort_keys=True, indent=2))
 
 

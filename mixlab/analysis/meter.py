@@ -226,8 +226,11 @@ def main(argv=None):
             from . import ManualProvider
             beats = ManualProvider(args.bpm, args.first_beat, annotator="cli").analyze(args.wav).beats_seconds
         result = provider.analyze(args.wav, list(beats))
-    except (OSError, ValueError, TypeError) as exc:
+    except ValueError as exc:
         parser.exit(2, f"MixLab meter analysis: {exc}\n")
+    except (OSError, TypeError):
+        # OS errors carry private operator paths; never echo them.
+        parser.exit(2, "MixLab meter analysis: input unavailable (details withheld)\n")
     print(json.dumps(result.to_dict(), allow_nan=False, sort_keys=True))
 
 

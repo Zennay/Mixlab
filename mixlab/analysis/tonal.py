@@ -166,8 +166,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         result = ChromaKeyProvider().analyze(args.wav)
-    except (OSError, ValueError, TypeError) as exc:
+    except ValueError as exc:
         parser.exit(2, f"MixLab key analysis: {exc}\n")
+    except (OSError, TypeError):
+        # OS errors carry private operator paths; never echo them.
+        parser.exit(2, "MixLab key analysis: input unavailable (details withheld)\n")
     print(json.dumps(result.to_dict(), allow_nan=False, sort_keys=True))
 
 

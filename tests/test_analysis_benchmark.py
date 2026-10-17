@@ -85,3 +85,21 @@ class AnalysisBenchmarkTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CliPrivacyTests(unittest.TestCase):
+    def test_cli_errors_never_echo_private_paths(self):
+        import subprocess, sys
+        with tempfile.TemporaryDirectory() as temp:
+            blocker = Path(temp) / "SECRET-TOKEN-91c2"
+            blocker.write_text("x")
+            secret = blocker / "clip.wav"
+            for module, extra in (("mixlab.analysis.tonal", []), ("mixlab.analysis.meter", ["--bpm", "120"]),
+                                  ("mixlab.analysis.benchmark", [])):
+                with self.subTest(module):
+                    result = subprocess.run([sys.executable, "-m", module, str(secret), *extra],
+                                            capture_output=True, text=True, timeout=60,
+                                            cwd=Path(__file__).resolve().parents[1])
+                    self.assertEqual(result.returncode, 2)
+                    self.assertNotIn("SECRET-TOKEN-91c2", result.stdout + result.stderr)
+                    self.assertNotIn(temp, result.stdout + result.stderr)
