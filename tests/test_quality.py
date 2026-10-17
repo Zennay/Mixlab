@@ -479,6 +479,27 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(0, report["cross_trial_repeated_variant_count"])
         self.assertFalse(report["trials"][1]["trial_warnings"])
 
+    def test_review_pack_rejects_missing_trial_numbers_before_audio_or_receipt(self):
+        review = self.root / "review"
+        review.mkdir()
+        for trial in ("trial-001", "trial-003"):
+            wav(review / f"{trial}-A.wav", self.samples)
+            wav(review / f"{trial}-B.wav", [int(x / 2) for x in self.samples])
+        # Previous validation accepted two complete pairs and a two-trial
+        # receipt, despite skipping trial-002. Reject the gap early.
+        with patch("mixlab.quality.pack.compare_wavs", side_effect=AssertionError("PCM scan")):
+            with self.assertRaisesRegex(ValueError, "contiguous sequence"):
+                inspect_review_pack(review)
+        failed = subprocess.run([sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                                capture_output=True, text=True)
+        self.assertEqual(3, failed.returncode)
+        self.assertFalse(failed.stdout)
+        self.assertNotIn(str(self.root), failed.stderr)
+        for old in review.glob("trial-003-*.wav"):
+            old.rename(review / old.name.replace("trial-003", "trial-002"))
+        report = inspect_review_pack(review)
+        self.assertEqual(["trial-001", "trial-002"], [row["trial_id"] for row in report["trials"]])
+
     def test_review_pack_total_resource_budget_is_checked_before_pcm_scan(self):
         review = self.root / "review"
         review.mkdir()
