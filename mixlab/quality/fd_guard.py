@@ -7,6 +7,8 @@ existing readers. It is not a RIFF-chunk parser or an audio-quality verdict.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import argparse
+import json
 import os
 import stat
 import struct
@@ -88,3 +90,49 @@ def admitted_pcm16(path):
     finally:
         if fd >= 0:
             os.close(fd)
+
+
+def validate_private_pcm16(path, *, block_frames=4096):
+    """Check every declared PCM frame on the admitted FD, without writing audio.
+
+    This optional source-integrity preflight does not replace the full RIFF
+    parser or evaluate musical quality. No path, PCM or hash is returned.
+    """
+    if (type(block_frames) is not int or not 1 <= block_frames <= 4096):
+        raise ValueError(_ERROR)
+    with admitted_pcm16(path) as reader:
+        rate = reader.getframerate()
+        channels = reader.getnchannels()
+        frames = reader.getnframes()
+        remaining = frames
+        while remaining:
+            count = min(block_frames, remaining)
+            raw = reader.readframes(count)
+            if len(raw) != count * channels * 2:
+                raise ValueError(_ERROR)
+            remaining -= count
+    return {"screen": "ml07-single-fd-pcm16-integrity-v1",
+            "sample_rate": rate, "channels": channels, "frames": frames,
+            "pcm16_payload_complete": True, "human_listening_required": True}
+
+
+class _PrivateParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(2, "Invalid WAV admission arguments (details withheld)\\n")
+
+
+def main(argv=None):
+    """Optional independent probe; this does not activate the main MixLab CLI."""
+    parser = _PrivateParser(description="Offline PCM16 integrity, NOT musical quality")
+    parser.add_argument("source", help="Private local PCM16 WAV (never echoed)")
+    arguments = parser.parse_args(argv)
+    try:
+        report = validate_private_pcm16(arguments.source)
+    except (OSError, ValueError, EOFError, wave.Error, struct.error):
+        parser.exit(3, "Private WAV admission rejected (details withheld)\\n")
+    print(json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
