@@ -100,6 +100,26 @@ class RepeatabilityTests(unittest.TestCase):
         self.assertEqual(4, len(calls))  # two 4096-frame slices, both files
         self.assertTrue(all(1 <= count <= CHUNK_FRAMES for count in calls))
 
+    def test_full_two_million_frame_stereo_capacity_and_last_frame_integrity(self):
+        # Exercise the actual 2M-frame/source ceiling, not only 8k-frame
+        # fixtures. Generate two separate regular WAVs with bounded writes.
+        frames = 2_000_000
+        full = b"\x00\x00" * (4096 * 2)
+        blocks, tail = divmod(frames, 4096)
+        for path in (self.a, self.b):
+            with wave.open(str(path), "wb") as writer:
+                writer.setnchannels(2)
+                writer.setsampwidth(2)
+                writer.setframerate(48000)
+                for _ in range(blocks):
+                    writer.writeframesraw(full)
+                writer.writeframesraw(b"\x00" * (tail * 4))
+        self.assertTrue(verify_repeatability(self.a, self.b)["repeatable_pcm"])
+        with self.b.open("r+b") as f:
+            f.seek(-4, os.SEEK_END)
+            f.write(b"\x01\x00\x00\x00")
+        self.assertFalse(verify_repeatability(self.a, self.b)["repeatable_pcm"])
+
     def test_short_pcm_is_not_silently_accepted(self):
         self.b.write_bytes(self.b.read_bytes()[:-128])
         with self.assertRaises(RepeatabilityError):
