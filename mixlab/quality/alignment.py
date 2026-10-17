@@ -34,7 +34,7 @@ MIN_DRIFT_REGIONS = 2
 
 
 def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
-                   remaining_frames: int) -> tuple[tuple[int, int, int], list[float]]:
+                   remaining_frames: int) -> tuple[tuple[int, int, int], list[float], list[list[float]]]:
     """Read only regular, bounded PCM16 from one no-follow descriptor."""
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
@@ -55,6 +55,8 @@ def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
                 raise ValueError("Aggregate limit")
             bin_frames = max(1, round(rate * BIN_SECONDS))
             envelope: list[float] = []
+            channel_envelopes: list[list[float]] = [[] for _ in range(channels)]
+            channel_squares = [0] * channels
             subtotal = 0
             in_bin = 0
             processed = 0
@@ -68,11 +70,18 @@ def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
                 if sys.byteorder != "little":
                     pcm.byteswap()
                 for start in range(0, len(pcm), channels):
-                    for sample in pcm[start:start + channels]:
-                        subtotal += sample * sample
+                    for channel, sample in enumerate(pcm[start:start + channels]):
+                        square = sample * sample
+                        subtotal += square
+                        channel_squares[channel] += square
                     in_bin += 1
                     if in_bin == bin_frames:
                         envelope.append(math.sqrt(subtotal / (in_bin * channels)) / 32768)
+                        for channel in range(channels):
+                            channel_envelopes[channel].append(
+                                math.sqrt(channel_squares[channel] / in_bin) / 32768
+                            )
+                            channel_squares[channel] = 0
                         subtotal = 0
                         in_bin = 0
                 processed += count
@@ -86,7 +95,7 @@ def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
         path_stat = os.stat(path, follow_symlinks=False)
         if not stat.S_ISREG(path_stat.st_mode) or (path_stat.st_dev, path_stat.st_ino) != (before.st_dev, before.st_ino):
             raise ValueError("Source replaced")
-    return header, envelope
+    return header, envelope, channel_envelopes
 
 
 def _correlation(base: list[float], other: list[float], lag: int) -> float | None:
@@ -191,21 +200,31 @@ def _regional_shift_risk(baseline: list[float], candidate: list[float]) -> bool 
 def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dict:
     if not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError("Candidate count rejected")
-    header, reference = _read_envelope(baseline, expected=None,
+    header, reference, reference_channels = _read_envelope(baseline, expected=None,
                                        remaining_frames=MAX_TOTAL_FRAMES)
     remaining = MAX_TOTAL_FRAMES - header[2]
     results = []
     for index, path in enumerate(candidates, 1):
-        _, candidate = _read_envelope(path, expected=header,
+        _, candidate, candidate_channels = _read_envelope(path, expected=header,
                                       remaining_frames=remaining)
         remaining -= header[2]
         risk = _shift_risk(reference, candidate, header[0])
         regional_risk = _regional_shift_risk(reference, candidate)
+        stereo_differential_risk = None
+        if header[1] == 2:
+            left = _shift_risk(reference_channels[0], candidate_channels[0], header[0])
+            right = _shift_risk(reference_channels[1], candidate_channels[1], header[0])
+            if (left is True and right is False) or (right is True and left is False):
+                stereo_differential_risk = True
+            elif left is False and right is False:
+                stereo_differential_risk = False
         warnings = []
         if risk is True:
             warnings.append("microtiming_envelope_shift_inspect_not_beat_alignment")
         elif risk is None:
             warnings.append("microtiming_alignment_inconclusive_inspect")
+        if stereo_differential_risk is True:
+            warnings.append("stereo_differential_microtiming_shift_inspect")
         if regional_risk is True:
             warnings.append("regional_timing_shift_inspect_not_tempo_estimate")
         elif regional_risk is None and risk is not True:
@@ -214,6 +233,7 @@ def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dic
             "id": f"candidate-{index:02d}",
             "temporal_envelope_shift_risk": risk,
             "regional_timing_shift_risk": regional_risk,
+            "stereo_differential_timing_shift_risk": stereo_differential_risk,
             "warnings": warnings,
         })
     return {"screen": "ml07-temporal-envelope-proxy-v1", "candidates": results,
