@@ -19,7 +19,9 @@ Blind preference and lawful real-media access are still missing.
 - Position one isolated 10,000-count sample at frames 4094, 4095, 4096 and
   4097, in both mono and stereo, verifying the native click counter, frames
   and position-invariant peak/adjacent-step/near-clipping metrics.
-- Repeat impulse detection at 8, 16, 48 and 96 kHz (mono/stereo)\n  to protect sample-addressed scanning independently of sample rate.\n- Place a 480-frame all-channel zero gap at multiple 4096-boundary offsets;
+- Repeat impulse detection at 8, 16, 48 and 96 kHz (mono/stereo)
+  to protect sample-addressed scanning independently of sample rate.
+- Place a 480-frame all-channel zero gap at multiple 4096-boundary offsets;
   verify a >=60 ms *interior* PCM dropout is flagged, but not misidentified
   as a >=200 ms coarse-window gap.
 - Place the same dropout in the left channel while the right remains clearly
@@ -28,7 +30,20 @@ Blind preference and lawful real-media access are still missing.
 - Compare identical PCM in two different valid RIFF containers (with/without
   JUNK) and verify private PCM digests, window samples and public metrics
   are identical. Private digests are **not printed**.
-- Check **exact 50ms fenceposts**: 49.875/50ms at 8 kHz, 44.1kHz\n  fractional-time frame counts, and 96kHz, for full PCM and one-channel\n  dropout straddling a 4096-frame block boundary. A single sample below the\n  threshold must not be promoted to a HOLD.\n- Check a continuous 220Hz procedural tone in mono and stereo has no\n  *false* boundary clicks/dropouts, phase cancellation or A/B warnings.\n- Verify 60ms silence only at the beginning or end of a clip does **not**\n  masquerade as an interior dropout (both whole PCM and one-channel stereo).\n- Verify full-scale negative signed PCM16 (−32768) at a 4096-frame\n  boundary cannot wrap into a false polarity-inverted fingerprint; the\n  diagnostic reader still reports its clipping/headroom risk.\n- Verify a public blind-review WAV with extra RIFF JUNK metadata is refused\n  even when the internal diagnostic reader can decode that PCM unchanged.\n- Check A/B candidate warnings retain an isolated impulse; verify JSON does
+- Check **exact 50ms fenceposts**: 49.875/50ms at 8 kHz, 44.1kHz
+  fractional-time frame counts, and 96kHz, for full PCM and one-channel
+  dropout straddling a 4096-frame block boundary. A single sample below the
+  threshold must not be promoted to a HOLD.
+- Check a continuous 220Hz procedural tone in mono and stereo has no
+  *false* boundary clicks/dropouts, phase cancellation or A/B warnings.
+- Verify 60ms silence only at the beginning or end of a clip does **not**
+  masquerade as an interior dropout (both whole PCM and one-channel stereo).
+- Verify full-scale negative signed PCM16 (−32768) at a 4096-frame
+  boundary cannot wrap into a false polarity-inverted fingerprint; the
+  diagnostic reader still reports its clipping/headroom risk.
+- Verify a public blind-review WAV with extra RIFF JUNK metadata is refused
+  even when the internal diagnostic reader can decode that PCM unchanged.
+- Check simultaneous **multi-candidate** stereo L/R swaps, signed polarity\n  inversion and PCM-identical audio with changed RIFF container at frame\n  4095 or 4096. The comparator must preserve reuse warnings without\n  revealing original paths or private decoded fingerprints.\n- Check truncation after 1, 4095, 4096, 4097 and 10,002 declared source\n  frames, for both mono and stereo. An incomplete read must fail closed.\n- Check A/B candidate warnings retain an isolated impulse; verify JSON does
   not contain fixture locations or source bytes.
 - Refuse a declared PCM16 WAV whose actual data is truncated.
 
