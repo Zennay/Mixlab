@@ -5,6 +5,8 @@ This is an interactive browser check, not an accessibility certification.
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 from pathlib import Path
 import re
@@ -15,7 +17,10 @@ import subprocess
 import tempfile
 import unittest
 
-from mixlab.cli import write_review
+from mixlab.cli import benchmark, fixture, write_review
+from mixlab.evaluation import aggregate, verify_pack
+from mixlab.quality.listener_controls import check_review_controls
+from mixlab.quality.pack import inspect_review_pack
 
 _BROWSER = (shutil.which("google-chrome") or shutil.which("google-chrome-stable")
             or shutil.which("chromium") or shutil.which("chromium-browser"))
@@ -126,6 +131,73 @@ def _synthetic_pcm_wav(path: Path, *, sample_rate=8000, channels=2):
         wav.writeframes(pcm)
 
 
+_INTEGRATED_SCRIPT = r"""
+(() => {
+  const clips = [...document.querySelectorAll('fieldset audio')];
+  const form = document.querySelector('form');
+  let payload = null;
+  const realBlob = window.Blob;
+  window.Blob = class CapturedSyntheticBlob extends realBlob {
+    constructor(parts, options) {
+      super(parts, options);
+      payload = parts.join('');
+    }
+  };
+  HTMLAnchorElement.prototype.click = function() {};
+  URL.createObjectURL = () => 'blob:synthetic-local-only';
+  URL.revokeObjectURL = () => {};
+  form.querySelector('input[name="reviewer"]').value = 'synthetic-reviewer';
+  const choices = ['A', 'Tie', 'Both unusable'];
+  [...form.querySelectorAll('fieldset select')].forEach(
+    (select, i) => { select.value = choices[i]; }
+  );
+  form.requestSubmit();
+  let rating = null;
+  try { rating = JSON.parse(payload); } catch(e) {}
+  const ratingsOk = rating?.schema_version === 1 &&
+    rating?.pack_id === form.dataset.packId &&
+    rating?.reviewer === 'synthetic-reviewer' &&
+    JSON.stringify(rating?.ratings) === JSON.stringify([
+      {trial:'trial-001', preference:'A'},
+      {trial:'trial-002', preference:'Tie'},
+      {trial:'trial-003', preference:'Both unusable'}
+    ]) &&
+    document.querySelector('#status')?.textContent.includes('Ratings downloaded');
+  // Wait for genuine browser metadata events from actual M1-engine WAV
+  // renders, not stand-in files written by the HTML test.
+  const result = clips.length === 6 ? Promise.all(clips.map(clip =>
+    new Promise(resolve => {
+      let settled = false;
+      const finish = ok => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      clip.addEventListener('loadedmetadata', () => finish(
+        clip.error === null &&
+        clip.readyState >= HTMLMediaElement.HAVE_METADATA &&
+        clip.duration >= 3.95 && clip.duration <= 4.05 &&
+        clip.currentSrc.startsWith('file:')
+      ), {once: true});
+      clip.addEventListener('error', () => finish(false), {once: true});
+      clip.preload = 'auto';
+      clip.load();
+    })
+  )) : Promise.resolve([false]);
+  const timeout = setTimeout(() => {
+    document.documentElement.dataset.mixlabIntegratedCheck = 'timeout';
+  }, 3000);
+  result.then(flags => {
+    clearTimeout(timeout);
+    const ok = ratingsOk && flags.length === 6 && flags.every(Boolean);
+    document.documentElement.dataset.mixlabIntegratedCheck = ok ? 'pass' : 'fail';
+    document.documentElement.dataset.mixlabIntegratedRatings =
+      ok ? btoa(payload) : '';
+  });
+})();
+"""
+
+
 @unittest.skipUnless(_BROWSER, "Optional local Chromium executable not available")
 class BrowserFormTests(unittest.TestCase):
     def setUp(self):
@@ -223,6 +295,80 @@ class BrowserFormTests(unittest.TestCase):
             self.assertEqual(bad_marker.group(1), "fail",
                              "missing or undecodable audio was incorrectly accepted")
 
+
+    def test_actual_engine_render_to_browser_to_evaluation_pipeline(self):
+        """Original synthetic -> MixLab DSP -> browser -> frozen evaluation."""
+        manifest_path = fixture(self.root / "procedural-library")
+        receipt_path = benchmark(manifest_path, self.root / "rendered-pack", seed=42)
+        pack_root = receipt_path.parent
+        review = pack_root / "review"
+        canonical_page = review / "index.html"
+
+        controls = check_review_controls(canonical_page)
+        self.assertEqual(controls["trial_count"], 3)
+        quality = inspect_review_pack(
+            review, require_generated_html=True, require_receipt=True
+        )
+        self.assertEqual(quality["trial_count"], 3)
+        self.assertTrue(quality["official_generated_html_verified"])
+        self.assertTrue(quality["review_page_audio_links_verified"])
+        self.assertTrue(quality["public_receipt_pack_id_verified"])
+        self.assertFalse(quality["answer_key_opened"])
+        receipt, evidence, trials = verify_pack(pack_root)
+        self.assertEqual(len(trials), 3)
+        self.assertEqual(receipt["status"], "rendered-not-listener-validated")
+
+        # Only the temporary test copy is instrumented. Real private proof,
+        # renderer evidence, answer-key and the canonical page remain intact.
+        instrumented = review / "index-browser-smoke.html"
+        text = canonical_page.read_text(encoding="utf-8")
+        instrumented.write_text(
+            text.replace("</html>",
+                         "<script>" + _INTEGRATED_SCRIPT + "</script></html>"),
+            encoding="utf-8"
+        )
+        command = [
+            _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+            "--disable-dev-shm-usage", "--disable-background-networking",
+            "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+            "--disable-sync", "--virtual-time-budget=5000",
+            "--user-data-dir=" + str(self.root / "pipeline-chrome-profile"),
+            "--dump-dom", instrumented.as_uri()
+        ]
+        env = dict(os.environ)
+        env["HOME"] = str(self.root)
+        try:
+            done = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=40, env=env)
+        except subprocess.TimeoutExpired:
+            self.fail("bounded engine-to-browser smoke timed out")
+        self.assertEqual(done.returncode, 0, "Chromium could not open offline render pack")
+        marker = re.search(r'<html\\b[^>]*data-mixlab-integrated-check="([^"]+)"',
+                           done.stdout, flags=re.IGNORECASE)
+        self.assertIsNotNone(marker, "browser synthetic pipeline marker missing")
+        self.assertEqual(marker.group(1), "pass", "render/browser study pipeline failed")
+        token = re.search(
+            r'<html\\b[^>]*data-mixlab-integrated-ratings="([^"]+)"',
+            done.stdout, flags=re.IGNORECASE
+        )
+        self.assertIsNotNone(token, "browser synthetic ratings receipt missing")
+        rating = json.loads(base64.b64decode(token.group(1), validate=True))
+        self.assertEqual(rating["pack_id"], receipt["pack_id"])
+        self.assertEqual([row["preference"] for row in rating["ratings"]],
+                         ["A", "Tie", "Both unusable"])
+
+        # A software-generated rating is not a real human vote. Confirm the
+        # existing aggregator accepts the exact browser export while always
+        # withholding any musical milestone/preference proof.
+        synthetic_rating_path = self.root / "synthetic-browser-rating.json"
+        synthetic_rating_path.write_text(json.dumps(rating), encoding="utf-8")
+        aggregate_report = aggregate(pack_root, [synthetic_rating_path])
+        self.assertEqual(aggregate_report["reviewers"], 1)
+        self.assertEqual(aggregate_report["trials"], 3)
+        self.assertEqual(sum(aggregate_report["counts"].values()), 3)
+        self.assertFalse(aggregate_report["milestone_pass"])
+        self.assertEqual(aggregate_report["status"],
+                         "descriptive-only-requires-independent-human-review")
 
 
 if __name__ == "__main__":
