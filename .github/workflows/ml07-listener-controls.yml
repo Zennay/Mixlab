@@ -1,0 +1,45 @@
+name: ML-07 offline listener controls quality gate
+on:
+  pull_request:
+    paths:
+      - 'mixlab/quality/listener_controls.py'
+      - 'tests/test_quality_listener_controls.py'
+      - 'docs/quality-listener-controls.md'
+      - '.github/workflows/ml07-listener-controls.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.13', '3.14']
+    steps:
+      - name: Checkout immutable PR source without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify exact-source identity and syntax
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python -m compileall -q mixlab/quality/listener_controls.py tests/test_quality_listener_controls.py
+      - name: Run synthetic form, privacy and existing canonical quality contracts
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_listener_controls.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
