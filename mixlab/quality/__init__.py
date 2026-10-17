@@ -13,6 +13,8 @@ from pathlib import Path
 import sys
 import wave
 
+from .riff import verify_private_pcm16_header
+
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
 SILENT_WINDOW_RMS = 10 ** (-55 / 20)
@@ -89,6 +91,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     path = Path(path)
     if path.stat().st_size > MAX_SOURCE_BYTES:
         raise ValueError("WAV exceeds the 32 MiB screening limit")
+    # wave.open tolerates malformed byte-rate/block-align fields and may
+    # silently drop partial stereo frames. Validate headers separately
+    # before computing anonymous metrics, while allowing private metadata.
+    verify_private_pcm16_header(path)
 
     try:
         with wave.open(str(path), "rb") as src:
