@@ -86,6 +86,25 @@ It proves **composition and fail-closed behavior**, not preference accuracy.
 `mixlab.quality.m1_gate_bundle` is intentionally an opt-in module rather
 than a replacement for the integrated MixLab CLI.
 
+## Maximum supported offline study stress
+
+A separate **real-file** regression extends the existing five-pair synthetic
+fixture to **ten frozen pairs / twenty distinct PCM16 WAVs** with new, unique
+procedural sources and recomputed answer-key, source and pack commitments.
+The exact official verifier must accept all ten pairs before the bundle runs.
+
+Two full-size variants exercise **five pseudonymous ballots** (50 submitted
+choices each): mixed candidate/baseline/Tie ratings and all
+`Both unusable`. Both must complete the genuine private waveform checks;
+the no-decision variant is a safe methodological HOLD, never invalid data.
+No WAV or per-listener answer is copied to a CI artifact.
+
+The bounded fixture is not a substitute for real-source provenance,
+independent participants or listening evidence, and does not measure
+real-world runtime for the maximum **2,000,000-frame per-source** case.
+It does catch cardinality-dependent integration errors at the documented
+10-pair / 5-reviewer maximum.
+
 ## Gate and ownership
 
 Owns only this newly added module, test suite, workflow and document.
