@@ -76,7 +76,11 @@ def verify_private_pcm16_header(path: str | Path) -> None:
                     raise ValueError("Inconsistent PCM16 format header")
                 format_seen = True
             elif chunk_name == b"data":
-                if not format_seen or data_seen or chunk_size % block_align:
+                # Preserve the established invalid-alignment diagnostic.
+                # Duplicate data is a separate malformed-container class.
+                if not format_seen or chunk_size % block_align:
+                    raise ValueError("Invalid PCM16 data alignment")
+                if data_seen:
                     raise ValueError("Invalid or duplicated PCM16 data chunk")
                 data_seen = True
                 # Do not stop here: a second data/fmt chunk, truncated RIFF
