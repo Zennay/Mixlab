@@ -152,20 +152,14 @@ class ReviewerParityBrowserTests(unittest.TestCase):
 (() => {
   const input = document.querySelector('input[name="reviewer"]');
   const values = __VALUES__;
-  let mismatch = 0;
-  let observed = 0;
-  const re = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+  const observations = [];
   for (const name of values) {
     input.value = name;
-    // Check the final DOM value: the actual value the form would export.
-    const normalized = input.value;
-    const expected = re.test(normalized);
-    const valid = input.checkValidity();
-    if (expected !== valid) mismatch++;
-    observed++;
+    // Collect what the browser would actually export and its native verdict.
+    observations.push([input.value, input.checkValidity()]);
   }
-  document.documentElement.dataset.matrixObserved = String(observed);
-  document.documentElement.dataset.matrixMismatch = String(mismatch);
+  document.documentElement.dataset.parityMatrix64 =
+    btoa(unescape(encodeURIComponent(JSON.stringify(observations))));
 })();
 """.replace("__VALUES__", json.dumps(candidates, ensure_ascii=True))
             page.write_text(raw.replace("</html>", "<script>" + script + "</script></html>"),
@@ -182,12 +176,17 @@ class ReviewerParityBrowserTests(unittest.TestCase):
             env["HOME"] = str(root)
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=35, env=env)
             self.assertEqual(result.returncode, 0)
-            measured = re.search(r'data-matrix-observed="([0-9]+)"', result.stdout)
+            measured = re.search(r'data-parity-matrix64="([A-Za-z0-9+/=]+)"', result.stdout)
             self.assertIsNotNone(measured, "chromium did not execute input matrix")
-            self.assertEqual(int(measured.group(1)), len(candidates))
-            errors = re.search(r'data-matrix-mismatch="([0-9]+)"', result.stdout)
-            self.assertIsNotNone(errors)
-            self.assertEqual(int(errors.group(1)), 0, "browser/ingest pattern parity drift")
+            observations = json.loads(base64.b64decode(measured.group(1)).decode("utf-8"))
+            self.assertEqual(len(observations), len(candidates))
+            for original, (normalized, native_allowed) in zip(candidates, observations):
+                with self.subTest(raw=original):
+                    self.assertIs(type(native_allowed), bool)
+                    self.assertEqual(
+                        native_allowed, INGEST_PATTERN.fullmatch(normalized) is not None,
+                        "native browser validation differs from real Python rating-ingest regex",
+                    )
 
     def test_real_synthetic_renderer_browser_export_to_aggregate(self):
         """Actual bounded MixLab engine + Chrome + rating ingest; never human evidence."""
