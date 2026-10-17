@@ -54,6 +54,84 @@ class LocalDCQualityTests(unittest.TestCase):
              offsets=[[offset] * int(rate * duration)])
         return path
 
+    def _append_riff_chunks(self, path: Path, chunks: bytes):
+        original = bytearray(path.read_bytes())
+        original.extend(chunks)
+        struct.pack_into("<I", original, 4, len(original) - 8)
+        path.write_bytes(original)
+
+    def _assert_riff_rejected_before_pcm(self):
+        # Both admissions must reject before opening the PCM stream.
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM already decoded")):
+            with self.assertRaises(ValueError):
+                local_dc.inspect(self.base, self.alt)
+            with self.assertRaises(ValueError):
+                local_dc.inspect_batch(self.base, [self.alt])
+
+    def test_duplicate_data_chunk_rejected_even_when_total_size_valid(self):
+        _wav(self.base)
+        _wav(self.alt)
+        self._append_riff_chunks(self.alt, b"data" + struct.pack("<I", 4) + b"abcd")
+        self._assert_riff_rejected_before_pcm()
+
+    def test_duplicate_fmt_chunk_rejected_even_when_total_size_valid(self):
+        _wav(self.base)
+        _wav(self.alt)
+        # Known minimal PCM16 fmt chunk; physically accounted for in RIFF.
+        extra_fmt = b"fmt " + struct.pack("<I", 16)
+        extra_fmt += struct.pack("<HHIIHH", 1, 1, RATE, RATE * 2, 2, 16)
+        self._append_riff_chunks(self.alt, extra_fmt)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_overlong_trailing_chunk_rejected_even_when_outer_size_valid(self):
+        _wav(self.base)
+        _wav(self.alt)
+        self._append_riff_chunks(self.alt, b"JUNK" + struct.pack("<I", 9000) + b"abc")
+        self._assert_riff_rejected_before_pcm()
+
+    def test_orphan_trailing_bytes_rejected_even_when_outer_size_valid(self):
+        _wav(self.base)
+        _wav(self.alt)
+        self._append_riff_chunks(self.alt, b"DEAD")  # too short for a chunk header
+        self._assert_riff_rejected_before_pcm()
+
+    def test_missing_data_chunk_rejected_before_pcm(self):
+        _wav(self.base)
+        _wav(self.alt)
+        payload = bytearray(self.alt.read_bytes())
+        self.assertEqual(payload[36:40], b"data")
+        payload[36:40] = b"JUNK"
+        self.alt.write_bytes(payload)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_frame_misaligned_data_chunk_rejected_before_pcm(self):
+        _wav(self.base)
+        _wav(self.alt)
+        payload = bytearray(self.alt.read_bytes())
+        frames_as_bytes = struct.unpack_from("<I", payload, 40)[0]
+        # Valid RIFF framing, but PCM data now has one extra sample byte and
+        # a required RIFF alignment pad. This is not a whole PCM16 frame.
+        struct.pack_into("<I", payload, 40, frames_as_bytes + 1)
+        payload.extend(b"\x01\x00")
+        struct.pack_into("<I", payload, 4, len(payload) - 8)
+        self.alt.write_bytes(payload)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_more_than_thousand_riff_chunks_rejected_with_bounded_headers(self):
+        _wav(self.base)
+        _wav(self.alt)
+        self._append_riff_chunks(self.alt, (b"JUNK" + struct.pack("<I", 0)) * 1026)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_odd_sized_valid_metadata_chunk_is_accepted(self):
+        _wav(self.base)
+        _wav(self.alt)
+        # Exactly one odd-sized JUNK payload plus its required pad.
+        self._append_riff_chunks(self.alt, b"JUNK" + struct.pack("<I", 3) + b"abc\x00")
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
     def test_riff_unclaimed_trailing_data_rejected_before_decode(self):
         _wav(self.base)
         _wav(self.alt)
