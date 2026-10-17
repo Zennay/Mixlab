@@ -373,5 +373,156 @@ class PrecisionTest(unittest.TestCase):
             self.assertNotIn(missing.name, bad.stdout + bad.stderr)
 
 
+class BatchPrecisionTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.base = self.root / "PRIVATE-baseline.wav"
+        self.c1 = self.root / "PRIVATE-one.wav"
+        self.c2 = self.root / "PRIVATE-two.wav"
+        self.c3 = self.root / "PRIVATE-three.wav"
+        wav(self.base)
+        wav(self.c1, seed=2)
+        wav(self.c2, coarse=(0,), coarse_offset=3)
+        wav(self.c3, silence=True)
+
+    def test_three_candidates_preserve_anonymous_order_and_tri_state(self):
+        result = precision.compare_precision_batch(
+            self.base, [self.c1, self.c2, self.c3])
+        self.assertEqual(result["status"], "technical-inspection-only")
+        self.assertEqual([r["candidate_id"] for r in result["candidates"]],
+                         ["candidate-001", "candidate-002", "candidate-003"])
+        self.assertEqual([r["candidate_precision_loss_inspect"]
+                          for r in result["candidates"]], [False, True, None])
+        self.assertEqual([r["warnings"] for r in result["candidates"]],
+                         [[], ["candidate_low_bit_precision_loss_inspect"], []])
+        payload = json.dumps(result)
+        self.assertNotIn(str(self.root), payload)
+        self.assertNotIn("PRIVATE", payload)
+        self.assertNotIn("_source_identity", payload)
+
+    def test_single_candidate_batch_matches_single_pair_verdict(self):
+        one = precision.compare_precision(self.base, self.c2)
+        batch = precision.compare_precision_batch(self.base, (self.c2,))
+        self.assertEqual(batch["candidates"][0]["candidate_precision_loss_inspect"],
+                         one["candidate_precision_loss_inspect"])
+        self.assertEqual(batch["candidates"][0]["warnings"], one["warnings"])
+
+    def test_baseline_is_scanned_exactly_once_for_multiple_candidates(self):
+        original = precision._scan
+        inputs = []
+        def counted(path, **kwargs):
+            inputs.append(Path(path))
+            return original(path, **kwargs)
+        with patch.object(precision, "_scan", side_effect=counted):
+            precision.compare_precision_batch(self.base, [self.c1, self.c2, self.c3])
+        self.assertEqual(inputs, [self.base, self.c1, self.c2, self.c3])
+
+    def test_all_eight_candidates_fit_when_aggregate_frames_fit(self):
+        paths = [self.c1, self.c2, self.c3]
+        for index in range(4, 9):
+            path = self.root / f"PRIVATE-extra-{index}.wav"
+            wav(path, seed=index + 3)
+            paths.append(path)
+        result = precision.compare_precision_batch(self.base, paths)
+        self.assertEqual(len(result["candidates"]), 8)
+        self.assertEqual(result["candidates"][-1]["candidate_id"], "candidate-008")
+
+    def test_wrong_candidate_collection_and_count_fail_before_scan(self):
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            for candidates in ([], [self.c1] * 9, str(self.c1), None, iter([self.c1])):
+                with self.subTest(kind=str(type(candidates))):
+                    with self.assertRaises(ValueError):
+                        precision.compare_precision_batch(self.base, candidates)
+
+    def test_aggregate_frame_budget_rejects_from_metadata_before_audio_scan(self):
+        import struct
+        # Tiny header lies about its PCM payload. The 5*2M-frame request
+        # must fail at aggregate admission BEFORE opening any scan buffers.
+        sources = [self.root / f"huge-{i}.wav" for i in range(5)]
+        for source in sources:
+            nbytes = 2_000_000 * 2 * 2
+            source.write_bytes(
+                b"RIFF" + struct.pack("<I", 36 + nbytes) + b"WAVE"
+                + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 2, 48000,
+                                         48000 * 4, 4, 16)
+                + b"data" + struct.pack("<I", nbytes))
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            with self.assertRaisesRegex(ValueError, "aggregate PCM frame"):
+                precision.compare_precision_batch(sources[0], sources[1:])
+
+    def test_rejects_hardlink_and_repeated_baseline_without_scanning(self):
+        alias = self.root / "hardlink.wav"
+        os.link(self.c1, alias)
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            for group in ([self.c1, alias], [self.base], [self.c1, self.c1]):
+                with self.subTest(group=len(group)):
+                    with self.assertRaisesRegex(ValueError, "duplicate A/B"):
+                        precision.compare_precision_batch(self.base, group)
+
+    def test_mismatch_rejected_before_expensive_scan(self):
+        wav(self.c1, rate=44100)
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            with self.assertRaisesRegex(ValueError, "incomparable"):
+                precision.compare_precision_batch(self.base, [self.c1])
+
+    def test_baseline_edit_during_later_candidate_invalidates_entire_batch(self):
+        original = precision._scan
+        def replace_midway(path, **kwargs):
+            data = original(path, **kwargs)
+            if Path(path) == self.c2:
+                wav(self.base, seed=88)
+            return data
+        with patch.object(precision, "_scan", side_effect=replace_midway):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                precision.compare_precision_batch(self.base, [self.c1, self.c2, self.c3])
+
+    def test_candidate_changed_after_prior_scan_rejects_without_partial_result(self):
+        original = precision._scan
+        def edit_midway(path, **kwargs):
+            data = original(path, **kwargs)
+            if Path(path) == self.c3:
+                wav(self.c1, seed=77)
+            return data
+        with patch.object(precision, "_scan", side_effect=edit_midway):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                precision.compare_precision_batch(self.base, [self.c1, self.c2, self.c3])
+
+    def test_chunk_variation_is_deterministic_for_batch(self):
+        paths = [self.c1, self.c2, self.c3]
+        a = precision.compare_precision_batch(self.base, paths, chunk_frames=1)
+        b = precision.compare_precision_batch(self.base, paths, chunk_frames=4096)
+        self.assertEqual(a, b)
+
+    def test_batch_cli_gate_and_neutral_json(self):
+        base = [sys.executable, "-m", "mixlab.quality.precision",
+                str(self.base), str(self.c1), str(self.c2), str(self.c3), "--batch"]
+        for suffix, expected in (([], 0), (["--fail-on-warnings"], 2),
+                                 (["--require-conclusive"], 2),
+                                 (["--fail-on-warnings", "--require-conclusive"], 2)):
+            with self.subTest(flags=suffix):
+                proc = subprocess.run(base + suffix, text=True, capture_output=True, timeout=20)
+                self.assertEqual(proc.returncode, expected, proc.stderr)
+                self.assertEqual(len(json.loads(proc.stdout)["candidates"]), 3)
+                self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+
+    def test_extra_candidates_without_batch_flag_fail_closed(self):
+        cmd = [sys.executable, "-m", "mixlab.quality.precision",
+               str(self.base), str(self.c1), str(self.c2)]
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+        self.assertEqual(proc.returncode, 3)
+        self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+
+    def test_batch_invalid_file_does_not_publish_partial_results(self):
+        missing = self.root / "PRIVATE-secret-not-found.wav"
+        cmd = [sys.executable, "-m", "mixlab.quality.precision",
+               str(self.base), str(self.c1), str(missing), "--batch"]
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+        self.assertEqual(proc.returncode, 3)
+        self.assertEqual(proc.stdout, "")
+        self.assertNotIn("PRIVATE", proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
