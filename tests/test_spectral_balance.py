@@ -168,13 +168,14 @@ def make_stereo_levels_wav(path, levels, *, rate=48000):
 
 
 def make_two_band_stereo_phase_wav(
-    path, *, bass_right_sign=1, treble_right_sign=1, bass_gain=3000, treble_gain=9000
+    path, *, bass_right_sign=1, treble_right_sign=1, bass_gain=3000, treble_gain=9000,
+    lower_frequency=100, upper_frequency=5000
 ):
     """Synthetic same-energy 100Hz and 5kHz tones with independent R phase."""
     samples = array("h")
     for frame in range(12000):
-        bass = bass_gain * math.sin(2 * math.pi * 100 * frame / 48000)
-        treble = treble_gain * math.sin(2 * math.pi * 5000 * frame / 48000)
+        bass = bass_gain * math.sin(2 * math.pi * lower_frequency * frame / 48000)
+        treble = treble_gain * math.sin(2 * math.pi * upper_frequency * frame / 48000)
         samples.extend((
             int(bass + treble),
             int(bass_right_sign * bass + treble_right_sign * treble),
@@ -605,6 +606,21 @@ class SpectralBalanceTests(unittest.TestCase):
         strict = self.cli(self.base, self.other, "--fail-on-warnings")
         self.assertEqual(2, strict.returncode, strict.stderr)
         self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_midrange_mono_loss_hidden_by_upper_tone_is_detected(self):
+        # 600Hz and 14kHz: overall downmix remains healthy because the
+        # upper tone is stronger, while mid-pass 600Hz energy cancels.
+        params = dict(
+            lower_frequency=600, upper_frequency=14000,
+            bass_gain=7000, treble_gain=11000
+        )
+        make_two_band_stereo_phase_wav(self.base, **params)
+        make_two_band_stereo_phase_wav(self.other, bass_right_sign=-1, **params)
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertTrue(row["stereo_mid_band_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_mid_band_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertNotIn(str(self.dir), json.dumps(row))
 
     def test_treble_mono_loss_hidden_by_loud_bass_is_detected(self):
         make_two_band_stereo_phase_wav(
