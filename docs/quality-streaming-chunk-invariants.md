@@ -57,14 +57,22 @@ Blind preference and lawful real-media access are still missing.
 - Preserve the independent **1.5dB global RMS confound gate** under
   mono/stereo and non-audio RIFF metadata: +1.40dB passes the comparison
   tolerance, +1.58dB fails closed without revealing private paths.
+- Exercise **actual** PCM16 source capacity without a mocked frame limit:
+  a streamed 2,000,000-frame 96kHz stereo WAV with a 50ms interior gap
+  crossing the 4096-frame reader boundary must scan within the CI 192 MiB
+  cap; a real 2,000,001-frame WAV must reject on admission.
+- Verify very short valid mono/stereo 1, 2, 159, 160 and 4095–4097-frame
+  WAVs at 8/96kHz and 20/1000ms window sizes have the mathematically
+  correct ceil(window count), no false interior loss and strict finite JSON.
 - Check A/B candidate warnings retain an isolated impulse; verify JSON does
   not contain fixture locations or source bytes.
 - Refuse a declared PCM16 WAV whose actual data is truncated.
 
 Source generation is fully procedural. There is no downloaded or user-owned
-music, reviewer account, model or external audio package. 10,003 frames at
-8 kHz are deliberately long enough to cross several 4096-frame reads while
-staying well under the existing 2 million-frame and 32 MiB limits.
+music, reviewer account, model or external audio package. Most fixtures use
+10,003 frames at 8 kHz; the dedicated actual-capacity fixture streams 2M
+frames at 96kHz without constructing the full audio in Python memory. The
+2M+1 negative control rejects the actual above-limit source before scanning.
 
 ## Reproduction and acceptance
 
@@ -74,7 +82,8 @@ python -m unittest discover -s tests -p 'test_quality_streaming_chunk_invariants
 
 The companion GitHub-hosted workflow runs both Python 3.13 and 3.14 at
 the **exact PR head SHA**, enforces 192 MiB virtual address space, checks the
-canonical quality suite and CLI privacy suite, and records peak RSS via
+canonical quality suite, CLI privacy suite and the synthetic frozen-five-pair
+four-gate M1 integration suite, and records peak RSS via
 /usr/bin/time. A green result means a bounded synthetic scanner contract
 is protected, **not** that private WAVs were played or M1 passed.
 
