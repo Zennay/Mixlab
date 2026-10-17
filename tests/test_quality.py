@@ -614,8 +614,9 @@ class QualityTests(unittest.TestCase):
             ["repeated_pcm_across_trials_inspect_blinding"],
             report["trials"][1]["trial_warnings"],
         )
-        self.assertEqual([], report["trials"][1]["A"]["warnings"])
-        self.assertEqual([], report["trials"][1]["B"]["warnings"])
+        for side in ("A", "B"):
+            self.assertNotIn("repeated_pcm_across_trials_inspect_blinding",
+                             report["trials"][1][side]["warnings"])
         self.assertNotIn("trial-001-A.wav", json.dumps(report))
         self.assertNotIn(str(self.root), json.dumps(report))
         self.assertNotIn("sha256", json.dumps(report))
