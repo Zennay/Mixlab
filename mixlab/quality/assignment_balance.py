@@ -71,6 +71,48 @@ def inspect_assignments(answer_key: object) -> dict:
     }
 
 
+
+def propose_private_balanced_sides(candidate_families, seed: int) -> tuple[str, ...]:
+    """Optional pure pre-rating plan; never publish the returned answer map.
+
+    Brute-force is deliberately safe for at most ten trials (2**10 masks).
+    Choose among acceptable schedules using a seeded digest ranking, not a
+    deterministic alternating pattern. The actual producer and pack identity
+    remain owned by ML-05; this does NOT rewrite an existing frozen pack.
+    """
+    import hashlib
+    from ..models import FAMILY_NAMES
+
+    if (type(candidate_families) not in (tuple, list)
+            or not 5 <= len(candidate_families) <= 10
+            or type(seed) is not int or not 0 <= seed < 2 ** 63):
+        _refuse()
+    supported = set(FAMILY_NAMES) - {"baseline"}
+    if any(type(family) is not str or family not in supported
+           for family in candidate_families):
+        _refuse()
+    winner = None
+    for mask in range(1 << len(candidate_families)):
+        assignments = tuple("A" if mask & (1 << i) else "B"
+                            for i in range(len(candidate_families)))
+        secret_key = [
+            {"trial": f"trial-{i:03d}",
+             "A": "baseline" if side == "A" else family,
+             "B": family if side == "A" else "baseline"}
+            for i, (family, side) in enumerate(
+                zip(candidate_families, assignments), 1)
+        ]
+        if inspect_assignments(secret_key)["side_assignment_review_required"]:
+            continue
+        rank = hashlib.sha256(f"{seed}:{mask}".encode("ascii")).digest()
+        candidate = (rank, assignments)
+        if winner is None or candidate < winner:
+            winner = candidate
+    if winner is None:
+        _refuse()
+    return winner[1]
+
+
 def audit_study_assignment(study_path, pack_path, expected_study_id) -> dict:
     """Require genuine external-ID/pinned WAV verification and stable answer key.
 
