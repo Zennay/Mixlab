@@ -510,7 +510,7 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.assertEqual(7, report["candidate_count"])
         self.assertTrue(counts)
         self.assertLessEqual(max(counts), 4096)
-        self.assertEqual(8, len([v for v in counts if v == 4096]))
+        self.assertEqual(16, len([v for v in counts if v == 4096]))
 
     def test_ab_group_cli_success_stable_and_no_private_path(self):
         candidate = self.root / "CANDIDATE_PRIVATE.wav"
