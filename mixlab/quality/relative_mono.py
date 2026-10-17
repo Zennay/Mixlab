@@ -198,18 +198,25 @@ def inspect(baseline: str, candidates: list[str]) -> dict:
     return assess(report, paired)
 
 
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    """Never echo potentially sensitive unknown arguments or paths."""
+
+    def error(self, message: str) -> None:
+        raise ValueError("private CLI arguments invalid")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = _PrivateArgumentParser(
         description="Offline relative stereo/mono QA; never certifies music quality"
     )
     parser.add_argument("--baseline", required=True)
     parser.add_argument("--candidate", action="append", required=True)
-    options = parser.parse_args(argv)
     try:
+        options = parser.parse_args(argv)
         result = inspect(options.baseline, options.candidate)
     except Exception:
-        # Fail closed on decoder errors too (e.g. wave.Error/struct.error).
-        # Untrusted local filenames can appear in underlying OS errors.
+        # Hide all parser, OS, and decoder diagnostics; external arguments
+        # can include confidential audio names. No private paths in stderr.
         print(json.dumps({"status": "invalid_private_pcm", "milestone_pass": False}))
         return 2
     print(json.dumps(result, sort_keys=True, allow_nan=False))
