@@ -25,9 +25,12 @@ A blind listening comparator must not present a source with an unreviewed audio 
 - a recovered interior silence ≥200ms or a whole-stereo PCM dropout ≥50ms;
 - a single-channel interior dropout ≥50ms while the other channel continues;
 - an isolated ≥25%-FS click surrounded by ≤6.25%-FS samples, or any >50%-FS sample discontinuity;
-- a repeated high-level PCM flat-top plateau of at least four samples (a *clipping proxy*, not clipping proof).
+- a repeated high-level PCM flat-top plateau of at least four samples (a *clipping proxy*, not clipping proof);
+- persistent per-channel DC offset above 3% full-scale, a completely silent stereo channel, or a ≥20% proportion of partial channel loss;
+- a ≥100ms difference between the two stereo channels' first prominent (≥5%-FS) samples;
+- any already-detected PCM sample close to 0dBFS (≥32760 of 32768 counts); this is a **headroom proxy** and not proof of clipping or poor musical performance.
 
-The prior canonical module remains the owner of these thresholds; no new audio processing or DSP rendering is introduced. Procedural tests exercise recovered 60ms total and channel dropouts, an isolated sample impulse, a high-level plateau, a severe discontinuity and a defective *baseline*. These proxies can also flag deliberate percussion or editing effects, so `HOLD` explicitly **requires inspection** rather than claiming a musical defect. The report never exposes samples, frame positions, track names or source paths. Inadequate duration or joint PCM evidence still takes precedence as `insufficient_stereo_evidence`. These checks do not constitute a complete music-quality review, blind preference result or a release sign-off.
+The prior canonical module remains the owner of these thresholds; no new audio processing or DSP rendering is introduced. Procedural tests exercise recovered 60ms total and channel dropouts, an isolated sample impulse, a high-level plateau, a severe discontinuity, a defective *baseline*, DC offset, near-full-scale samples without a click, a missing stereo channel, and a 125ms channel onset skew. These proxies can also flag deliberate percussion or editing effects, so `HOLD` explicitly **requires inspection** rather than claiming a musical defect. The report never exposes samples, frame positions, track names or source paths. Inadequate duration or joint PCM evidence still takes precedence as `insufficient_stereo_evidence`. These checks do not constitute a complete music-quality review, blind preference result or a release sign-off.
 
 ## Blind A/B comparability beyond global RMS
 
