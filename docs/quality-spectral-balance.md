@@ -125,7 +125,21 @@ leave the whole-file and each-channel energy proxies **unchanged** but
 can erase the mono downmix: the new separate warning prevents such a
 false clean result. The global crossing energy, absolute fold ratios
 and channel identity remain private; only neutral codes and the
-bounded A/B delta are published. It does not prove an intentional
+bounded A/B delta are published.
+
+Whole-track mono-fold numbers can **also mask a local defect**: e.g.
+four 6000-frame segments in phase, four opposite-phase leave a global
+fold difference near -3dB, which does not trigger the 6dB whole-track
+change or the -10dB full-track cancellation thresholds, but half the mix
+is absent in mono. Therefore each of eight private time spans also
+accumulates L/R cross-energy. If at least **two audible spans** in either
+source have a mono-fold ratio <=-10dB, a single
+`stereo_temporal_mono_fold_cancellation_inspect` warning and
+`stereo_temporal_mono_fold_cancellation_risk: true` are returned.
+A single short span is not claimed to be persistent; it can still
+warrant human review. No span coordinates, raw correlation, source audio,
+or individual fold ratios are published. The eight additional floats
+are constant-space and computed in the existing 4096-frame stream. It does not prove an intentional
 creative anti-phase signal is defective. The primary ML-07 PCM/phase
 scanner remains necessary.
 
