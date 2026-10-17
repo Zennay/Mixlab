@@ -117,7 +117,9 @@ also apply in single-pair mode.
 * JSON contains only format properties, threshold definitions and booleans;
   **no source paths, hashes, waveform data, sample positions or audio**.
   Descriptive exit code 0, `--strict` exit 2 when warning/unknown, malformed
-  source/options exit 3 with a generic private-path-free error.
+  source/options exit 3 with a generic private-path-free error. A static
+  `--help`/`-h` request exits 0 without reading or naming audio sources,
+  including when unrelated private arguments are present.
 
 False positives are possible for intentional near-DC, low-frequency modulation
 or source mastering quirks. A clean result does not prove perceptual quality,
