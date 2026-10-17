@@ -532,7 +532,7 @@ integer sum of `candidate_sample - baseline_sample`, normalizes it by
 window frame count and the PCM16 full-scale denominator, and checks the
 strict **3% FS** threshold independently, for both one- and two-channel
 fixtures. A fixed seed tests clips with **800, 801, 4095, 4096, 4097
-and 9003 frames**, with both **20ms and 100ms** RMS-window settings,
+and 9003 frames**, with both **20ms and 100ms** RMS-window settings, plus realistic **44.1 kHz and 96 kHz** rate-scaled 20ms/50ms windows,
 including short last windows and multiple PCM streaming blocks. One
 stereo fixture independently checks a signed global DC difference,
 and all fixtures assert private path/filename suppression and source
