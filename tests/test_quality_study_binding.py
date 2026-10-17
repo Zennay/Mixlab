@@ -91,7 +91,7 @@ class FrozenStudyBindingTests(unittest.TestCase):
             "renders": renders, "pack_id": pack_id,
         })
         _write_json(self.pack / "receipt.json", {
-            "schema_version": 1, "study_id": self.pinned, "manifest_sha256": manifest_sha,
+            "schema_version": 1, "manifest_sha256": manifest_sha,
             "pack_id": pack_id, "trial_count": len(keys), "render_count": len(renders),
             "status": "rendered-not-listener-validated",
         })
@@ -115,6 +115,35 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertFalse(result["human_preference_proven"])
         self.assertFalse(result["milestone_pass"])
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_official_public_receipt_omits_private_study_id(self):
+        from mixlab.quality.pack import _PUBLIC_RECEIPT_KEYS
+        receipt = json.loads((self.pack / "receipt.json").read_text())
+        self.assertNotIn("study_id", receipt)
+        self.assertTrue(receipt.keys() <= _PUBLIC_RECEIPT_KEYS)
+        self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
+
+    def test_injected_public_study_id_is_rejected_before_private_pcm(self):
+        from unittest import mock
+        self.edit("receipt.json", lambda doc: doc.__setitem__("study_id", self.pinned))
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=AssertionError("private PCM opened")) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_not_called()
+
+    def test_public_receipt_metadata_drift_after_pcm_is_refused(self):
+        from unittest import mock
+        from mixlab.evaluation import verify_pack as original
+
+        def mutated(root):
+            public, evidence, trials = original(root)
+            public["status"] = "forged-status-after-private-scan"
+            return public, evidence, trials
+
+        with mock.patch("mixlab.quality.study_binding.verify_pack", side_effect=mutated):
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
 
     def test_forging_both_study_ids_is_detected_even_if_pack_id_stays_valid(self):
         for filename in ("receipt.json", "private/evidence.json"):
