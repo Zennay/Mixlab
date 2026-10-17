@@ -164,6 +164,29 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.assertFalse(report["milestone_pass"])
 
 
+    def test_fifty_stereo_pcm_sources_run_inside_ci_memory_cap(self):
+        # Real stereo WAV frames and real private sample reader for all 50,
+        # rather than just the earlier 50-mono capacity smoke test. The
+        # workflow's ulimit -v 196608 is the actual memory assertion.
+        for i in range(2, 40):
+            self.dev["tracks"].append(self._track("dev", i, 100 + i))
+        for manifest, directory in ((self.dev, self.dev_dir),
+                                    (self.eva, self.eva_dir)):
+            for track in manifest["tracks"]:
+                target = directory / track["path"]
+                self._to_stereo(target)
+                track["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        eval_by_id = {track["id"]: track for track in self.eva["tracks"]}
+        for pair in self.study["pairs"]:
+            pair["a_sha256"] = eval_by_id[pair["a"]]["sha256"]
+            pair["b_sha256"] = eval_by_id[pair["b"]]["sha256"]
+        self.freeze()
+        report = self.audit()
+        self.assertEqual(report["development_track_count"], 40)
+        self.assertEqual(report["evaluation_track_count"], 10)
+        self.assertTrue(report["development_evaluation_source_identity_separate"])
+        self.assertFalse(report["milestone_pass"])
+
     def _write_max_frame_source(self, count):
         """Write 2M original PCM frames in bounded chunks (no giant buffer)."""
         target = self.dev_dir / "clip-00.wav"
