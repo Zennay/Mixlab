@@ -45,6 +45,26 @@ class QualityTests(unittest.TestCase):
         wav(self.base, self.samples)
         wav(self.candidate, self.samples)
 
+    def test_companion_synthetic_suites_on_exact_quality_pr_head(self):
+        # Quality PR CI uses -p test_quality.py to bound the job, but cannot
+        # otherwise expose regressions in engine/ingest/DSP/evaluation.
+        # Execute all OTHER synthetic test modules on this exact checkout.
+        # The pattern excludes test_quality.py itself to avoid recursion.
+        # No VPS process, private music, uploaded recordings or downloads.
+        project_root = Path(__file__).resolve().parents[1]
+        sibling_pattern = "test_[!q]*.py"
+        check = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover",
+             "-s", "tests", "-p", sibling_pattern, "-v"],
+            cwd=project_root, capture_output=True, text=True, timeout=150,
+        )
+        self.assertEqual(
+            0, check.returncode,
+            "Companion synthetic regression suites failed:\n" + check.stderr[-3500:],
+        )
+        self.assertRegex(check.stderr, r"Ran [1-9][0-9]* tests? in ")
+        self.assertIn("\nOK", check.stderr)
+
     def test_equal_pcm_is_level_comparable_with_no_path_leak(self):
         before = self.candidate.read_bytes()
         report = compare_wavs(self.base, [self.candidate])
