@@ -218,7 +218,8 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
                 raise RepeatabilityError(_ERROR)
         duration_expected = frames / rate
         gain_expected = 10 ** (gain_db / 20)
-        if (round(beats * 60 / bpm * rate) != frames
+        if (beats * 60 / bpm > 120
+                or round(beats * 60 / bpm * rate) != frames
                 or not math.isclose(receipt["duration_seconds"], duration_expected,
                                     rel_tol=1e-12, abs_tol=1e-12)
                 or not math.isclose(receipt["gain_linear"], gain_expected,
