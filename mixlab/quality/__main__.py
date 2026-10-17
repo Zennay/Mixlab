@@ -14,7 +14,7 @@ class _PrivateArgumentParser(argparse.ArgumentParser):
     """
 
     def error(self, message):
-        self.exit(2, "quality preflight: invalid command-line arguments (details withheld)\\n")
+        self.exit(2, "quality preflight: invalid command-line arguments (details withheld)\n")
 
 
 def main():
