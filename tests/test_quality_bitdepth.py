@@ -226,7 +226,7 @@ class ResolutionTests(unittest.TestCase):
             with self.subTest(active=active):
                 segment = samples(frames=active, channels=1)
                 coarse_segment = samples(frames=active, collapse=True, channels=1)
-                quiet = b"\\x00\\x00" * (9600 - active)
+                quiet = b"\x00\x00" * (9600 - active)
                 wav(self.base, (segment + quiet) * 4, rate=96000, channels=1)
                 wav(self.bad, (coarse_segment + quiet) * 4, rate=96000, channels=1)
                 report = bitdepth.inspect_ab(self.base, [self.bad])
