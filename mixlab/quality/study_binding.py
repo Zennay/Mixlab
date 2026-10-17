@@ -52,7 +52,8 @@ def _verified_study(path, expected_study_id):
     for i, row in enumerate(pairs, 1):
         if not isinstance(row, dict) or row.get("pair_id") != f"pair-{i:02d}":
             _fail()
-        if row.get("candidate_family") not in _FAMILIES:
+        if (not isinstance(row.get("candidate_family"), str)
+                or row["candidate_family"] not in _FAMILIES):
             _fail()
         if (not isinstance(row.get("a"), str) or not isinstance(row.get("b"), str)
                 or not row["a"] or row["a"] == row["b"]):
