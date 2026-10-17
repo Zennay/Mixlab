@@ -7,8 +7,6 @@ on:
       - "mixlab/evaluation/json_admission.py"
       - "tests/test_evaluation_json_admission.py"
       - ".github/workflows/ml05-json-admission.yml"
-  push:
-    branches: [qa/ml05-bounded-json-admission-20261017-zsentinel]
   workflow_dispatch:
 
 permissions:
