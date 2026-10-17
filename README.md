@@ -45,7 +45,7 @@ python3 -m mixlab.playlist_studio \
 
 Open **/private/mixlab-playlist-01/set-composer/index.html**.
 Beluister de reeds gerenderde overgangen, bouw je route en download
-\`mixlab-set-plan.private.json\`. Render daarna één complete WAV:
+`mixlab-set-plan.private.json`. Render daarna één complete WAV:
 
 ~~~bash
 python3 -m mixlab.set_composer render \
@@ -56,11 +56,11 @@ python3 -m mixlab.set_composer render \
 
 Daar verschijnt ook **/private/mixlab-party.wav.player.html** met een
 interactieve golfvorm, hoofdstukken per overgang en CUE-export. Je kunt
-de handmatige invoer vooraf vastleggen met \`--manifest-only\` en later
-zonder opnieuw typen renderen met \`--resume\`.
+de handmatige invoer vooraf vastleggen met `--manifest-only` en later
+zonder opnieuw typen renderen met `--resume`.
 
 Wil je creatieve cuevoorstellen op basis van een **handmatig bevestigd**
-beat/downbeat-grid en lokale RMS-energie, gebruik dan \`--ideas\`
+beat/downbeat-grid en lokale RMS-energie, gebruik dan `--ideas`
 (vereist een expliciet ingevulde eerste downbeat voor iedere track).
 Elke keuze vereist handmatige goedkeuring; geen automatische muzikale
 kwaliteit of echte phrase-detectie wordt geclaimd.
