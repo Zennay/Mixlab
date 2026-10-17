@@ -1,0 +1,70 @@
+"""Strict, bounded RIFF/PCM16 header consistency for *private* quality scans.
+
+Unlike listener-public WAVs, private source WAVs may contain metadata chunks
+or trailing non-audio bytes. Never surface those bytes in quality JSON.
+"""
+from pathlib import Path
+
+
+def verify_private_pcm16_header(path: str | Path) -> None:
+    """Reject audio-container inconsistencies *before* scanning PCM samples.
+
+    Only chunk headers and the 16-byte fmt payload are read; unknown chunks
+    are skipped, not copied, parsed, or serialized. A private WAV may contain
+    metadata; this does NOT authorize publishing metadata-bearing review WAVs.
+    """
+    source_path = Path(path)
+    actual_bytes = source_path.stat().st_size
+    if actual_bytes < 44:
+        raise ValueError("Invalid PCM16 RIFF header")
+    with source_path.open("rb") as handle:
+        riff = handle.read(12)
+        if (len(riff) != 12 or riff[:4] != b"RIFF"
+                or riff[8:12] != b"WAVE"):
+            raise ValueError("Unsupported RIFF/WAVE container")
+        riff_end = int.from_bytes(riff[4:8], "little") + 8
+        if riff_end > actual_bytes or riff_end < 44:
+            raise ValueError("Inconsistent RIFF container extent")
+        offset = 12
+        format_seen = False
+        block_align = None
+        while offset + 8 <= riff_end:
+            handle.seek(offset)
+            chunk = handle.read(8)
+            if len(chunk) != 8:
+                raise ValueError("Truncated WAV chunk header")
+            chunk_name, chunk_size = chunk[:4], int.from_bytes(chunk[4:8], "little")
+            payload = offset + 8
+            end = payload + chunk_size
+            if end > riff_end:
+                raise ValueError("WAV chunk exceeds RIFF boundary")
+            if chunk_name == b"fmt ":
+                if format_seen or chunk_size < 16 or chunk_size > 40:
+                    raise ValueError("Invalid or repeated PCM16 fmt chunk")
+                fields = handle.read(16)
+                if len(fields) != 16:
+                    raise ValueError("Truncated PCM16 fmt payload")
+                encoding = int.from_bytes(fields[0:2], "little")
+                channels = int.from_bytes(fields[2:4], "little")
+                rate = int.from_bytes(fields[4:8], "little")
+                bytes_per_second = int.from_bytes(fields[8:12], "little")
+                block_align = int.from_bytes(fields[12:14], "little")
+                bits = int.from_bytes(fields[14:16], "little")
+                if (encoding != 1 or channels not in (1, 2)
+                        or not 8000 <= rate <= 96000
+                        or bits != 16 or block_align != 2 * channels
+                        or bytes_per_second != rate * block_align):
+                    raise ValueError("Inconsistent PCM16 format header")
+                format_seen = True
+            elif chunk_name == b"data":
+                if not format_seen or chunk_size % block_align:
+                    raise ValueError("Invalid PCM16 data alignment")
+                # The wave module performs the bounded frame read, checks
+                # sample limits, and rejects truncated payload independently.
+                return
+            # Honor RIFF even-byte chunk alignment when skipping metadata;
+            # metadata payload is never read into memory or returned.
+            offset = end + (chunk_size & 1)
+            if offset > riff_end:
+                raise ValueError("Missing RIFF chunk padding")
+    raise ValueError("Missing PCM16 data chunk")
