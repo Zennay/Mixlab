@@ -329,3 +329,21 @@ after the approved private library and matched-loudness method exist, the
 integration owner may explicitly wire this into evaluation preflight. Until
 then it remains an optional read-only CLI; no zCloud worker launch or
 production deployment is implied by merging the code.
+
+
+### Isolated sample transients below the severe splice threshold
+
+The bounded PCM16 scan also reports `isolated_sample_impulse_count` and
+`isolated_sample_impulse_risk` for a one-frame impulse on an individual mono
+or stereo channel. An interior sample at **>=8192 absolute PCM16 amplitude**
+surrounded by two neighboring samples each **<=2048** (same channel) produces
+`isolated_sample_impulse_inspect_for_clicks`. The three-frame test carries
+over the 4096-frame streaming-read boundary. This closes a narrow false
+negative in the older `severe_adjacent_jump_count` rule: a 9000-sample
+isolated click has jumps of just ~27% full-scale, below its 50% threshold.
+Applies equally to baseline and candidate. There is **no attempt to repair
+or suppress audio** and the JSON publishes only counts/booleans, not sample
+coordinates or raw audio. Highly percussive or deliberately synthesized
+single-frame sounds may be legitimate: warnings require human listening and
+are never interpreted as musical preference, clipping proof or an overall
+quality score.
