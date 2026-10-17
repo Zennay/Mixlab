@@ -55,6 +55,8 @@ class IngestPreflightTypesTests(unittest.TestCase):
             ("bpm", "120", "manual bpm"),
             ("sha256", "invalid", "source checksum"),
             ("recording_id", [], "recording id"),
+            ("downbeat_seconds", [], "manual downbeat"),
+            ("downbeat_seconds", {}, "manual downbeat"),
             ("path", "bad\\\\path.wav", "relative POSIX"),
         ):
             with self.subTest(field=field):
