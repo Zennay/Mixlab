@@ -444,7 +444,7 @@ class BrowserFormTests(unittest.TestCase):
         except subprocess.TimeoutExpired:
             self.fail("bounded synthetic browser playback timed out")
         self.assertEqual(done.returncode, 0, "Chromium playback process failed")
-        marker = re.search(r'<html\\b[^>]*data-mixlab-playback-check="([^"]+)"',
+        marker = re.search(r'<html\b[^>]*data-mixlab-playback-check="([^"]+)"',
                            done.stdout, flags=re.IGNORECASE)
         self.assertIsNotNone(marker, "browser did not report playback outcome")
         self.assertEqual(marker.group(1), "pass",
