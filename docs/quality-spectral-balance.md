@@ -186,6 +186,22 @@ and a wholly inaudible file do not assert meaningful cancellation.
 The filters are broad and overlap, so these **are only proxy warnings**,
 not calibrated multiband phase coherence or a music listening verdict.
 The original fullband mono-fold check remains independently necessary.
+A further **eight-span band-local mono-fold** screen detects intermittent
+bass/mid/treble loss hidden by whole-band averages. It retains only
+three filtered-band L/R cross-energy sums per span alongside the
+already bounded eight-band energy bins; no new PCM frame buffers.
+Each private, audible span with meaningful filtered energy (>=0.10
+RMS ratio of whole-span energy) and <=-10dB filtered mono loss is
+counted. If **at least two** spans in either A or B are affected,
+`stereo_temporal_<band>_band_mono_fold_inspect` and a single public
+`stereo_temporal_<band>_band_mono_fold_risk` boolean are emitted.
+No affected times, channel polarities, source identities or
+per-source band ratios escape. One isolated span is deliberately
+below the persistent-risk gate. Synthetic tests make just two of eight
+bass spans cancel while broadband and whole-band mono results remain
+above their warning limits; symmetrical, gain- and chunk-invariant
+control cases are included.
+
 Synthetic two-tone oracles exercise low-bass cancellation hidden behind
 loud treble, its high-frequency counterpart behind loud bass, risk
 symmetry, gain invariance, source privacy and chunk invariance.
