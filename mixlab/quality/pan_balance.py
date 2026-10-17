@@ -21,6 +21,7 @@ MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
 BLOCK_FRAMES = 4096
 WINDOW_MS = 250
+ACTIVE_SUBWINDOW_MS = 50
 MIN_ACTIVE_RMS = 10 ** (-45 / 20)
 WARN_SHIFT_DB = 6.0
 WARN_PERSIST_MS = 1000
@@ -139,6 +140,15 @@ def _measure_open_pair(a, b):
     # supported sample rates. Keep an absolute frame count for every window.
     window_index = 1
     next_window_end = (rate * WINDOW_MS + 500) // 1000
+    # A loud burst in each otherwise silent 250ms window must not establish
+    # a full second of *continuous* audible stereo. Require stereo energy
+    # separately in each 50ms subwindow of both A and B, while preserving
+    # the normal 250ms pan-balance measurement resolution.
+    activity_index = 1
+    next_activity_end = (rate * ACTIVE_SUBWINDOW_MS + 500) // 1000
+    activity_sq = [[0, 0], [0, 0]]
+    activity_frames = 0
+    whole_window_active = True
     processed_frames = 0
     sum_sq = [[0, 0], [0, 0]]
     count = 0
@@ -162,11 +172,25 @@ def _measure_open_pair(a, b):
             sum_sq[0][1] += r0 * r0
             sum_sq[1][0] += l1 * l1
             sum_sq[1][1] += r1 * r1
+            activity_sq[0][0] += l0 * l0
+            activity_sq[0][1] += r0 * r0
+            activity_sq[1][0] += l1 * l1
+            activity_sq[1][1] += r1 * r1
             count += 1
+            activity_frames += 1
             processed_frames += 1
+            if processed_frames == next_activity_end:
+                activity_floor = (MIN_ACTIVE_RMS * 32768) ** 2 * activity_frames
+                if not all(value >= activity_floor for pair in activity_sq for value in pair):
+                    whole_window_active = False
+                activity_sq = [[0, 0], [0, 0]]
+                activity_frames = 0
+                activity_index += 1
+                next_activity_end = (activity_index * rate * ACTIVE_SUBWINDOW_MS + 500) // 1000
             if processed_frames == next_window_end:
                 floor = (MIN_ACTIVE_RMS * 32768) ** 2 * count
-                if all(value >= floor for pair in sum_sq for value in pair):
+                if (whole_window_active and
+                        all(value >= floor for pair in sum_sq for value in pair)):
                     active_windows += 1
                     active_streak_frames += count
                     longest_active_streak_frames = max(longest_active_streak_frames, active_streak_frames)
@@ -185,6 +209,7 @@ def _measure_open_pair(a, b):
                     consecutive_shift_frames = 0
                 sum_sq = [[0, 0], [0, 0]]
                 count = 0
+                whole_window_active = True
                 window_index += 1
                 next_window_end = (window_index * rate * WINDOW_MS + 500) // 1000
         remaining -= take
