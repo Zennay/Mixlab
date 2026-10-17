@@ -34,7 +34,9 @@ crest factor by about 12 dB. Conversely, scaling a waveform uniformly
 changes RMS without changing crest factor.
 
 If either side is fully silent, the delta is `null` rather than
-infinity, NaN or a fabricated warning. Multiple candidates use only
+infinity or NaN, and `silence_prevents_crest_comparison` requests review.
+Strict `--fail-on-warnings` mode also exits 2 for silence; absence of an
+infinite delta must never imply that a silent blind trial is acceptable. Multiple candidates use only
 `candidate-01`, `candidate-02`, etc. The output has no filenames,
 paths, source hashes, audio samples, private time envelopes, trial
 answers or actual/guessed preference winners. It is intentionally
@@ -66,7 +68,7 @@ python3 -m compileall -q mixlab/quality tests/test_crest_dynamics.py
 ```
 
 `tests/test_crest_dynamics.py` covers steady-vs-pulsed same-RMS
-signals, gain scaling, stereo/multiple candidates, fully silent audio,
+signals, gain scaling, stereo/multiple candidates, fully silent audio and strict warning exit,
 threshold validation, format mismatch, unmodified bytes and CLI
 privacy/exit contracts. The existing quality CI invokes its companion
 test discovery through `test_quality.py`, because this file begins
