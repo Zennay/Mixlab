@@ -20,7 +20,7 @@ from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
         seed=1, rate=48000, quiet_channels=(), coarse_step=256,
         coarse_offset=0, coarse_regions=(), coarse_region_offsets=None,
-        channel_coarse_regions=None):
+        channel_coarse_regions=None, coarse_jitter=0):
     state = seed
     samples = array("h")
     for frame in range(frames):
@@ -35,7 +35,8 @@ def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
                     (channel_coarse_regions or {}).get(channel, coarse_regions)):
                 region = min(7, (frame * 8) // frames)
                 offset = (coarse_region_offsets or {}).get(region, coarse_offset)
-                value = (value // coarse_step) * coarse_step + offset
+                value = ((value // coarse_step) * coarse_step + offset
+                         + (coarse_jitter if frame % 2 else 0))
             samples.append(value)
     # Fixtures are little-endian PCM16, independent of test host byte order.
     if sys.byteorder != "little":
@@ -84,6 +85,41 @@ class PrecisionTest(unittest.TestCase):
         wav(self.a)
         wav(self.b, coarse=(0,), coarse_step=8, coarse_offset=3)
         self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_detects_one_lsb_adjacent_phase_jitter(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_step=32,
+            coarse_offset=3, coarse_jitter=1)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_adjacent_jitter_in_only_one_stereo_channel(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(1,), coarse_step=16,
+            coarse_offset=3, coarse_jitter=1)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_half_step_two_residues_do_not_exceed_detection_resolution(self):
+        # Alternating 3/11 modulo 16 is *actually* an 8-sample grid;
+        # adjacency must be restricted or the detector mislabels it.
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_step=16,
+            coarse_offset=3, coarse_jitter=8)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_baseline_also_has_adjacent_phase_grid_is_not_a_regression(self):
+        wav(self.a, coarse=(0,), coarse_step=32,
+            coarse_offset=3, coarse_jitter=1)
+        wav(self.b, coarse=(0,), coarse_step=32,
+            coarse_offset=5, coarse_jitter=1)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_adjacent_phase_detection_is_chunk_independent(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0,), coarse_step=32,
+            coarse_offset=7, coarse_jitter=1)
+        self.assertEqual(compare_precision(self.a, self.b, chunk_frames=1),
+                         compare_precision(self.a, self.b, chunk_frames=4096))
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
 
     def test_detects_offset_10_bit_quantizer(self):
         wav(self.a)
