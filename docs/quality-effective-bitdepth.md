@@ -1,9 +1,9 @@
 # ML-07 — PCM16 effective-resolution A/B preflight
 
 This optional **CPU-only technical diagnostic** checks whether a candidate appears to
-have undergone coarse, left-justified quantisation (for example 8-bit samples
-packed inside a nominal PCM16 WAV) when the matching baseline demonstrably has
-diverse low bits. A file labelled "16-bit PCM" does not prove 16 bits of source
+have undergone coarse 8-bit-step quantisation packed inside nominal PCM16,
+including 8-bit-left-shifted samples with an arbitrary fixed low-byte offset,
+when the corresponding baseline has genuinely diverse low bits. A file labelled "16-bit PCM" does not prove 16 bits of source
 resolution. This fills a narrow signal-integrity gap; **it is not music quality,
 LUFS, true peak, beat detection, spectral judgement or a perceptual test**.
 
@@ -18,7 +18,9 @@ One baseline plus one to seven candidates. Stdlib-only, offline, without audio
 uploads, model downloads, network access or output WAVs. JSON is anonymized:
 candidate indices, format dimensions, per-channel aggregate evidence and
 tri-state review, **never source paths, PCM values, fingerprints or filenames**.
-Invalid/private path details are concealed in the API and CLI.
+Invalid/private path details are concealed in the API and CLI. Candidate
+iterators are consumed for **at most eight entries**, even if infinite, and
+iterator failures are redacted rather than propagating private strings.
 
 Admission is fail-closed: no symlink in any current parent component or source
 basename, regular files only, nonblocking and nofollow FD, first/last pathname
@@ -31,15 +33,20 @@ returning **any** JSON. Stat-based checks cannot make arbitrary malicious
 filesystem rewrites atomic; continue to use private immutable local files.
 
 The heuristic counts each channel's **high-level samples** (absolute signed
-PCM value >=2048) that have a zero-valued low byte, over 100ms windows.
-An individual channel is evidenced only when it has >=4096 eligible samples
-across >=4 distinct windows, each with >=32 eligible samples. A
-candidate-specific warning requires baseline low-byte-zero fraction <=0.35
-and candidate fraction >=0.995 on at least one channel. These conservative
-thresholds deliberately permit false negatives: this method does not identify
-16-to-12-bit conversion, dither or lossy codec artifacts. Intentional
-bit-restricted synthesizers, waveforms with coarse amplitude grids and a
-candidate that was gain-changed can cause false positives. Inspect original
+PCM value >=2048), their 256 possible low-byte residue bins, and the most
+populated bin. Streaming histograms use a fixed 256 counts per channel; the
+actual residue values, PCM and source names are never included in reports.
+A channel is evidenced only when it has >=4096 eligible samples and **at least
+four consecutive full 100ms windows** with >=50% high-level frame occupancy.
+Sparse 20ms-in-100ms pulses and separated islands of three active windows
+must abstain even if global sample totals or global RMS look conclusive.
+A candidate-specific warning requires baseline dominant low-byte fraction <=0.35
+and candidate dominant fraction >=0.995 on at least one evidenced channel;
+exact integer counts, not rounded display fractions, decide the result. These conservative
+thresholds deliberately permit false negatives: this method does not reliably
+identify 16-to-12-bit conversion, dithered 8-bit data or lossy codec artifacts.
+Intentional bit-restricted synthesizers, waveforms with coarse amplitude grids
+and gain or DC offsets can cause false positives. Inspect original
 source rights, gain history and blind playback before attributing cause.
 
 `coarse_resolution_review` semantics:
