@@ -119,6 +119,20 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
                 self.assertEqual(load_bounded_json(self.source),
                                  json.loads(payload))
 
+    def test_large_integer_tokens_have_stable_cross_python_limit(self):
+        for payload in ("1" * 257, "-" + "9" * 257,
+                        '{"count":' + "9" * 257 + "}"):
+            with self.subTest(oversized=payload[:12]):
+                self.source.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "256 digits"):
+                    load_bounded_json(self.source)
+        for payload in ("9" * 256, "-" + "1" * 256,
+                        '{"value":' + "7" * 255 + "}"):
+            with self.subTest(valid=payload[:12]):
+                self.source.write_text(payload, encoding="utf-8")
+                self.assertEqual(load_bounded_json(self.source),
+                                 json.loads(payload))
+
     def test_reject_deep_parser_recursion_as_validation_error(self):
         self.source.write_text("[" * 1500 + "0" + "]" * 1500,
                                encoding="utf-8")
