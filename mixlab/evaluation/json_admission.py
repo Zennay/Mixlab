@@ -86,7 +86,7 @@ def load_bounded_json(path):
         if quoted:
             if escaped:
                 escaped = False
-            elif char == "\\\\":
+            elif char == "\\":
                 escaped = True
             elif char == '"':
                 quoted = False
