@@ -13,6 +13,8 @@ level tilt. This optional preflight flags it for *human review*.
 
 ```sh
 python3 -m mixlab.quality.pan_balance /private/baseline.wav /private/candidate.wav
+# Optional fail-closed automation mode; does not modify either WAV:
+python3 -m mixlab.quality.pan_balance /private/baseline.wav /private/candidate.wav --fail-on-review
 ```
 
 Output is one path-free JSON object. Exit 0: technical result. The
@@ -25,7 +27,13 @@ inspect `evidence_status` (`review_pan_balance`,
 Exit 2: invalid, changed or unavailable input; stderr is generic. A private
 argument parser also rejects missing, unknown or extra operands without echoing
 any supplied path or secret. The CLI does not expose its input filenames even
-when the command line itself is malformed. Run this
+when the command line itself is malformed. By default, a successful technical
+report returns exit 0 even when the report contains a review flag or null
+(inconclusive evidence). The opt-in `--fail-on-review` returns **3** for
+either a technical review flag **or** inadequate stereo evidence, **0** only
+for sufficiently active evidence without the sustained tilt, and **2** on
+input/admission errors. Strict mode still emits the identical anonymous
+JSON; it is a scripting aid, not proof of musical quality. Run this
 locally against rights-permitted audio, not on publicly uploaded recordings.
 
 ## Policy / limits
