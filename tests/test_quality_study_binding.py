@@ -215,6 +215,33 @@ class FrozenStudyBindingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "do not match"):
                     self.check()
 
+    def test_blind_pair_cannot_claim_different_baseline_vs_candidate_contract(self):
+        from unittest import mock
+        original = (self.private / "evidence.json").read_bytes()
+        for field, different in (("a_start", 0.5), ("b_start", 0.5),
+                                 ("gain_db", -12.0), ("beats", 6)):
+            with self.subTest(field=field):
+                (self.private / "evidence.json").write_bytes(original)
+                self.edit("private/evidence.json", lambda doc:
+                          doc["renders"][1]["recipe"].__setitem__(field, different))
+                # This tampered render record still verifies against the
+                # legacy WAV/answer pack_id! Its *comparison* is not fair.
+                self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+                with mock.patch("mixlab.quality.study_binding.verify_pack",
+                                side_effect=AssertionError("private PCM opened")) as scan:
+                    with self.assertRaisesRegex(ValueError, "do not match"):
+                        self.check()
+                    scan.assert_not_called()
+
+    def test_identical_nondefault_pair_recipe_claims_are_structurally_admitted(self):
+        self.edit("private/evidence.json", lambda doc: [
+            (row["recipe"].__setitem__("a_start", 0.1),
+             row["recipe"].__setitem__("b_start", 0.2),
+             row["recipe"].__setitem__("gain_db", -12.0),
+             row["recipe"].__setitem__("beats", 6))
+            for row in doc["renders"][:2]])
+        self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
+
     def test_legal_nonzero_offsets_and_negative_gain_are_allowed(self):
         self.edit("private/evidence.json", lambda doc: (
             doc["renders"][0]["recipe"].__setitem__("a_start", 0.1),
