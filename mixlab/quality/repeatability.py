@@ -47,7 +47,10 @@ def _open_no_symlink_components(path: Path) -> int:
     """
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         raise RepeatabilityError(_ERROR)
-    absolute = Path(os.path.abspath(os.fspath(path)))
+    # Do not call abspath()/resolve() here: normalizing a/../x first
+    # would erase an unsafe symlink in component a, whereas real pathname
+    # traversal must encounter it before stepping back via '..'.
+    absolute = path if path.is_absolute() else Path.cwd() / path
     components = absolute.parts
     if len(components) < 2:
         raise RepeatabilityError(_ERROR)
