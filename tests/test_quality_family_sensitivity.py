@@ -78,6 +78,20 @@ class PureFamilySensitivityTests(unittest.TestCase):
         self.assertFalse(report["listener_independence_authenticated"])
         self.assertFalse(report["milestone_pass"])
 
+    def test_reused_source_recording_cannot_be_counted_as_independent_pairs(self):
+        groups = ["bass_swap"] * 7 + ["echo_exit"] * 2 + ["hard_cut"]
+        stable = summary(["win"] * 10, groups)
+        original = inspect_family_sensitivity(stable)
+        self.assertTrue(original["any_robust_nominal_family_reference"])
+        compromised = inspect_family_sensitivity(stable, source_reuse=True)
+        self.assertTrue(compromised["shared_source_across_pairs_detected"])
+        self.assertFalse(compromised["any_robust_nominal_family_reference"])
+        self.assertTrue(compromised["family_sensitivity_review_required"])
+        self.assertFalse(compromised["milestone_pass"])
+        for value in (1, "false", None):
+            with self.subTest(value=value), self.assertRaises(FamilySensitivityError):
+                inspect_family_sensitivity(stable, source_reuse=value)
+
     def test_ties_unusable_and_small_reviewer_count_are_not_independent_wins(self):
         record = summary(["win", "win", "tie", "bad", "loss"], reviewers=2)
         report = inspect_family_sensitivity(record)
