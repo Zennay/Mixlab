@@ -120,6 +120,12 @@ def load_bounded_json(path):
         value = float(token)
         if not math.isfinite(value):
             raise ValueError("Nonfinite evaluation JSON number")
+        # Very small but nonzero decimal literals such as 1e-9999 also
+        # change meaning if rounded all the way to 0.0 by binary64.
+        # Preserve intentional 0e-9999, including negative zero.
+        mantissa = token.lower().split("e", 1)[0]
+        if value == 0.0 and any("1" <= ch <= "9" for ch in mantissa):
+            raise ValueError("Evaluation JSON number underflows to zero")
         return value
 
     try:
