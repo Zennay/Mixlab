@@ -188,6 +188,24 @@ def make_two_band_stereo_phase_wav(
         out.writeframes(samples.tobytes())
 
 
+def make_segmented_band_antiphase_wav(path, inverted, *, bass_gain=3000, treble_gain=9000):
+    """Eight local segments: bass anticorrelated only in chosen spans."""
+    samples = array("h")
+    for span, antiphasic in enumerate(inverted):
+        for pos in range(6000):
+            frame = span * 6000 + pos
+            bass = bass_gain * math.sin(2 * math.pi * 100 * frame / 48000)
+            treble = treble_gain * math.sin(2 * math.pi * 5000 * frame / 48000)
+            samples.extend((int(bass + treble), int((-bass if antiphasic else bass) + treble)))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -650,6 +668,62 @@ class SpectralBalanceTests(unittest.TestCase):
         for read_size in (1, 257, 4096, 8191):
             with self.subTest(read_size=read_size), patch.object(spectral, "READ_FRAMES", read_size):
                 self.assertEqual(original, self.report())
+
+    def test_two_bass_phase_loss_spans_below_whole_band_detection_threshold(self):
+        make_segmented_band_antiphase_wav(self.base, [False] * 8)
+        make_segmented_band_antiphase_wav(
+            self.other, [False, False, True, True, False, False, False, False]
+        )
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertFalse(row["stereo_low_band_mono_fold_cancellation_risk"])
+        self.assertTrue(row["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertFalse(row["stereo_temporal_high_band_mono_fold_risk"])
+        self.assertIn("stereo_temporal_low_band_mono_fold_inspect", row["warnings"])
+        report = json.dumps(self.report(), allow_nan=False)
+        self.assertNotIn("_mono_fold_band_spans", report)
+        self.assertNotIn(str(self.dir), report)
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_single_band_cancellation_interval_is_not_persistent(self):
+        make_segmented_band_antiphase_wav(self.base, [False] * 8)
+        make_segmented_band_antiphase_wav(
+            self.other, [True] + [False] * 7
+        )
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertNotIn("stereo_temporal_low_band_mono_fold_inspect", row["warnings"])
+
+    def test_identical_local_band_cancellation_still_inspect(self):
+        pattern = [False] * 3 + [True] * 2 + [False] * 3
+        make_segmented_band_antiphase_wav(self.base, pattern)
+        make_segmented_band_antiphase_wav(self.other, pattern)
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertIn("stereo_temporal_low_band_mono_fold_inspect", row["warnings"])
+
+    def test_local_band_cancellation_is_source_order_symmetric(self):
+        make_segmented_band_antiphase_wav(self.base, [True, True] + [False] * 6)
+        make_segmented_band_antiphase_wav(self.other, [False] * 8)
+        forward = self.report()["candidates"][0]
+        backward = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        self.assertTrue(forward["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertEqual(
+            forward["stereo_temporal_low_band_mono_fold_risk"],
+            backward["stereo_temporal_low_band_mono_fold_risk"]
+        )
+
+    def test_local_band_mono_fold_is_gain_and_chunk_invariant(self):
+        pattern = [True, True] + [False] * 6
+        make_segmented_band_antiphase_wav(self.base, pattern, bass_gain=3000, treble_gain=9000)
+        make_segmented_band_antiphase_wav(self.other, pattern, bass_gain=2400, treble_gain=7200)
+        reference = self.report()
+        self.assertTrue(reference["candidates"][0]["stereo_temporal_low_band_mono_fold_risk"])
+        for chunk in (1, 257, 4096, 8191):
+            with self.subTest(chunk=chunk), patch.object(spectral, "READ_FRAMES", chunk):
+                self.assertEqual(reference, self.report())
 
     def test_stereo_polarity_flip_detects_mono_cancellation_despite_equal_energy(self):
         make_stereo_polarity_wav(self.base)
