@@ -16,6 +16,7 @@ from .listener_position import inspect_listener_sides, _read_snapshot
 from .pilot_sensitivity import inspect_real_pilot
 from .reviewer_influence import inspect_real_reviewer_influence
 from .study_binding import verify_study_pack_binding
+from ..evaluation.json_admission import load_bounded_json
 
 _ERROR = "Invalid or changed private M1 gate inputs"
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -49,13 +50,42 @@ def _shape(row, *, trials, reviewers, count_field, reviewer_field):
         _fail()
 
 
-def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, rating_count):
+def _detect_cross_pair_identical_render(pack):
+    """Detect one checksum-verified WAV duplicated across distinct trial pairs.
+
+    The binding validator must have already verified this frozen evidence and
+    *every* source WAV. Raw output SHA repetition across different pairs is a
+    conservative false-independence warning, not proof of musical identity.
+    Never return a hash, track name, pair identity or path to public reports.
+    """
+    evidence = load_bounded_json(pack / "private" / "evidence.json")
+    renders = evidence.get("renders") if type(evidence) is dict else None
+    if (type(renders) is not list or not 10 <= len(renders) <= 20):
+        _fail()
+    identities = {}
+    duplicate = False
+    for row in renders:
+        if type(row) is not dict:
+            _fail()
+        pair = row.get("pair")
+        digest = row.get("output_sha256")
+        if type(pair) is not str or type(digest) is not str or not _SHA.fullmatch(digest):
+            _fail()
+        previous_pair = identities.setdefault(digest, pair)
+        if previous_pair != pair:
+            duplicate = True
+    return duplicate
+
+
+def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, rating_count,
+                            cross_pair_duplicate_render=False):
     """Cross-check complete outputs, not unvalidated stand-alone PASS labels.
 
     This pure step is independently mutation-tested; the public entry point
     ALWAYS invokes the underlying real PCM and full-rating implementations.
     """
-    if type(rating_count) is not int or not 3 <= rating_count <= 5:
+    if (type(rating_count) is not int or not 3 <= rating_count <= 5
+            or type(cross_pair_duplicate_render) is not bool):
         _fail()
     if (type(binding) is not dict or type(binding.get("schema_version")) is not int
             or binding["schema_version"] != 1
@@ -122,12 +152,14 @@ def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, ra
             or reviewer["reviewer_influence_review_required"]
         ),
         "audio-confounds": pair["audio_confounds_reported"],
+        "identical-render-across-frozen-pairs": cross_pair_duplicate_render,
     }
     return {
         "schema_version": 1,
         "technical_screen": "REVIEW_REQUIRED" if any(risks.values()) else "SCREENED",
         "frozen_pair_count": n,
         "reviewer_file_count": rating_count,
+        "cross_pair_duplicate_render_review": cross_pair_duplicate_render,
         "mandatory_gates_executed": [
             "frozen-pcm-binding", "private-assignment", "listener-position",
             "pair-sensitivity", "reviewer-influence",
@@ -158,12 +190,14 @@ def inspect_real_m1_gate_bundle(study_path, pack_path, expected_study_id, rating
     try:
         before = [_read_snapshot(p) for p in paths]
         binding = verify_study_pack_binding(study, pack, expected_study_id)
+        repeated_wav = _detect_cross_pair_identical_render(pack)
         assignment = audit_study_assignment(study, pack, expected_study_id)
         position = inspect_listener_sides(pack, ratings)
         pair = inspect_real_pilot(study, pack, expected_study_id, ratings)
         reviewer = inspect_real_reviewer_influence(study, pack, expected_study_id, ratings)
         report = compose_m1_gate_reports(
-            binding, assignment, position, pair, reviewer, rating_count=len(ratings))
+            binding, assignment, position, pair, reviewer, rating_count=len(ratings),
+            cross_pair_duplicate_render=repeated_wav)
         after = [_read_snapshot(p) for p in paths]
         if before != after or verify_study_pack_binding(study, pack, expected_study_id) != binding:
             _fail()
