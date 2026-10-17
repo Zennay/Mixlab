@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+from pathlib import Path
 import re
 
 from ..engine import FAMILY_NAMES
@@ -81,6 +82,16 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
     replace the blind public HTML/quality preflight.
     """
     study = _verified_study(study_path, expected_study_id)
+    # Reject a mismatched preregistration before touching private WAV/PCM.
+    # Keep this check supplemental: verify_pack below still re-opens and
+    # validates all canonical receipts, private evidence and audio digests.
+    root = Path(pack_path)
+    public_hint = load_bounded_json(root / "receipt.json")
+    private_hint = load_bounded_json(root / "private" / "evidence.json")
+    if (not isinstance(public_hint, dict) or not isinstance(private_hint, dict)
+            or public_hint.get("study_id") != expected_study_id
+            or private_hint.get("study_id") != expected_study_id):
+        _fail()
     receipt, evidence, trials = verify_pack(pack_path)
     if (receipt.get("study_id") != expected_study_id
             or evidence.get("study_id") != expected_study_id):
