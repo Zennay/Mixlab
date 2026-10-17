@@ -410,6 +410,30 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertFalse(row["stereo_temporal_mono_fold_cancellation_risk"])
         self.assertNotIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
 
+    def test_temporal_stereo_fold_is_streaming_chunk_invariant(self):
+        make_stereo_polarity_segments(self.base, [1] * 8)
+        make_stereo_polarity_segments(self.other, [-1, -1, 1, 1, -1, -1, 1, 1])
+        reference = self.report()
+        self.assertIn(
+            "stereo_temporal_mono_fold_cancellation_inspect",
+            reference["candidates"][0]["warnings"]
+        )
+        for read_size in (1, 127, 4096, 8191):
+            with self.subTest(read_size=read_size), patch.object(spectral, "READ_FRAMES", read_size):
+                self.assertEqual(reference, self.report())
+                self.assertNotIn("_fold_spans", json.dumps(self.report()))
+
+    def test_mono_fold_signed_energy_matches_independent_cancellation_oracle(self):
+        make_stereo_polarity_wav(self.base, right_sign=1)
+        make_stereo_polarity_wav(self.other, right_sign=-1)
+        # This private API is inspected only inside the synthetic test;
+        # its source-local ratios never enter any public report.
+        full = spectral._scan_spectral_private(self.base)
+        cancelled = spectral._scan_spectral_private(self.other)
+        self.assertAlmostEqual(1.0, full["_mono_fold_ratio"], delta=1e-7)
+        self.assertAlmostEqual(0.0, cancelled["_mono_fold_ratio"], delta=1e-7)
+        self.assertNotIn("_mono_fold_ratio", scan_spectral_proxy(self.other))
+
     def test_in_phase_stereo_across_all_spans_stays_clean(self):
         make_stereo_polarity_segments(self.base, [1] * 8)
         make_stereo_polarity_segments(self.other, [1] * 8, gain=7500)
