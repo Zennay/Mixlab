@@ -205,6 +205,23 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(json.loads(cli.stdout)["candidate_count"], 2)
         self.assertNotIn(str(self.root), cli.stdout + cli.stderr)
 
+    def test_activity_floor_45dbfs_is_consistent_at_rate_boundaries(self):
+        # Quantized PCM16 around the -45 dBFS threshold: 185/32768 is
+        # audible enough and 184/32768 is just below. Subwindow gating
+        # must preserve this boundary at common and extreme sample rates.
+        for rate in (8000, 11025, 96000):
+            with self.subTest(rate=rate, branch="above-floor"):
+                wav(self.a, frames=rate, rate=rate, left=185, right=185)
+                wav(self.b, frames=rate, rate=rate, left=185, right=185)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertFalse(report["stereo_pan_confound_review"])
+                self.assertEqual(report["longest_continuous_active_ms"], 1000)
+            with self.subTest(rate=rate, branch="below-floor"):
+                wav(self.b, frames=rate, rate=rate, left=185, right=184)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertIsNone(report["stereo_pan_confound_review"])
+                self.assertEqual(report["evidence_status"], "insufficient_active_audio")
+
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
             with self.subTest(key=key):
