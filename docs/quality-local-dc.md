@@ -43,7 +43,9 @@ same-path reuse and hardlink aliases. Hard caps for the **whole batch**:
 **8,000,000 total PCM frames**, **128 MiB total physical WAV bytes**,
 **at most eight candidates**, plus individual 2M-frame/32MiB limits. A
 batch is rejected before streaming any PCM if *any* header, format, alias or
-aggregate budget violates the contract. Non-mutating scan then reads baseline
+aggregate budget violates the contract. The synthetic suite also scans a
+real **8,000,000-frame aggregate** (eight distinct 1M-frame mono WAVs) and
+rejects **8,000,008 frames** before reading audio. Non-mutating scan then reads baseline
 PCM exactly once, scans each candidate once, and verifies all identities,
 sizes and timestamps again after the last candidate. An invalid, late-changed
 or missing input fails the **whole batch** without partial JSON.
