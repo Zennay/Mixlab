@@ -26,6 +26,6 @@ jobs:
       - name: Compile scoped source and synthetic tests
         run: python3 -m py_compile mixlab/quality/alignment.py tests/test_quality_alignment.py
       - name: Execute scoped synthetic QA without music or network
-        run: python3 -m unittest discover -s tests -p "test_quality_alignment.py" -v
+        run: /usr/bin/time -f "ML07 synthetic wall_seconds=%e peak_rss_kib=%M" python3 -m unittest discover -s tests -p "test_quality_alignment.py" -v
       - name: Execute canonical ML-07 quality and companion regressions
         run: python3 -m unittest discover -s tests -p "test_quality.py" -v
