@@ -89,6 +89,9 @@ class ProviderProvenanceCacheTests(unittest.TestCase):
             ("key", "C major"),
             ("downbeats_seconds", [0.0]),
             ("phrase_starts_seconds", [0.0]),
+            ("warnings", []),
+            ("warnings", ["insufficient rhythmic evidence"]),
+            ("warnings", ["tempo octave ambiguity; verify beatgrid before rendering", "key is automatically inferred"]),
         )
         for field, value in changes:
             with self.subTest(field=field):
