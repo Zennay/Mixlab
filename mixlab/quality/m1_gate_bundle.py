@@ -76,7 +76,6 @@ def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, ra
     fields = (
         (assignment, "side_assignment_review_required"),
         (position, "sufficient_for_position_screen"),
-        (position, "aggregate_position_dominance_review"),
         (position, "individual_position_pattern_review"),
         (pair, "minimum_data_for_pair_reference"),
         (pair, "pair_sensitivity_review_required"),
@@ -88,6 +87,22 @@ def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, ra
     for report, key in fields:
         if type(report.get(key)) is not bool:
             _fail()
+    # Position screening has a legitimate tri-state outcome: None means the
+    # reviewer files have too few decisive A/B votes (not malformed evidence).
+    # Independently enforce the true threshold so a forged "unknown" cannot
+    # conceal real position bias in an otherwise sufficiently powered study.
+    position_votes = position.get("decisive_vote_count")
+    reviewer_votes = reviewer.get("full_decisive_vote_count")
+    if (type(position_votes) is not int
+            or type(reviewer_votes) is not int
+            or not 0 <= position_votes <= n * rating_count
+            or position_votes != reviewer_votes
+            or position["sufficient_for_position_screen"] != (position_votes >= 12)):
+        _fail()
+    dominance = position.get("aggregate_position_dominance_review")
+    if (position_votes >= 12 and type(dominance) is not bool
+            or position_votes < 12 and dominance is not None):
+        _fail()
     # Both analyses operated on the same exact frozen PCM+ballot inventory.
     if pair["audio_confounds_reported"] != reviewer["official_audio_confounds_reported"]:
         _fail()
