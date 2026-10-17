@@ -15,6 +15,8 @@ level tilt. This optional preflight flags it for *human review*.
 python3 -m mixlab.quality.pan_balance /private/baseline.wav /private/candidate.wav
 # Optional fail-closed automation mode; does not modify either WAV:
 python3 -m mixlab.quality.pan_balance /private/baseline.wav /private/candidate.wav --fail-on-review
+# Bounded group: one baseline and 2..7 candidate files; optional strict gate.
+python3 -m mixlab.quality.pan_balance /private/base.wav /private/candidateA.wav /private/candidateB.wav --fail-on-review
 ```
 
 Output is one path-free JSON object. Exit 0: technical result. The
@@ -36,13 +38,37 @@ input/admission errors. Strict mode still emits the identical anonymous
 JSON; it is a scripting aid, not proof of musical quality. Run this
 locally against rights-permitted audio, not on publicly uploaded recordings.
 
+## Multi-candidate group semantics
+
+When two or more candidates are passed, the tool returns one anonymous
+`candidates` array with neutral `candidate-01`, `candidate-02`, ... IDs
+and each candidate's ordinary single-pair technical metrics. Nothing from
+private paths or PCM samples is published. `inspect_batch(baseline, paths)`
+also supports exactly one candidate through the Python API.
+
+The input group is **strictly bounded** to one baseline plus 1–7 candidates,
+no more than **8,000,000 aggregate source frames** in addition to the
+per-file 2-million-frame/32MiB limits. All source descriptors stay open
+through the entire group; shape, alias identity and aggregate frame budgets
+are checked for *every source* **before any PCM payload** is decoded. The
+same pinned baseline file descriptor is rewound and rescanned for each
+candidate, and every file descriptor plus original full pathname is
+re-checked after the *last* candidate. If an earlier source changes later,
+the whole result is rejected without any partial JSON.
+
+Default group-mode CLI exit is 0 on a valid diagnostic report; optional
+`--fail-on-review` gives 3 if **any** candidate is flagged **or** has
+insufficient active stereo evidence, 0 only if **all** are technically clear,
+and 2 if *any* group file is invalid or changed. This is an optional
+technical screen, never a certification of musical superiority.
+
 ## Policy / limits
 
 - Stereo uncompressed PCM16 **canonical 44-byte** little-endian RIFF WAV only.
   Mono, WAVE_FORMAT_EXTENSIBLE, metadata chunks, noncanonical headers, and
   mismatch in rate or frame count are deliberately unsupported here; a
   separate main scanner has broader format coverage.
-- 8–96 kHz, 1–2,000,000 frames, <=32 MiB each, two unique regular files.
+- 8–96 kHz, 1–2,000,000 frames, <=32 MiB each, 2–8 unique regular files with a total <=8M-frame budget.
   Two source descriptors, Linux `O_DIRECTORY|O_NOFOLLOW` dirfd traversal
   of **every** parent component and no-follow/nonblocking final-source open,
   with post-scan complete-path re-open and descriptor/path identity checks.
