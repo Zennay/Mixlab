@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack
+from functools import wraps
 import json
 import math
 import os
@@ -208,6 +209,20 @@ def _measure_open_pair(a, b):
     }
 
 
+def _sanitized_source_errors(function):
+    """Keep private filesystem names out of public Python API exceptions."""
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except OSError:
+            # pathlib/os.open errors otherwise embed sensitive WAV paths in
+            # exception text; ordinary callers may log that text directly.
+            raise ValueError("Private A/B PCM source admission refused") from None
+    return guarded
+
+
+@_sanitized_source_errors
 def inspect(baseline, candidate):
     """Return anonymous technical balance diagnostics for one A/B pair."""
     with ExitStack() as stack:
@@ -217,6 +232,7 @@ def inspect(baseline, candidate):
         return _measure_open_pair(a, b)
 
 
+@_sanitized_source_errors
 def inspect_batch(baseline, candidates):
     """Fail-closed A/B comparisons sharing one pinned baseline descriptor.
 
