@@ -166,5 +166,42 @@ class FrozenBallotContractTests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
 
 
+    def test_corrupted_raw_json_is_rejected_by_each_real_rating_gate(self):
+        # Use the actual bounded JSON readers, never patch the evaluator.
+        # Four syntactically/semantically malformed files must not be counted.
+        original = self.stash[0].read_bytes()
+        variants = (
+            ("trailing_document", original + b" []"),
+            ("duplicate_object_key", original.replace(
+                b'"schema_version": 1', b'"schema_version": 1, "schema_version": 1', 1)),
+            ("nonfinite_json", original.replace(
+                b'"schema_version": 1', b'"schema_version": NaN', 1)),
+            ("broken_utf8", original.replace(
+                b'"schema_version": 1', b'"schema_version": 1, "foreign": "\\xff"', 1)
+                .replace(b'\\xff', bytes([255]))),
+        )
+        for label, payload in variants:
+            with self.subTest(malformed=label):
+                self.stash[0].write_bytes(payload)
+                for gate, check in self.post_rating_gates():
+                    with self.subTest(gate=gate), self.assertRaises(ValueError) as e:
+                        check()
+                    self.assertNotIn(str(self.base.root), str(e.exception))
+                self.assertEqual(self.stash[0].read_bytes(), payload)
+                self.stash[0].write_bytes(original)
+
+    def test_symlinked_ballot_path_never_counts_as_independent_vote(self):
+        link = self.base.root / "private-synthetic-vote-link.json"
+        link.symlink_to(self.stash[0])
+        self.base.ratings = [link, self.stash[1], self.stash[2]]
+        for gate, check in self.post_rating_gates():
+            with self.subTest(gate=gate):
+                with self.assertRaises(ValueError) as e:
+                    check()
+                self.assertNotIn(str(self.base.root), str(e.exception))
+        self.assert_no_private_leaks(audit_study_assignment(
+            self.base.study, self.base.pack, self.base.pinned))
+
+
 if __name__ == "__main__":
     unittest.main()
