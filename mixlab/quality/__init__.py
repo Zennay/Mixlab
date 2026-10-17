@@ -19,6 +19,9 @@ SILENT_WINDOW_RMS = 10 ** (-55 / 20)
 # Investigate gaps of at least 200 ms between audible sections, even if
 # the rest of an otherwise valid transition is loud.
 INTERIOR_SILENT_GAP_WARNING_MS = 200
+# Differing start/end silence in a blind pair can give away the variant or
+# make playback timing unequal even with identical frame count.
+EDGE_SILENCE_CONFOUND_MS = 200
 # Flag apparent stereo channel loss, not artistic panning: one channel
 # below -55 dBFS while the other is clearly active above -35 dBFS.
 ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
@@ -95,6 +98,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             silent_windows = 0
             windows = 0
             seen_audible_window = False
+            leading_silence_frames = 0
             pending_interior_silence_frames = 0
             longest_interior_silence_frames = 0
             eligible_stereo_windows = 0
@@ -105,7 +109,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                 nonlocal window_sum_squares, window_channel_sum_squares, window_mid_sum_squares, window_samples
                 nonlocal silent_windows, windows, eligible_stereo_windows, phase_risk_windows
                 nonlocal partial_channel_loss_windows
-                nonlocal seen_audible_window, pending_interior_silence_frames, longest_interior_silence_frames
+                nonlocal seen_audible_window, leading_silence_frames
+                nonlocal pending_interior_silence_frames, longest_interior_silence_frames
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
                     window_peaks.append(wrms)
@@ -114,6 +119,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     if is_silent:
                         if seen_audible_window:
                             pending_interior_silence_frames += window_samples // channels
+                        else:
+                            leading_silence_frames += window_samples // channels
                     else:
                         if seen_audible_window:
                             longest_interior_silence_frames = max(
@@ -193,6 +200,13 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     peak = peak_sample / 32768
     # The pending trailing gap is intentionally excluded until sound resumes.
     interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
+    # The pending gap at EOF is trailing silence, not an interior dropout.
+    # Fully silent files are already diagnosed separately: don't fabricate
+    # an audible ending at their duration.
+    leading_silence_ms = round(1000 * leading_silence_frames / rate, 3)
+    trailing_silence_ms = round(
+        1000 * pending_interior_silence_frames / rate, 3
+    ) if seen_audible_window else 0.0
     channel_rms = [math.sqrt(x / nframes) / 32768 for x in channel_sum_squares]
     dc_per_channel = [x / nframes / 32768 for x in sum_samples]
     dc_offset_risk = any(abs(x) > DC_OFFSET_RISK for x in dc_per_channel)
@@ -238,6 +252,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         ),
         "near_full_scale_fraction": round(near_full_scale / total_samples, 8),
         "silent_window_fraction": round(silent_windows / windows, 6),
+        "leading_silence_ms": leading_silence_ms,
+        "trailing_silence_ms": trailing_silence_ms,
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
         "interior_silent_gap_risk": interior_silent_gap_ms >= INTERIOR_SILENT_GAP_WARNING_MS,
         "window_count": windows,
@@ -346,6 +362,16 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         )
         if short_window_level_mismatch_risk:
             warnings.append("short_window_rms_level_confound_inspect_not_lufs")
+        # Aligned durations do not guarantee aligned audible starts/ends.
+        # Only inspect non-silent pairs; a completely silent side is handled
+        # by the existing silence-specific warning.
+        edge_silence_mismatch_risk = (
+            base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None
+            and any(abs(metrics[edge] - base[edge]) >= EDGE_SILENCE_CONFOUND_MS
+                    for edge in ("leading_silence_ms", "trailing_silence_ms"))
+        )
+        if edge_silence_mismatch_risk:
+            warnings.append("ab_edge_silence_alignment_confound_inspect")
         duplicate_pcm_of = None
         if candidate_digest == base_digest:
             duplicate_pcm_of = "baseline"
@@ -365,6 +391,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "rms_delta_db_vs_baseline": level_difference,
             "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
             "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
+            "edge_silence_mismatch_risk": edge_silence_mismatch_risk,
             "warnings": warnings,
             "duplicate_pcm_of": duplicate_pcm_of,
             "requires_human_review": True,
