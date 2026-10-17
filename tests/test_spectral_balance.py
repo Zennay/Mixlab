@@ -486,6 +486,29 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertIsNone(row["stereo_temporal_level_balance_mismatch_fraction"])
         self.assertIn("stereo_channel_near_silence_inspect", row["warnings"])
 
+    def test_globally_audible_but_unresolvable_channel_is_not_false_clean(self):
+        # One silent channel and a weak -50dBFS partner leave global RMS
+        # near -53dBFS (above the global -55dBFS cutoff) but provide no
+        # valid L/R-balance comparison or major -35dBFS active channel.
+        make_stereo_levels_wav(self.base, [(0, 145)] * 8)
+        make_stereo_levels_wav(self.other, [(0, 145)] * 8)
+        row = self.report()["candidates"][0]
+        self.assertIsNone(row["stereo_channel_level_balance_shift_risk"])
+        self.assertIsNone(row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertIn("stereo_channel_level_balance_unresolved_inspect", row["warnings"])
+        self.assertNotIn("stereo_channel_near_silence_inspect", row["warnings"])
+        self.assertNotIn("insufficient_audible_energy_for_spectral_comparison", row["warnings"])
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_stereo_balance_unresolved_warning_is_not_a_mono_property(self):
+        make_wav(self.base, gain=145)
+        make_wav(self.other, gain=145)
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_channel_level_balance_shift_risk", row)
+        self.assertNotIn("stereo_channel_level_balance_unresolved_inspect", row["warnings"])
+
     def test_stereo_balance_checks_skip_mono_and_preserve_stream_chunk_semantics(self):
         self.assertNotIn("stereo_channel_level_balance_shift_risk", self.report()["candidates"][0])
         self.assertNotIn("stereo_temporal_level_balance_mismatch_fraction", self.report()["candidates"][0])
