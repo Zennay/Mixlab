@@ -208,7 +208,7 @@ class SpectralBalanceTests(unittest.TestCase):
             return original(reader, count)
 
         with patch.object(wave.Wave_read, "readframes", replace_during_read):
-            with self.assertRaisesRegex(ValueError, "pathname changed"):
+            with self.assertRaisesRegex(ValueError, "changed while being inspected"):
                 self.report()
         self.assertEqual(6, len(reads))
         self.assertEqual(12000, scan_spectral_proxy(self.other)["frames"])
@@ -224,7 +224,7 @@ class SpectralBalanceTests(unittest.TestCase):
             return original(reader, count)
 
         with patch.object(wave.Wave_read, "readframes", unlink_during_read):
-            with self.assertRaisesRegex(ValueError, "pathname changed"):
+            with self.assertRaisesRegex(ValueError, "changed while being inspected"):
                 self.report()
         self.assertEqual(6, len(reads))
         self.assertFalse(self.other.exists())
