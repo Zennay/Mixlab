@@ -1,11 +1,13 @@
 """Rights-free contract tests; no listener identities or audio uploads."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from mixlab.cli import write_review
 from mixlab.quality.reviewer_export_parity import (
@@ -32,7 +34,9 @@ class ReviewerExportParityTests(unittest.TestCase):
     def fixed(self):
         """Idempotent after the CLI integration owner ships the pattern."""
         page = self.page.read_text(encoding="utf-8")
-        if 'name="reviewer" required pattern="' + BROWSER_PATTERN + '"' in page:
+        reviewer_tag = re.search(r'<input\b[^>]*\bname="reviewer"[^>]*>', page)
+        self.assertIsNotNone(reviewer_tag)
+        if 'pattern="' + BROWSER_PATTERN + '"' in reviewer_tag.group():
             return
         self.patch('name="reviewer" required maxlength="40"',
                    'name="reviewer" required pattern="' + BROWSER_PATTERN +
@@ -42,8 +46,10 @@ class ReviewerExportParityTests(unittest.TestCase):
         # Current main is HOLD. Once the CLI owner fixes it, this test must
         # turn green-as-PASS rather than forever expecting the known defect.
         html = self.page.read_text(encoding="utf-8")
-        has_guard = 'name="reviewer" required pattern="' + BROWSER_PATTERN + '"' in html
-        self.assertTrue(has_guard or 'name="reviewer" required maxlength="40"' in html)
+        reviewer_tag = re.search(r'<input\b[^>]*\bname="reviewer"[^>]*>', html)
+        self.assertIsNotNone(reviewer_tag)
+        has_guard = 'pattern="' + BROWSER_PATTERN + '"' in reviewer_tag.group()
+        self.assertTrue(has_guard or 'maxlength="40"' in reviewer_tag.group())
         report = self.checked()
         self.assertEqual(report["technical_gate"], "pass" if has_guard else "hold")
         self.assertIs(report["reviewer_input_contract_compatible"], has_guard)
@@ -60,6 +66,30 @@ class ReviewerExportParityTests(unittest.TestCase):
         self.assertFalse(report["full_review_page_verified"])
         self.assertFalse(report["ratings_aggregate_verified"])
         self.assertFalse(report["human_musical_preference_proven"])
+
+    def test_future_generator_patch_is_accepted_and_invalid_modification_still_holds(self):
+        """Simulate owner's legitimate repair without editing their CLI scope."""
+        from mixlab import cli
+
+        original = cli.write_review
+
+        def future_write_review(path, trial_ids, pack_id):
+            original(path, trial_ids, pack_id)
+            file = Path(path)
+            body = file.read_text(encoding="utf-8")
+            old = 'name="reviewer" required maxlength="40"'
+            guarded = 'name="reviewer" required pattern="' + BROWSER_PATTERN + '" maxlength="40"'
+            if old in body:
+                body = body.replace(old, guarded, 1)
+                file.write_text(body, encoding="utf-8")
+
+        with patch.object(cli, "write_review", side_effect=future_write_review):
+            future_write_review(self.page, ["trial-001", "trial-002"], "a" * 64)
+            self.assertEqual(self.checked()["technical_gate"], "pass")
+            # Even after the upstream repair, a changed JS response mapping
+            # must still HOLD rather than inheriting trust from the generator.
+            self.patch("preference:f.get(el.dataset.trial)", "preference:'A'")
+            self.assertEqual(self.checked()["technical_gate"], "hold")
 
     def test_representative_pseudonym_acceptance_matches_aggregate(self):
         valid = ("A", "listener-01", "a9-_", "z" * 40)
@@ -169,7 +199,9 @@ class ReviewerExportParityTests(unittest.TestCase):
         cmd = [sys.executable, "-m", "mixlab.quality.reviewer_export_parity", str(self.page)]
         baseline = subprocess.run(cmd, text=True, capture_output=True, timeout=10)
         official_html = self.page.read_text(encoding="utf-8")
-        official_guarded = ('name="reviewer" required pattern="' + BROWSER_PATTERN + '"') in official_html
+        reviewer_tag = re.search(r'<input\b[^>]*\bname="reviewer"[^>]*>', official_html)
+        self.assertIsNotNone(reviewer_tag)
+        official_guarded = 'pattern="' + BROWSER_PATTERN + '"' in reviewer_tag.group()
         self.assertEqual(baseline.returncode, 0 if official_guarded else 3, baseline.stderr)
         self.assertEqual(json.loads(baseline.stdout)["technical_gate"],
                          "pass" if official_guarded else "hold")
