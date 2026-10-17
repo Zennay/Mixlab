@@ -31,8 +31,15 @@ def inspect_review_pack(
         raise ValueError("Review input must be a real directory, not a symlink")
     groups: dict[str, dict[str, Path]] = {}
     for entry in directory.iterdir():
+        # The review directory may be served to a listener. Reject leaked
+        # answer keys, manifests, downloads or other unexpected assets, even
+        # when they are not audio. Only the generated index is public.
+        if entry.name == "index.html":
+            if entry.is_symlink() or not entry.is_file():
+                raise ValueError("Review index must be a regular file")
+            continue
         if entry.suffix.lower() != ".wav":
-            continue  # index.html and other non-audio assets are not inspected
+            raise ValueError("Review directory contains an unexpected public asset")
         match = _TRIAL_WAV.fullmatch(entry.name)
         if match is None or int(match.group(2)) == 0:
             raise ValueError("Review directory contains an unexpected WAV filename")
