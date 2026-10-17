@@ -113,6 +113,21 @@ class PrecisionTest(unittest.TestCase):
             coarse_offset=5, coarse_jitter=1)
         self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
 
+    def test_adjacent_phase_jitter_in_separate_stereo_regions(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0, 1), coarse_step=32,
+            coarse_offset=5, coarse_jitter=1,
+            channel_coarse_regions={0: (0,), 1: (6,)})
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_one_adjacent_phase_window_in_both_channels_is_not_persistent(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0, 1), coarse_step=32,
+            coarse_offset=3, coarse_jitter=1, coarse_regions=(4,))
+        outcome = compare_precision(self.a, self.b)
+        self.assertIsNone(outcome["candidate_precision_loss_inspect"])
+        self.assertEqual(outcome["warnings"], [])
+
     def test_adjacent_phase_detection_is_chunk_independent(self):
         wav(self.a, channels=2)
         wav(self.b, channels=2, coarse=(0,), coarse_step=32,
@@ -479,6 +494,24 @@ class BatchPrecisionTest(unittest.TestCase):
             [entry["candidate_precision_loss_inspect"] for entry in result["candidates"]],
             [False, True])
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_batch_strict_warns_on_cross_stereo_jitter_without_leaking_paths(self):
+        wav(self.base, channels=2)
+        wav(self.c1, channels=2, seed=4)
+        wav(self.c2, channels=2, coarse=(0, 1), coarse_step=32,
+            coarse_offset=5, coarse_jitter=1,
+            channel_coarse_regions={0: (1,), 1: (5,)})
+        rows = precision.compare_precision_batch(self.base, [self.c1, self.c2])
+        self.assertEqual(
+            [r["candidate_precision_loss_inspect"] for r in rows["candidates"]],
+            [False, True])
+        cmd = [sys.executable, "-m", "mixlab.quality.precision",
+               str(self.base), str(self.c1), str(self.c2), "--batch",
+               "--fail-on-warnings", "--require-conclusive"]
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), rows)
 
     def test_single_candidate_batch_matches_single_pair_verdict(self):
         one = precision.compare_precision(self.base, self.c2)
