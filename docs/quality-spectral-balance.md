@@ -134,6 +134,16 @@ proxy ratios produce dedicated warnings; no meaningless dB or successful
 comparability is fabricated. All channels are combined in energy without
 downmixing; a separate stereo/mono check is still required.
 
+The public Python function `scan_spectral_proxy(path)` returns **only**
+the seven explicitly allowed global metrics: rate, channels, frames,
+RMS dBFS and the three low/mid/high energy ratios. Private source inode
+and timestamp snapshots, per-channel energies, full precision RMS,
+and the eight time-span envelopes are held only inside the internal
+A/B implementation, not exported by the standalone scanner or JSON.
+Tests assert that both the public function and CLI remain redacted at
+8/44.1/96 kHz, on 4096-frame read boundaries and with extreme PCM16
+values (-32768 and 32767). There is no file identity or review answer key.
+
 The JSON has only a synthetic candidate-01 numbering, generic warning
 codes, format/duration facts, rounded global RMS and three energy ratios
 per source, aggregate A/B deltas, eight-span mismatch *fractions*
