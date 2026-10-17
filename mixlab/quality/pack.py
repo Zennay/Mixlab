@@ -184,7 +184,11 @@ def _verify_neutral_public_wav(path: Path) -> None:
     This reads chunk headers only; PCM remains in the bounded audio scanner.
     """
     size = path.stat().st_size
-    if size < 44 or size > MAX_SOURCE_BYTES:
+    if size < 44:
+        # Preserve the established corrupt-header diagnostic for truncated
+        # input, while enforcing a stricter *valid* public WAV container.
+        raise ValueError("Invalid review WAV header")
+    if size > MAX_SOURCE_BYTES:
         raise ValueError("Review public WAV exceeds canonical container bounds")
     with path.open("rb") as source:
         riff = source.read(12)
