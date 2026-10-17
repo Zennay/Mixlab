@@ -1470,6 +1470,57 @@ class QualityTests(unittest.TestCase):
         row = compare_wavs(self.base, [self.candidate])["candidates"][0]
         self.assertIsNone(row["stereo_swapped_pcm_of"])
 
+    def test_exact_polarity_inversion_is_distinct_from_identical_pcm(self):
+        # A reversed-polarity file has the same underlying waveform, and
+        # often sounds equivalent in isolation, while normal PCM hashes differ.
+        wav(self.candidate, [-x for x in self.samples])
+        before = self.candidate.read_bytes()
+        report = compare_wavs(self.base, [self.candidate])
+        row = report["candidates"][0]
+        self.assertIsNone(row["duplicate_pcm_of"])
+        self.assertEqual("baseline", row["polarity_inverted_pcm_of"])
+        self.assertIn("polarity_inverted_pcm_inspect_for_reused_audio", row["warnings"])
+        self.assertFalse(row["stereo_swapped_pcm_of"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("sha256", json.dumps(report))
+        self.assertEqual(before, self.candidate.read_bytes())
+        wav(self.candidate, [int(-x * .9) for x in self.samples])
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertIsNone(row["polarity_inverted_pcm_of"])
+
+    def test_polarity_inversion_candidate_chain_stereo_and_min_int_guard(self):
+        base = self.root / "sign-base.wav"
+        first = self.root / "sign-first.wav"
+        second = self.root / "sign-second.wav"
+        wav(base, [v for x in self.samples for v in (x, x)], channels=2)
+        stereo = [v for i in range(8000)
+                  for v in (int(4200 * math.sin(i * .09)),
+                            int(5500 * math.cos(i * .11)))]
+        wav(first, stereo, channels=2)
+        wav(second, [-v for v in stereo], channels=2)
+        rows = compare_wavs(base, [first, second])["candidates"]
+        self.assertIsNone(rows[0]["polarity_inverted_pcm_of"])
+        self.assertEqual("candidate-01", rows[1]["polarity_inverted_pcm_of"])
+        self.assertIsNone(rows[1]["duplicate_pcm_of"])
+        # Exact duplicate dual-mono must still use the existing no-op flag.
+        wav(first, [v for x in self.samples for v in (x, x)], channels=2)
+        row = compare_wavs(base, [first])["candidates"][0]
+        self.assertEqual("baseline", row["duplicate_pcm_of"])
+        self.assertIsNone(row["polarity_inverted_pcm_of"])
+        # -32768 has no representable arithmetic negation in PCM16. Reject
+        # comparison rather than wrapping to -32768 or silently clipping.
+        original = self.samples.copy()
+        original[4095] = -32768
+        wav(self.candidate, original)
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertIsNone(row["polarity_inverted_pcm_of"])
+        # Quiet zeros are exact duplicates, not polarity inversions.
+        wav(self.base, [0] * len(self.samples))
+        wav(self.candidate, [0] * len(self.samples))
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertEqual("baseline", row["duplicate_pcm_of"])
+        self.assertIsNone(row["polarity_inverted_pcm_of"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
