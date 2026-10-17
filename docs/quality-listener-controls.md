@@ -168,3 +168,32 @@ three independent human responses. These CI tests do not evaluate taste,
 quality superiority, source ownership, real audio device output or accessible
 screen-reader behaviour. All files are temporary GitHub-hosted fixtures;
 the production VPS and private audio library remain untouched.
+
+## Browser playback initiation vs full PCM decode (strict evidence boundary)
+
+A first headless Chromium regression asked for a physical-like
+`HTMLMediaElement.ended` event after synthetic playback. [The exploratory
+hosted run #39043402427](https://github.com/Zennay/Mixlab/actions/runs/39043402427)
+correctly **failed**: the audio element's `play()` promise resolved, but
+Chrome's accelerated `--virtual-time-budget` did not provide an `ended`
+event that can establish actual wall-clock playback or audio output. This
+is not evidence of an application fault, nor proof of audible sound.
+
+The gate now keeps two distinct assertions:
+
+- Browser `HTMLMediaElement.play()` **accepts initiation** of an existing
+  local synthetic WAV, rather than pretending time-accelerated headless
+  playback proves the entire clip was heard.
+- A separate browser `OfflineAudioContext.decodeAudioData` reads **all
+  PCM16 bytes** of a generated 8 kHz stereo, 0.4-second WAV, verifies the
+  3,200-frame decoded `AudioBuffer`, sample rate, channel count, duration,
+  nonzero content and opposite-channel sample relation. A corrupt,
+  non-WAV byte array must reject. No output device, external network or
+  user music is needed.
+
+The browser media metadata checks still prove all ten local neutral WAV
+references resolve (and fail for removed/corrupted files); the actual
+renderer-to-evaluation smoke independently verifies checksum-bound renders
+and browser-created **synthetic** JSON ratings. **No automated CI output
+certifies real audible listening, assistive technology accessibility,
+legal rights, human preference, or M1 milestone completion.**
