@@ -50,6 +50,7 @@ class FrozenStudyBindingTests(unittest.TestCase):
             pairs.append({"pair_id": f"pair-{number}", "a": f"track-{number}-a",
                           "b": f"track-{number}-b", "a_sha256": left,
                           "b_sha256": right, "a_bpm": 120.0, "b_bpm": 120.0,
+                          "renderable_without_stretch": True,
                           "candidate_family": family})
             trial = f"trial-{i:03d}"
             pair = f"synthetic-alignment-{number}"
@@ -321,6 +322,18 @@ class FrozenStudyBindingTests(unittest.TestCase):
                 self.study.write_bytes(original)
                 self._assert_bad_rehashed_study(lambda d:
                     d["pairs"][0].__setitem__("a_sha256", invalid))
+
+    def test_rehashed_unrenderable_pair_never_passes_quality_gate(self):
+        self._assert_bad_rehashed_study(lambda d:
+            d["pairs"][0].__setitem__("renderable_without_stretch", False))
+
+    def test_rehashed_renderable_flag_must_be_actual_boolean(self):
+        self._assert_bad_rehashed_study(lambda d:
+            d["pairs"][0].__setitem__("renderable_without_stretch", 1))
+
+    def test_rehashed_unmatched_source_tempo_cannot_claim_renderable(self):
+        self._assert_bad_rehashed_study(lambda d:
+            d["pairs"][0].__setitem__("b_bpm", 121.0))
 
     def test_reuse_exactly_at_allowed_limit_is_valid_study_shape(self):
         from mixlab.quality.study_binding import _verified_study
