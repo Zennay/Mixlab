@@ -1633,6 +1633,66 @@ class QualityTests(unittest.TestCase):
         self.assertIsNone(mono["stereo_channel_onset_gap_ms"])
         self.assertFalse(mono["stereo_channel_onset_skew_risk"])
 
+    def test_short_midclip_single_channel_dropout_hidden_from_rms_windows(self):
+        # One stereo channel disappears for 60ms inside an audible
+        # 100ms RMS window. The other channel remains loud throughout.
+        ref = self.root / "stereo-short-reference.wav"
+        other = self.root / "stereo-short-dropout.wav"
+        clean = [v for i in range(8000) for v in (9000, 9000)]
+        missing = [v for i in range(8000)
+                   for v in (9000, 0 if 4050 <= i < 4530 else 9000)]
+        wav(ref, clean, channels=2)
+        wav(other, missing, channels=2)
+        before = [p.read_bytes() for p in (ref, other)]
+        report = compare_wavs(ref, [other])
+        row = report["candidates"][0]
+        metrics = row["metrics"]
+        self.assertFalse(metrics["partial_stereo_channel_loss_risk"])
+        self.assertFalse(metrics["stereo_channel_silence_risk"])
+        self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+        self.assertEqual(60.0, metrics["longest_interior_stereo_channel_quiet_gap_ms"])
+        self.assertTrue(metrics["short_interior_stereo_channel_dropout_risk"])
+        self.assertIn("short_interior_stereo_channel_dropout_inspect", row["warnings"])
+        self.assertNotIn("short_interior_stereo_channel_dropout_inspect",
+                         report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("4050", json.dumps(report))
+        self.assertEqual(before, [p.read_bytes() for p in (ref, other)])
+        # The scanner must not assume the *candidate* is always faulty.
+        reversed_report = compare_wavs(other, [ref])
+        self.assertIn("short_interior_stereo_channel_dropout_inspect",
+                      reversed_report["baseline_warnings"])
+
+    def test_stereo_partial_gap_threshold_and_non_dropout_controls(self):
+        stereo = self.root / "stereo-gap-window.wav"
+        for gap, expected in ((320, False), (399, False), (400, True),
+                              (480, True)):
+            values = [v for i in range(8000)
+                      for v in (9000, 0 if 4050 <= i < 4050 + gap else 9000)]
+            wav(stereo, values, channels=2)
+            metrics = scan_wav(stereo)
+            with self.subTest(frames=gap):
+                self.assertEqual(gap / 8,
+                                 metrics["longest_interior_stereo_channel_quiet_gap_ms"])
+                self.assertEqual(expected, metrics["short_interior_stereo_channel_dropout_risk"])
+        # Both channels go silent: existing whole-signal dropout screen
+        # handles that, not the single-channel false-positive check.
+        both = [v for i in range(8000)
+                for v in ((0, 0) if 4050 <= i < 4530 else (9000, 9000))]
+        wav(stereo, both, channels=2)
+        self.assertFalse(scan_wav(stereo)["short_interior_stereo_channel_dropout_risk"])
+        # Entirely missing right channel, or trailing dropout, is already
+        # handled by another metric (and is not an *interior recovered* gap).
+        wav(stereo, [v for i in range(8000) for v in (9000, 0)], channels=2)
+        self.assertFalse(scan_wav(stereo)["short_interior_stereo_channel_dropout_risk"])
+        trailing = [v for i in range(8000)
+                    for v in (9000, 0 if i >= 7200 else 9000)]
+        wav(stereo, trailing, channels=2)
+        self.assertFalse(scan_wav(stereo)["short_interior_stereo_channel_dropout_risk"])
+        mono = scan_wav(self.base)
+        self.assertIsNone(mono["longest_interior_stereo_channel_quiet_gap_ms"])
+        self.assertFalse(mono["short_interior_stereo_channel_dropout_risk"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
