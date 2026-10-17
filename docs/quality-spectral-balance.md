@@ -169,6 +169,27 @@ have the same defect. The report does not reveal which channel or which
 source caused the warning. This is a technical listening prompt, not a
 claim that all intentional single-channel mixes are invalid.
 
+**Band-local mono cancellation** can be concealed by a broadband
+mono-fold result: a strong in-phase treble layer may keep the overall
+mono RMS healthy while the filtered low-frequency layer disappears.
+The scanner therefore also accumulates three private filtered-band L/R
+cross-energies (low 180Hz, mid 180–2500Hz, high 2500Hz proxies).
+It computes each band's approximate mono-fold ratio independently and
+issues an anonymous `stereo_<band>_band_mono_fold_cancellation_inspect`
+only if that band has an appreciable whole-source energy share
+(>=0.10 RMS ratio) **and** the filtered band loses at least 10dB
+relative to its own stereo-band RMS in *either* A or B. The public
+`stereo_<band>_band_mono_fold_cancellation_risk` is only a boolean:
+no absolute energy, correlation, source identity, L/R direction, private
+filtered samples or time locations are released. Tiny filter leakage
+and a wholly inaudible file do not assert meaningful cancellation.
+The filters are broad and overlap, so these **are only proxy warnings**,
+not calibrated multiband phase coherence or a music listening verdict.
+The original fullband mono-fold check remains independently necessary.
+Synthetic two-tone oracles exercise low-bass cancellation hidden behind
+loud treble, its high-frequency counterpart behind loud bass, risk
+symmetry, gain invariance, source privacy and chunk invariance.
+
 A fourth, **stereo mono-folding risk** inspection uses a single
 constant-space left/right cross-energy accumulator over the same PCM frames.
 It estimates the RMS ratio of arithmetic mono `(L+R)/2` to stereo RMS,
