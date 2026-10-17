@@ -46,6 +46,27 @@ class IngestPreflightTypesTests(unittest.TestCase):
                 self._assert_rejected_without_audio(
                     manifest, "development/evaluation partition")
 
+    def test_invalid_last_record_does_not_open_earlier_audio(self):
+        # Previously even a trivial error in record 2 consumed record 1's
+        # full WAV and SHA read before failing the library as a whole.
+        for field, value, error in (
+            ("rights", [], "Explicit permission"),
+            ("provenance", " ", "Provenance"),
+            ("bpm", "120", "manual bpm"),
+            ("sha256", "invalid", "source checksum"),
+            ("recording_id", [], "recording id"),
+            ("path", "bad\\\\path.wav", "relative POSIX"),
+        ):
+            with self.subTest(field=field):
+                manifest = json.loads(json.dumps(self.original))
+                manifest["tracks"][-1][field] = value
+                self._assert_rejected_without_audio(manifest, error)
+
+    def test_duplicate_late_id_does_not_open_earlier_audio(self):
+        manifest = json.loads(json.dumps(self.original))
+        manifest["tracks"][-1]["id"] = manifest["tracks"][0]["id"]
+        self._assert_rejected_without_audio(manifest, "Duplicate track id")
+
     def test_valid_partitioned_synthetic_fixture_still_passes(self):
         manifest = json.loads(json.dumps(self.original))
         for record in manifest["tracks"]:
