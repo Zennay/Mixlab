@@ -185,6 +185,17 @@ human preference evidence.
   **not** the underlying private waveform/envelope. This is not
   BS.1770/LUFS, does not normalize audio, and may flag intentional dramatic
   transitions. The LUFS matching work remains separately owned.
+- Leading and trailing below -55 dBFS RMS windows are also measured as
+  window-resolution milliseconds. For two audible A/B variants with identical
+  frame count, a difference of >=200 ms at **either** end emits
+  `ab_edge_silence_alignment_confound_inspect` and
+  `edge_silence_mismatch_risk=true`. Such asymmetry can cue a listener to
+  which variant is playing even if the file duration matches. Entirely silent
+  files use the existing silence warning, not an inferred timing verdict.
+  Intentional DJ dramatic pauses can be valid; this is only a technical
+  *inspect* signal, not proof of poor mix quality or a preference winner.
+  Window size (20–1000 ms) limits time resolution; preserve the original
+  audio and ask the independent reviewer before a frozen blind benchmark.
 - Consecutive below -55 dBFS RMS windows are tracked in streaming mode.
   A gap >=200 ms **between** audible sections raises
   `interior_silent_gap_inspect_for_dropouts`, even when fewer than half of

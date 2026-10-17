@@ -97,6 +97,51 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(1.0, row["short_window_level_mismatch_fraction"])
         self.assertTrue(row["short_window_level_mismatch_risk"])
 
+    def test_blind_ab_flags_unequal_leading_and_trailing_silence(self):
+        # Both variants have the same duration/format, but 300 ms of
+        # leading or trailing silence can bias an A/B listener's timing.
+        reference = self.samples
+        original_metrics = scan_wav(self.base)
+        self.assertEqual(0.0, original_metrics["leading_silence_ms"])
+        self.assertEqual(0.0, original_metrics["trailing_silence_ms"])
+        for placement in ("leading", "trailing"):
+            with self.subTest(placement=placement):
+                shifted = ([0] * 2400 + reference[:5600]
+                           if placement == "leading" else reference[:5600] + [0] * 2400)
+                wav(self.candidate, shifted)
+                report = compare_wavs(self.base, [self.candidate])
+                row = report["candidates"][0]
+                self.assertEqual(300.0, row["metrics"][placement + "_silence_ms"])
+                self.assertTrue(row["edge_silence_mismatch_risk"])
+                self.assertIn("ab_edge_silence_alignment_confound_inspect", row["warnings"])
+                self.assertFalse(report["baseline_warnings"])
+                self.assertNotIn(str(self.root), json.dumps(report))
+                self.assertNotIn("winner", json.dumps(report))
+
+    def test_blind_ab_edge_silence_threshold_stereo_and_fully_silent_guard(self):
+        left = self.root / "left-right-base.wav"
+        other = self.root / "left-right-candidate.wav"
+        stereo = [v for x in self.samples for v in (x, x)]
+        wav(left, stereo, channels=2)
+        # One 100-ms leading silent window is below the 200-ms threshold.
+        shifted = [0] * (800 * 2) + stereo[:7200 * 2]
+        wav(other, shifted, channels=2)
+        row = compare_wavs(left, [other])["candidates"][0]
+        self.assertEqual(100.0, row["metrics"]["leading_silence_ms"])
+        self.assertFalse(row["edge_silence_mismatch_risk"])
+        # Leading silence can cross the 4096-frame source-read boundary.
+        shifted = [0] * (4800 * 2) + stereo[:3200 * 2]
+        wav(other, shifted, channels=2)
+        row = compare_wavs(left, [other])["candidates"][0]
+        self.assertEqual(600.0, row["metrics"]["leading_silence_ms"])
+        self.assertTrue(row["edge_silence_mismatch_risk"])
+        # Silence already has a dedicated warning; avoid inventing an
+        # alignment verdict when there are no audible boundaries.
+        wav(other, [0] * len(stereo), channels=2)
+        row = compare_wavs(left, [other])["candidates"][0]
+        self.assertFalse(row["edge_silence_mismatch_risk"])
+        self.assertIn("fully_silent_audio_inspect", row["warnings"])
+
     def test_silent_and_near_full_scale_candidates(self):
         wav(self.candidate, [0] * 8000)
         row = compare_wavs(self.base, [self.candidate])["candidates"][0]
