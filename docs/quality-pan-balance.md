@@ -83,6 +83,11 @@ technical screen, never a certification of musical superiority.
   left/right energy for each aligned 250 ms window. Ignore windows unless
   **both channels in both samples** exceed -45 dBFS RMS; otherwise abstain.
   Remaining partial windows (<250 ms) are not decisive.
+- 250ms window boundaries use **cumulative rational sample positions**
+  (nearest integer), not independently truncated 250ms widths. Thus the
+  complete fourth window ends at exactly 1 second even for sample rates
+  such as 8,001, 11,025 and 22,050 Hz; a clip one frame short cannot
+  falsely pass the one-second evidence threshold. This is not resampling.
 - Compare each candidate window's 10log10(L power / R power) with the
   corresponding baseline ratio. Flag review when the **absolute tilt delta
   >=6 dB** persists at least 1,000 ms continuously. Return only aggregate
@@ -123,3 +128,16 @@ The fix uses root-to-leaf no-follow descriptor traversal both before reading
 PCM and again after reading, and validates path components before opening any
 directory. Always bind final release evidence to the latest code SHA instead
 of using the RED or an earlier hosted-green commit.
+
+## Exact-duration evidence and boundary regression
+
+The original implementation used `floor(rate * 0.25)` frames **for every**
+window. Four windows at 11,025 Hz covered just 11,024 frames, causing an
+exactly-one-second PCM clip to be marked `insufficient_active_audio`, while
+a one-frame-short clip could be incorrectly reviewed or cleared. The new
+absolute sample boundaries accumulate fractional window widths while
+remaining integer-only, deterministic, streaming and O(1) memory.
+Synthetic regression tests cover 8,001, 11,025, 16,001, 22,050 and 44,101 Hz,
+for exact-one-second clean and warned stereo signals, one-frame-short abstention
+and mixed group output. This is a timing-diagnostic correctness fix, not
+measured beat alignment or evidence of music preference.
