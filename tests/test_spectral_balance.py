@@ -703,6 +703,29 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertEqual(2, strict.returncode, strict.stderr)
         self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
 
+    def test_one_disjoint_bad_span_per_ab_source_is_not_claimed_persistent(self):
+        make_segmented_band_antiphase_wav(
+            self.base, [True] + [False] * 7
+        )
+        make_segmented_band_antiphase_wav(
+            self.other, [False] * 7 + [True]
+        )
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertNotIn("stereo_temporal_low_band_mono_fold_inspect", row["warnings"])
+        self.assertNotIn(str(self.dir), json.dumps(self.report()))
+
+    def test_persistent_source_remains_flagged_when_other_source_has_one_elsewhere(self):
+        make_segmented_band_antiphase_wav(
+            self.base, [True, True] + [False] * 6
+        )
+        make_segmented_band_antiphase_wav(
+            self.other, [False] * 7 + [True]
+        )
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_temporal_low_band_mono_fold_risk"])
+        self.assertIn("stereo_temporal_low_band_mono_fold_inspect", row["warnings"])
+
     def test_single_band_cancellation_interval_is_not_persistent(self):
         make_segmented_band_antiphase_wav(self.base, [False] * 8)
         make_segmented_band_antiphase_wav(
