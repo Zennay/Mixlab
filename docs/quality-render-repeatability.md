@@ -41,6 +41,12 @@ alone is insufficient. The supplied pathname is traversed component-by-component
 without first calling `resolve()` or `abspath()`, so a disguised
 `symlink-directory/../file.wav` cannot be silently normalized to an allowed
 filename. Intermediate directory descriptors are closed before reading PCM.
+Before opening **any** directory descriptor, the entire path must contain
+at most **64 components** and at most **4,096 filesystem-encoded bytes**;
+this caps the nested dirfd resource cost and rejects hostile giant paths
+without depending on platform-specific kernel errors. Genuine, symlink-free
+relative `../` paths remain admissible: the directory walk retains real
+filesystem traversal semantics instead of stripping the component.
 PCM is digested in chunks of at most 4,096 frames, never loaded wholesale.
 The digests are compared in memory only and never serialized. After both scans,
 the **complete source path is opened again with the same no-follow dirfd walk**
