@@ -27,10 +27,17 @@ consume only O(channels × floor(frames / 250ms)) memory. Per-source and
 pair-wide device/inode/size/mtime/ctime freeze checks reject detectable source
 changes, including path swaps. Single-pair and batch execution both
 pre-admit every source **before any PCM decoding**. The RIFF/WAVE physical
-container length must match the declared RIFF size exactly: forged lengths and
-unclaimed trailing bytes fail closed, while properly accounted metadata/JUNK
-chunks remain valid. This guards misleading technical screening on malformed
-private clips, but is not a complete RIFF consistency or codec/security audit.
+container length must match the declared RIFF size exactly. A bounded
+**1,024-header maximum** then checks all RIFF chunk offsets, sizes, required
+alignment padding, unique ordered `fmt `/`data` chunks and PCM payload length
+against complete decoded frames. Forged outer or inner chunk lengths, duplicate
+`fmt `/`data`, trailing orphan bytes, sub-frame PCM and oversized chunk graphs
+fail closed before PCM decoding; properly accounted metadata/JUNK chunks,
+including odd-sized chunks with a pad byte, remain valid. The check only reads RIFF *headers* during admission, not private PCM; the
+full PCM scan remains bounded and read-only. The header limit is deliberately
+conservative for CPU-first admission. This guards misleading technical screening
+on malformed private clips, but is not a complete RIFF consistency, codec,
+or musical quality audit.
 This is best effort and **not** an atomic filesystem snapshot.
 
 ## Batch input contract
