@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from pathlib import Path
+import stat
 import sys
 
-from . import compare_wavs
+from . import MAX_SOURCE_BYTES, compare_wavs
 
 MIN_DURATION_SECONDS = 1.0
 MAX_SILENT_WINDOW_FRACTION = 0.2
@@ -67,9 +70,26 @@ def assess(report: dict) -> dict:
     }
 
 
+def _admit_regular_path(source: str) -> None:
+    """Reject symlinked paths, special files, and overlarge input before scan.
+
+    This is a static admission guard, NOT an atomic open-descriptor binding
+    under concurrent hostile renames. Only use in a trusted local workspace.
+    """
+    path = Path(os.path.abspath(source))
+    for parent in reversed(path.parents):
+        if not stat.S_ISDIR(os.lstat(parent).st_mode):
+            raise ValueError("private audio parent is not a regular directory")
+    leaf = os.lstat(path)
+    if not stat.S_ISREG(leaf.st_mode) or not 44 <= leaf.st_size <= MAX_SOURCE_BYTES:
+        raise ValueError("private input must be a bounded regular WAV")
+
+
 def inspect(baseline: str, candidates: list[str]) -> dict:
     if not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError("expected 1..4 candidates")
+    for path in (baseline, *candidates):
+        _admit_regular_path(path)
     return assess(compare_wavs(baseline, candidates, window_ms=100))
 
 
