@@ -142,7 +142,13 @@ and the eight time-span envelopes are held only inside the internal
 A/B implementation, not exported by the standalone scanner or JSON.
 Tests assert that both the public function and CLI remain redacted at
 8/44.1/96 kHz, on 4096-frame read boundaries and with extreme PCM16
-values (-32768 and 32767). There is no file identity or review answer key.
+values (-32768 and 32767).
+A separate, implementation-independent synthetic tone oracle checks that
+40/600/8000 Hz excite the expected low/mid/high proxies in order. A
+read-block invariance test verifies that partitioning the same PCM16 into
+1, 257, 4096 or 8191-frame decode calls yields the same full anonymous A/B
+report. The 8191-frame size is only an adversarial **test override**; the
+production cap remains 4096 frames per read. No music is used. There is no file identity or review answer key.
 
 The JSON has only a synthetic candidate-01 numbering, generic warning
 codes, format/duration facts, rounded global RMS and three energy ratios
