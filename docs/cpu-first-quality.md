@@ -367,3 +367,25 @@ This strictness applies only to neutral *public review copies*. The
 private ingest/render contracts and original rights/permission
 requirements are unchanged. A validated header is not an authenticated
 asset signature or evidence of musical preference.
+
+
+### Short quiet-PCM dropouts hidden inside RMS windows
+
+The existing 100-ms RMS-window detector can miss a 50–90-ms audible
+interruption: the active part of its window keeps RMS above the silence
+threshold. A separate constant-memory, per-frame check detects *interior*
+runs of **at least 50ms** during which **all channels** stay within
+±64 PCM16 units of zero. The output includes only
+`longest_interior_quiet_pcm_gap_ms` and
+`short_interior_pcm_dropout_risk`; `short_interior_pcm_dropout_inspect`
+is a technical warning for both baseline and candidate. The run state
+persists across 4096-frame reads and is independent of the user's
+RMS `--window-ms`. Only audible→quiet→audible runs qualify:
+initial silence, final fade to near silence, fully silent files and
+one-channel-only creative panning are not classified as dropouts.
+
+This is a conservative *near-digital silence* heuristic, not a general
+quiet-passage detector: background noise can mask an interruption,
+and intentional dramatic breaks may trigger it. No sample timeline,
+source path or PCM buffer appears in the JSON; no audio is repaired.
+Human listening remains required for genuine transition quality.
