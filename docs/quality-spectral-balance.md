@@ -125,7 +125,14 @@ private `20log10(RMS(L)/RMS(R))` values between A and B and emits
 `stereo_channel_level_balance_shift_inspect` at a >=6dB change.
 Its output is only a `stereo_channel_level_balance_shift_risk`
 boolean, or `null` if any required channel is inaudible; neither
-direction nor absolute source-channel levels are published.
+direction nor absolute source-channel levels are published. A `null`
+global stereo-balance comparison explicitly emits
+`stereo_channel_level_balance_unresolved_inspect`, rather than
+incorrectly claiming no warning. This includes the edge case where
+*whole-stereo* RMS exceeds the -55dBFS cutoff but one channel is
+inaudible and the other is too quiet to qualify as an active-channel
+dropout (below -35dBFS). That insufficient-evidence state is a valid
+inspection prompt, not a detected panning error.
 
 The **eight-span temporal level-balance** check similarly compares the
 relative L/R RMS ratios in each mutually audible span. A >=9dB change
