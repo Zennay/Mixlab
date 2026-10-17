@@ -61,6 +61,16 @@ def assess(
         if not adequate:
             status = "insufficient_stereo_evidence"
             delta = None
+        elif any(row.get(field) is not None for field in (
+                "duplicate_pcm_of", "stereo_swapped_pcm_of",
+                "polarity_inverted_pcm_of")):
+            # The canonical PCM digests already identify exact no-op audio,
+            # copied candidates, L/R swaps and signed polarity inversions.
+            # An unchanged or trivially transformed playback is not a valid
+            # independent blinded transition even when its mono fold-down
+            # numbers appear clean. Never echo the private match identifier.
+            status = "non_independent_ab_audio"
+            delta = None
         elif row.get("level_comparable_for_blind_ab") is not True:
             # A large RMS difference invalidates a blinded comparison
             # *before* the costly aligned scan. Do not collapse this
