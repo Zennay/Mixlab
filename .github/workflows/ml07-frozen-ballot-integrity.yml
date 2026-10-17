@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tests/test_quality_frozen_ballot_integrity.py"
+      - "docs/quality-frozen-ballot-integrity.md"
       - ".github/workflows/ml07-frozen-ballot-integrity.yml"
   workflow_dispatch:
 
