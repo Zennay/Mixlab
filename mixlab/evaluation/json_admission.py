@@ -142,6 +142,11 @@ def load_bounded_json(path):
                             parse_float=finite_float, parse_int=bounded_int)
     except RecursionError:
         raise ValueError("Evaluation JSON nesting limit exceeded") from None
+    except json.JSONDecodeError:
+        # JSONDecodeError retains the raw document in its .doc attribute.
+        # Do not hand a private reviewer/answer-key payload to the CLI or
+        # logging boundary through a parser error or its rendered chain.
+        raise ValueError("Invalid evaluation JSON syntax") from None
 
     # JSON escapes can decode to unpaired UTF-16 surrogates even when the
     # source bytes were valid UTF-8. Such strings cannot be safely emitted
