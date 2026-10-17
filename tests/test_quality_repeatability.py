@@ -689,6 +689,37 @@ class RepeatabilityTests(unittest.TestCase):
         with self.assertRaises(RepeatabilityError):
             verify_repeatability(self.a, self.b)
 
+    def test_parent_directory_symlink_cannot_redirect_private_wav(self):
+        # O_NOFOLLOW on the final WAV basename does NOT prevent traversing
+        # symlinked parent directories. No private PCM read is allowed until
+        # every pathname component has been admitted.
+        parent = self.root / "source-directory"
+        parent.mkdir()
+        intended = parent / "copied-render.wav"
+        intended.write_bytes(self.b.read_bytes())
+        alias = self.root / "redirected-directory"
+        alias.symlink_to(parent, target_is_directory=True)
+        with patch.object(
+            wave.Wave_read, "readframes",
+            side_effect=AssertionError("private PCM read before safe path admission")
+        ):
+            with self.assertRaisesRegex(
+                RepeatabilityError, "^invalid, changed or incompatible source$"
+            ):
+                verify_repeatability(self.a, alias / intended.name)
+
+        nested = self.root / "nested"
+        nested.mkdir()
+        middle = nested / "alias"
+        middle.symlink_to(parent, target_is_directory=True)
+        with self.assertRaises(RepeatabilityError):
+            verify_repeatability(self.a, middle / intended.name)
+
+        # Same file under its genuine, symlink-free directory remains valid.
+        self.assertTrue(
+            verify_repeatability(self.a, intended)["repeatable_pcm"]
+        )
+
     def test_symlink_and_fifo_fail_closed_without_blocking(self):
         self.b.unlink()
         os.symlink(self.a, self.b)
