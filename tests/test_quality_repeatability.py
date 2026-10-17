@@ -495,14 +495,46 @@ class RepeatabilityTests(unittest.TestCase):
             "tempo_source": "synthetic-only",
             "sources": [{"sha256": "a" * 64}, {"sha256": "b" * 64}],
         }
-        with self.assertRaisesRegex(
-            RepeatabilityError, "^invalid, changed or incompatible source$"
-        ):
-            verify_repeatability(
-                self.a, self.b,
-                receipts=(dict(receipt, output_sha256=sha_a),
-                          dict(receipt, output_sha256=sha_b)),
-            )
+        # Out-of-contract 128s admission must refuse before any private PCM.
+        with patch.object(wave.Wave_read, "readframes",
+                          side_effect=AssertionError("private PCM read too early")):
+            with self.assertRaisesRegex(
+                RepeatabilityError, "^invalid, changed or incompatible source$"
+            ):
+                verify_repeatability(
+                    self.a, self.b,
+                    receipts=(dict(receipt, output_sha256=sha_a),
+                              dict(receipt, output_sha256=sha_b)),
+                )
+
+        # The legal exact boundary of 120s (64 beats at 32 BPM) remains
+        # accepted; no arbitrary <120s restriction or silent regression.
+        frames = 120 * rate
+        self.assertEqual(960_000, frames)
+        self.assertEqual(120, 64 * 60 / 32)
+        self.assertIsInstance(Recipe(family="baseline", bpm=32, beats=64,
+                                     gain_db=0), Recipe)
+        for path in (self.a, self.b):
+            with path.open("r+b") as stream:
+                stream.seek(4)
+                stream.write(struct.pack("<I", 36 + frames * 2))
+                stream.seek(40)
+                stream.write(struct.pack("<I", frames * 2))
+                stream.truncate(44 + frames * 2)
+        with self.a.open("rb") as stream:
+            sha_a = hashlib.file_digest(stream, "sha256").hexdigest()
+        with self.b.open("rb") as stream:
+            sha_b = hashlib.file_digest(stream, "sha256").hexdigest()
+        receipt["recipe"]["bpm"] = 32
+        receipt["frames"] = frames
+        receipt["duration_seconds"] = 120
+        verdict = verify_repeatability(
+            self.a, self.b,
+            receipts=(dict(receipt, output_sha256=sha_a),
+                      dict(receipt, output_sha256=sha_b)),
+        )
+        self.assertTrue(verdict["repeatable_pcm"])
+        self.assertTrue(verdict["render_receipts_consistent"])
 
     def test_untrusted_receipt_size_and_nesting_are_rejected_before_serialization(self):
         # JSON serialization *before* checking the 16KiB cap can allocate
