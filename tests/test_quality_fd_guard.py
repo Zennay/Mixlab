@@ -89,6 +89,41 @@ class PrivateFdGuardTests(unittest.TestCase):
             self.assertEqual(200, reader.getnframes())
             self.assertEqual(800, len(reader.readframes(200)))
 
+    def test_bounded_pre_data_chunks_accept_exact_header_limit(self):
+        from mixlab.quality.fd_guard import MAX_PRE_DATA_CHUNKS
+        # 4094 JUNK + fmt + data = exactly 4096 supported headers.
+        original = self.source.read_bytes()
+        junk = b"JUNK\x00\x00\x00\x00" * (MAX_PRE_DATA_CHUNKS - 2)
+        result = bytearray(original[:12] + junk + original[12:])
+        result[4:8] = struct.pack("<I", len(result) - 8)
+        self.source.write_bytes(result)
+        self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+
+    def test_pre_data_chunk_flood_fails_before_wave_parser(self):
+        from mixlab.quality.fd_guard import MAX_PRE_DATA_CHUNKS
+        original = self.source.read_bytes()
+        junk = b"JUNK\x00\x00\x00\x00" * (MAX_PRE_DATA_CHUNKS - 1)
+        result = bytearray(original[:12] + junk + original[12:])
+        result[4:8] = struct.pack("<I", len(result) - 8)
+        self.source.write_bytes(result)
+        self.assert_rejected(self.source)
+
+    def test_non_integral_declared_pcm_frame_is_rejected(self):
+        # wave's getnframes floors data_bytes / frame_width. Guard must not
+        # treat a trailing orphan PCM byte as a valid 200-frame WAV.
+        original = bytearray(self.source.read_bytes())
+        original[40:44] = struct.pack("<I", 401)
+        original.extend(b"x\x00")  # extra sample byte + required RIFF pad
+        original[4:8] = struct.pack("<I", len(original) - 8)
+        self.source.write_bytes(original)
+        self.assert_rejected(self.source)
+
+    def test_riff_size_must_fit_the_physical_file(self):
+        original = bytearray(self.source.read_bytes())
+        original[4:8] = struct.pack("<I", len(original) + 200)
+        self.source.write_bytes(original)
+        self.assert_rejected(self.source)
+
     def test_padded_metadata_cannot_hide_truncated_declared_pcm(self):
         # Real PCM begins after JUNK: total file length still exceeds
         # (44 + declared payload), fooling a fixed-44-byte size gate.
