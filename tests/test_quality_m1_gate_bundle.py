@@ -392,9 +392,11 @@ class RealPCMEndToEndTests(unittest.TestCase):
     def test_private_stdin_invocation_executes_real_pcm_without_path_argv(self):
         request = self._private_request()
         result = self._stdin_cli(request)
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        expected = self.bundle()
+        self.assertEqual(result.returncode, 3 if expected["technical_screen"]
+                         == "REVIEW_REQUIRED" else 0, result.stderr.decode())
         response = json.loads(result.stdout)
-        self.assertEqual(response, self.bundle())
+        self.assertEqual(response, expected)
         self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
         self.assertEqual(response["frozen_pair_count"], 5)
         self.assertIs(response["milestone_pass"], False)
@@ -405,6 +407,26 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stderr.decode())
         self.assertEqual(json.loads(result.stdout)["technical_screen"], "REVIEW_REQUIRED")
         self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
+
+    def test_private_stdin_max_ten_pairs_five_reviewers_stays_private(self):
+        self._expand_private_pcm_fixture_to_ten_pairs()
+        self.ballots = self.fixture.generate_reviews([
+            ["candidate"] * 10,
+            ["baseline"] * 10,
+            ["Tie"] * 10,
+            ["candidate" if i % 2 else "baseline" for i in range(10)],
+            ["Both unusable"] * 10,
+        ])
+        expected = self.bundle()
+        result = self._stdin_cli(self._private_request())
+        self.assertEqual(result.returncode,
+                         3 if expected["technical_screen"] == "REVIEW_REQUIRED" else 0,
+                         result.stderr.decode())
+        self.assertEqual(json.loads(result.stdout), expected)
+        self.assertEqual(expected["frozen_pair_count"], 10)
+        self.assertEqual(expected["reviewer_file_count"], 5)
+        self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
+        self.assertIs(expected["milestone_pass"], False)
 
     def test_stdin_input_parser_rejects_ambiguity_and_secret_exposure(self):
         secret = "SECRET_PRIVATE_MUSIC_PATH_123"
