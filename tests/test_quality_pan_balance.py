@@ -545,11 +545,11 @@ class PanBalanceTests(unittest.TestCase):
             receipt = render(source_a, source_b, output,
                              Recipe(family=family, bpm=60, beats=1))
             self.assertEqual(receipt["frames"], rate)
-            artifacts.append((family, output))
-        families = [name for name, _ in artifacts]
+            artifacts.append((family, output, receipt["output_sha256"]))
+        families = [name for name, _, _ in artifacts]
         self.assertIn("baseline", families)
-        baseline = next(path for name, path in artifacts if name == "baseline")
-        alternatives = [p for name, p in artifacts if name != "baseline"]
+        baseline = next(path for name, path, _ in artifacts if name == "baseline")
+        alternatives = [p for name, p, _ in artifacts if name != "baseline"]
         group = pan_balance.inspect_batch(baseline, alternatives)
         self.assertEqual(group["candidate_count"], len(alternatives))
         for row in group["candidates"]:
@@ -559,8 +559,14 @@ class PanBalanceTests(unittest.TestCase):
             self.assertFalse(metrics["stereo_pan_confound_review"])
             self.assertEqual(metrics["max_pan_balance_delta_db"], 0.0)
         self.assertNotIn(str(self.root), json.dumps(group))
-        for _, output in artifacts:
+        # The quality preflight is strictly read-only: every concrete
+        # renderer receipt continues to match the immutable WAV bytes.
+        import hashlib
+        self.assertEqual(len({receipt for _, _, receipt in artifacts}),
+                         len(artifacts))
+        for _, output, expected in artifacts:
             self.assertTrue(output.exists())
+            self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), expected)
 
     def test_m1_renderer_signal_pan_mutation_is_rejected_by_preflight(self):
         # Generate actual renderer output and introduce a *controlled* PCM
@@ -607,6 +613,17 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(result["candidates"][1]["metrics"]["evidence_status"],
                          "review_pan_balance")
         self.assertNotIn(str(self.root), json.dumps(result))
+        # Exercise the actual public Python CLI against both real rendered
+        # transitions and a deliberately faulty independent PCM artifact.
+        command = [sys.executable, "-m", "mixlab.quality.pan_balance",
+                   str(baseline), str(candidate), str(mutated), "--fail-on-review"]
+        completed = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 3, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["candidate_count"], 2)
+        self.assertFalse(report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        self.assertTrue(report["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+        self.assertNotIn(str(self.root), completed.stdout + completed.stderr)
 
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
