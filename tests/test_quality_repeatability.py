@@ -734,6 +734,52 @@ class RepeatabilityTests(unittest.TestCase):
             verify_repeatability(self.a, intended)["repeatable_pcm"]
         )
 
+    def test_parent_directory_replaced_by_symlink_midscan_is_refused(self):
+        # A directory swap back to the *same* underlying WAV is invisible
+        # to the old final-basename stat check: verify whole-path nofollow
+        # admission both before and after reading private PCM.
+        parent = self.root / "live-parent"
+        parent.mkdir()
+        source = parent / "secret-render.wav"
+        source.write_bytes(self.b.read_bytes())
+        moved = self.root / "renamed-live-parent"
+        original_read = wave.Wave_read.readframes
+        swapped = False
+
+        def swap_on_read(reader, count):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                parent.rename(moved)
+                parent.symlink_to(moved, target_is_directory=True)
+            return original_read(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", swap_on_read):
+            with self.assertRaisesRegex(
+                RepeatabilityError, "^invalid, changed or incompatible source$"
+            ):
+                verify_repeatability(self.a, source)
+        self.assertTrue(swapped)
+        self.assertTrue(verify_repeatability(self.a, moved / source.name)[
+            "repeatable_pcm"
+        ])
+
+    def test_no_fd_leaks_when_refusing_ancestor_symlinks(self):
+        # Keep bounded admission cheap under repeated invalid paths.
+        if not Path("/proc/self/fd").is_dir():
+            self.skipTest("Linux fd inventory unavailable")
+        parent = self.root / "fd-parent"
+        parent.mkdir()
+        name = parent / "source.wav"
+        name.write_bytes(self.b.read_bytes())
+        alias = self.root / "fd-alias"
+        alias.symlink_to(parent, target_is_directory=True)
+        before = len(list(Path("/proc/self/fd").iterdir()))
+        for _ in range(20):
+            with self.assertRaises(RepeatabilityError):
+                verify_repeatability(self.a, alias / name.name)
+        self.assertEqual(before, len(list(Path("/proc/self/fd").iterdir())))
+
     def test_symlink_and_fifo_fail_closed_without_blocking(self):
         self.b.unlink()
         os.symlink(self.a, self.b)
