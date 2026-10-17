@@ -154,9 +154,11 @@ class _ReviewControls(HTMLParser):
             if (not self.form_open or self.field is not None
                     or self.label is None or self.selection is not None):
                 _deny()
-            if (a.get("name") != "reviewer" or "required" not in a
-                    or a.get("maxlength") != "40"
-                    or a.get("type", "text") != "text"):
+            # The generated review form intentionally has a plain editable
+            # reviewer code. Readonly, preset value, pattern, autocomplete and
+            # any non-canonical attributes can bias or block trial admission.
+            if a != {"name": "reviewer", "required": None, "maxlength": "40",
+                      "placeholder": "e.g. listener-01"}:
                 _deny()
             self.label["input"].append(a)
         elif tag == "select":
@@ -169,8 +171,11 @@ class _ReviewControls(HTMLParser):
                 _deny()
             self.option = {"attributes": a, "text": []}
         elif tag == "button":
+            # Extra button attributes such as formnovalidate can silently
+            # bypass mandatory ratings; formaction can alter the offline
+            # export destination. Official generated markup has NO attributes.
             if (not self.form_open or self.field is not None
-                    or self.button_text is not None or a.get("type", "submit") != "submit"):
+                    or self.button_text is not None or a):
                 _deny()
             self.button_text = []
 
@@ -207,7 +212,14 @@ class _ReviewControls(HTMLParser):
                 _deny()
             option = self.option
             label = " ".join("".join(option["text"]).split())
-            value = option["attributes"].get("value", label)
+            # The empty placeholder is the only option with an explicit
+            # value. Even 'selected' on an otherwise identical A/B option
+            # primes a listener's response and must fail closed.
+            is_placeholder = not self.selection["options"]
+            attrs = option["attributes"]
+            if attrs != ({"value": ""} if is_placeholder else {}):
+                _deny()
+            value = attrs.get("value", label)
             self.selection["options"].append((value, label))
             self.option = None
         elif tag == "select":
