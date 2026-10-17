@@ -161,6 +161,73 @@ class IntersampleTests(unittest.TestCase):
         row = compare_intersample(self.a, [self.b])["candidates"][0]
         self.assertTrue(row["intersample_over_risk"])
 
+    def test_high_frequency_analytic_overshoot_is_not_cleared_by_short_fir(self):
+        # At 0.4 cycles/sample the true bandlimited sine has 34,200/32,768
+        # full-scale amplitude, but every stored sample stays <0dBFS.
+        # Our 8-tap Blackman sinc attenuates this near-Nyquist content.
+        # It must abstain rather than incorrectly certify "no over".
+        pcm = [round(34200 * math.sin(2 * math.pi * 0.4 * i)) for i in range(400)]
+        self.assertGreater(34200, 32768)
+        self.assertLess(max(map(abs, pcm)), 32768)
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["intersample_over_risk"])  # original 8-tap miss
+        self.assertTrue(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertTrue(row["technical_review_required"])
+        self.assertGreater(row["high_frequency_near_ceiling_crossings"], 0)
+        self.assertLess(row["interpolated_peak_dbfs_estimate"], 0)
+        cli = self.cli(str(self.a), str(self.b), "--fail-on-risk")
+        self.assertEqual(2, cli.returncode)
+        self.assertNotIn(str(self.root), cli.stdout + cli.stderr)
+
+    def test_low_level_high_frequency_is_not_falsely_marked_near_ceiling(self):
+        pcm = [round(12000 * math.sin(2 * math.pi * 0.4 * i)) for i in range(400)]
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertEqual(0, row["high_frequency_near_ceiling_crossings"])
+        self.assertFalse(row["technical_review_required"])
+
+    def test_high_level_low_frequency_is_not_automatically_flagged(self):
+        pcm = [round(32700 * math.sin(2 * math.pi * 0.01 * i)) for i in range(1000)]
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertEqual(0, row["high_frequency_near_ceiling_crossings"])
+
+    def test_stereo_one_channel_ambiguity_and_redacted_count(self):
+        pcm = [round(34200 * math.sin(2 * math.pi * 0.4 * i)) for i in range(400)]
+        stereo = [value for s in pcm for value in (s, 0)]
+        write_wav(self.a, [0] * len(stereo), channels=2)
+        write_wav(self.b, stereo, channels=2)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertGreater(row["high_frequency_near_ceiling_crossings"], 0)
+        output = json.dumps(row)
+        self.assertNotIn(str(self.root), output)
+        self.assertNotIn("frame_index", output)
+
+    def test_unevaluable_short_clip_blocks_risk_gate(self):
+        write_wav(self.a, [0] * 4)
+        write_wav(self.b, [0] * 4)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["screen_evaluable"])
+        self.assertTrue(row["technical_review_required"])
+        self.assertEqual(2, self.cli(str(self.a), str(self.b), "--fail-on-risk").returncode)
+
+    def test_high_frequency_crossing_across_streaming_chunk_boundary(self):
+        pcm = [0] * 8200
+        pcm[4095] = 20102
+        pcm[4096] = -32526
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertEqual(1, row["high_frequency_near_ceiling_crossings"])
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
