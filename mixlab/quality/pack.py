@@ -21,6 +21,12 @@ _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
 MAX_REVIEW_HTML_BYTES = 1024 * 1024
 MAX_PUBLIC_RECEIPT_BYTES = 8192
+# The shipped receipt contains only public binding/audit metadata.
+# Unknown keys can accidentally serialize source paths or hidden answers.
+_PUBLIC_RECEIPT_KEYS = frozenset({
+    "schema_version", "pack_id", "trial_count", "render_count",
+    "status", "manifest_sha256",
+})
 # Worst-case per-file limits alone permit 120 separate 32MiB inputs.
 # Cap the whole pack *before* any PCM scans so a large private benchmark
 # cannot monopolize a constrained shared worker.
@@ -103,6 +109,16 @@ class _ReviewPageLinks(HTMLParser):
             self.unsafe_external_resource = True
 
 
+def _unique_public_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Do not interpret a receipt whose duplicated JSON keys are ambiguous."""
+    parsed = {}
+    for key, value in pairs:
+        if key in parsed:
+            raise ValueError("Public pack receipt contains duplicate JSON keys")
+        parsed[key] = value
+    return parsed
+
+
 def _read_public_receipt_id(directory: Path, trial_count: int) -> str:
     """Read only the canonical sibling receipt, never the private answer key.
 
@@ -115,11 +131,27 @@ def _read_public_receipt_id(directory: Path, trial_count: int) -> str:
     if path.stat().st_size > MAX_PUBLIC_RECEIPT_BYTES:
         raise ValueError("Official public pack receipt exceeds the size limit")
     try:
-        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_public_json_object,
+        )
     except (RecursionError, UnicodeError) as exc:
         raise ValueError("Invalid official public pack receipt") from exc
     if not isinstance(receipt, dict):
         raise ValueError("Invalid official public pack receipt")
+    if not receipt.keys() <= _PUBLIC_RECEIPT_KEYS:
+        raise ValueError("Public pack receipt contains unexpected public fields")
+    if ("render_count" in receipt
+            and (type(receipt["render_count"]) is not int
+                 or not 1 <= receipt["render_count"] <= 4 * MAX_TRIALS)):
+        raise ValueError("Public pack receipt has invalid render count")
+    if ("status" in receipt
+            and receipt["status"] != "rendered-not-listener-validated"):
+        raise ValueError("Public pack receipt has unexpected validation status")
+    if ("manifest_sha256" in receipt
+            and (not isinstance(receipt["manifest_sha256"], str)
+                 or re.fullmatch(r"[0-9a-f]{64}", receipt["manifest_sha256"]) is None)):
+        raise ValueError("Public pack receipt has invalid manifest fingerprint")
     pack_id = receipt.get("pack_id")
     if (receipt.get("schema_version") != 1
             or type(receipt.get("trial_count")) is not int
