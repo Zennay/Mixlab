@@ -509,6 +509,80 @@ class LocalDCQualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frame/rate bounds"):
             local_dc.inspect(self.base, self.alt)
 
+    def _misaligned_dc(self, *, rate=RATE, level=1100, seconds=1.0):
+        frame_count = rate * DURATION
+        offsets = [0] * frame_count
+        # The offset starts half a 250-ms window late. Only three full
+        # windows of the original phase see a low-level one-second shift.
+        start = round(rate * .125)
+        length = round(rate * seconds)
+        offsets[start:start + length] = [level] * length
+        return offsets
+
+    def test_half_window_shift_recovers_weak_full_second_dc(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._misaligned_dc()])
+        ref = local_dc._scan_private_pcm(self.base)
+        candidate = local_dc._scan_private_pcm(self.alt)
+        flags = [abs(x[0]) >= local_dc.DC_THRESHOLD and
+                 abs(x[0] - y[0]) >= local_dc.RELATIVE_THRESHOLD
+                 for x, y in zip(candidate["means"], ref["means"])]
+        # Prove the defect existed: original aligned grid abstains.
+        self.assertIsNone(local_dc._run_state(flags, enough_windows=True))
+        result = local_dc.inspect(self.base, self.alt)
+        self.assertIs(result["candidate_excess_bias_warning"][0], True)
+        self.assertIs(result["warning"], True)
+        self.assertEqual(result["window_phase_shift_ms"], 125)
+
+    def test_half_window_negative_dc_is_equally_detected(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._misaligned_dc(level=-1100)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+
+    def test_half_window_baseline_dc_is_reported(self):
+        _wav(self.base, offsets=[self._misaligned_dc()])
+        _wav(self.alt, offsets=[self._misaligned_dc()])
+        r = local_dc.inspect(self.base, self.alt)
+        self.assertIs(r["baseline_bias_warning"][0], True)
+        self.assertIs(r["candidate_excess_bias_warning"][0], False)
+
+    def test_half_window_only_one_stereo_channel_warns(self):
+        _wav(self.base, channels=2)
+        _wav(self.alt, channels=2, offsets=[
+            self._misaligned_dc(), [0] * (RATE * DURATION),
+        ])
+        r = local_dc.inspect(self.base, self.alt)
+        self.assertEqual(r["candidate_excess_bias_warning"], [True, False])
+
+    def test_half_window_subsecond_bias_is_still_inconclusive(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._misaligned_dc(seconds=.875)])
+        self.assertIsNone(local_dc.inspect(self.base, self.alt)["warning"])
+
+    def test_half_window_shift_at_noninteger_sample_rate_window(self):
+        rate = 11025
+        _wav(self.base, rate=rate)
+        _wav(self.alt, rate=rate, offsets=[self._misaligned_dc(rate=rate)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+
+    def test_exactly_one_second_clean_audio_stays_clear(self):
+        _wav(self.base, duration=1)
+        _wav(self.alt, duration=1)
+        r = local_dc.inspect(self.base, self.alt)
+        self.assertIs(r["warning"], False)
+        self.assertEqual(r["complete_windows"], 4)
+
+    def test_misaligned_dc_batch_matches_standalone_warning(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._misaligned_dc()])
+        extra = self._batch_candidate(22, offset=0)
+        paired = local_dc.inspect(self.base, self.alt)
+        batch = local_dc.inspect_batch(self.base, [self.alt, extra])
+        self.assertEqual(batch["window_phase_shift_ms"], 125)
+        self.assertEqual(batch["candidates"][0]["candidate_excess_bias_warning"],
+                         paired["candidate_excess_bias_warning"])
+        self.assertEqual([r["warning"] for r in batch["candidates"]], [True, False])
+
     def test_negative_sustained_dc_offset(self):
         _wav(self.base)
         _wav(self.alt, offsets=[_offset_sections([-3400] * 4)])
