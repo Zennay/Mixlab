@@ -97,7 +97,7 @@ class RepeatabilityTests(unittest.TestCase):
             return original(reader, count)
         with patch.object(wave.Wave_read, "readframes", monitored):
             self.assertTrue(verify_repeatability(self.a, self.b)["repeatable_pcm"])
-        self.assertEqual(6, len(calls))  # three slices, both files
+        self.assertEqual(4, len(calls))  # two 4096-frame slices, both files
         self.assertTrue(all(1 <= count <= CHUNK_FRAMES for count in calls))
 
     def test_short_pcm_is_not_silently_accepted(self):
