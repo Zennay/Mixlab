@@ -34,6 +34,24 @@ def make_wav(path, *, freq=100, gain=8000, rate=48000, channels=1, duration=0.25
         output.writeframes(raw)
 
 
+def make_segmented_wav(path, freqs, *, rate=48000, channels=1, gain=8000):
+    # Exactly eight aligned intervals; transitions deliberately synthetic.
+    frames_per_span = 6000
+    samples = array("h")
+    for segment, freq in enumerate(freqs):
+        for offset in range(frames_per_span):
+            frame = segment * frames_per_span + offset
+            amplitude = int(gain * math.sin(2 * math.pi * freq * frame / rate))
+            samples.extend([amplitude] * channels)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(channels)
+        output.setsampwidth(2)
+        output.setframerate(rate)
+        output.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -170,6 +188,48 @@ class SpectralBalanceTests(unittest.TestCase):
                     compare_spectral_balance(self.base, [self.other, self.other])
         self.assertEqual(6, len(calls))
         self.assertEqual(before, (self.base.read_bytes(), self.other.read_bytes()))
+
+    def test_swapped_spectral_halves_are_detected_despite_matched_global_ratios(self):
+        base_frequencies = [100] * 4 + [5000] * 4
+        make_segmented_wav(self.base, base_frequencies)
+        make_segmented_wav(self.other, base_frequencies[::-1])
+        report = self.report()
+        row = report["candidates"][0]
+        # A whole-file signature is nearly the same even though the segments
+        # have been swapped: this is a *temporal* A/B confound.
+        self.assertLess(abs(row["low_proxy_delta_db"]), 6)
+        self.assertLess(abs(row["high_proxy_delta_db"]), 6)
+        self.assertGreaterEqual(row["temporal_low_proxy_mismatch_fraction"], 0.25)
+        self.assertGreaterEqual(row["temporal_high_proxy_mismatch_fraction"], 0.25)
+        self.assertIn("low_temporal_spectral_shift_inspect", row["warnings"])
+        self.assertIn("high_temporal_spectral_shift_inspect", row["warnings"])
+        serialized = json.dumps(report)
+        self.assertNotIn("spectral_spans", serialized)
+        self.assertNotIn("_spans", serialized)
+        self.assertNotIn(str(self.dir), serialized)
+
+    def test_one_short_spectral_change_does_not_trigger_persistent_bias(self):
+        make_segmented_wav(self.base, [100] * 8)
+        make_segmented_wav(self.other, [5000] + [100] * 7)
+        row = self.report()["candidates"][0]
+        self.assertLess(row["temporal_low_proxy_mismatch_fraction"], 0.25)
+        self.assertNotIn("low_temporal_spectral_shift_inspect", row["warnings"])
+        self.assertNotIn("high_temporal_spectral_shift_inspect", row["warnings"])
+
+    def test_temporal_proxy_is_gain_invariant_and_works_on_stereo(self):
+        make_segmented_wav(self.base, [200, 250, 300, 350] * 2, channels=2)
+        make_segmented_wav(self.other, [200, 250, 300, 350] * 2, channels=2, gain=6000)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.0, row["temporal_low_proxy_mismatch_fraction"])
+        self.assertEqual(0.0, row["temporal_high_proxy_mismatch_fraction"])
+        self.assertNotIn("low_temporal_spectral_shift_inspect", row["warnings"])
+
+    def test_silent_segments_have_no_fake_zero_db_temporal_evidence(self):
+        make_wav(self.other, gain=0)
+        row = self.report()["candidates"][0]
+        self.assertIsNone(row["temporal_low_proxy_mismatch_fraction"])
+        self.assertIsNone(row["temporal_high_proxy_mismatch_fraction"])
+        self.assertIn("insufficient_audible_energy_for_spectral_comparison", row["warnings"])
 
     def test_cli_output_status_and_argument_privacy(self):
         clean = self.cli(self.base, self.other)
