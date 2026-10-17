@@ -315,6 +315,34 @@ class RepeatabilityTests(unittest.TestCase):
                 ):
                     verify_repeatability(one, two, receipts=(original_a, tampered))
 
+    def test_two_equally_invalid_receipts_are_not_mistaken_for_consistency(self):
+        import copy
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        mutations = (
+            lambda r: r.__setitem__("duration_seconds", 0),
+            lambda r: r.__setitem__("gain_linear", -1),
+            lambda r: r["start_frames"].__setitem__("a", -1),
+            lambda r: r["start_frames"].__setitem__("b", True),
+            lambda r: r["recipe"].__setitem__("bpm", 0),
+            lambda r: r["recipe"].__setitem__("beats", -2),
+            lambda r: r["recipe"].__setitem__("family", ""),
+            lambda r: r.__setitem__("tempo_source", ""),
+            lambda r: r.__setitem__("alignment_source", None),
+        )
+        for mutate in mutations:
+            with self.subTest(case=mutations.index(mutate)):
+                left = copy.deepcopy(ra)
+                right = copy.deepcopy(rb)
+                mutate(left)
+                mutate(right)
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=(left, right))
+        self.assertTrue(verify_repeatability(
+            one, two, receipts=(ra, rb)
+        )["render_receipts_consistent"])
+
     def test_receipt_malformed_and_oversized_metadata_is_rejected_privately(self):
         one, two, ra, rb = self._render_fixture_with_receipts()
         invalid = (
