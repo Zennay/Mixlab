@@ -301,6 +301,62 @@ class PrecisionTest(unittest.TestCase):
         with self.assertRaises((OSError, ValueError)):
             _scan(self.b)
 
+    def test_cli_optional_warning_gate_preserves_anonymous_json(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,))
+        base = [sys.executable, "-m", "mixlab.quality.precision", str(self.a), str(self.b)]
+        default = subprocess.run(base, text=True, capture_output=True, timeout=20)
+        warning_gate = subprocess.run(
+            base + ["--fail-on-warnings"], text=True, capture_output=True, timeout=20)
+        conclusive_gate = subprocess.run(
+            base + ["--require-conclusive"], text=True, capture_output=True, timeout=20)
+        self.assertEqual([default.returncode, warning_gate.returncode,
+                          conclusive_gate.returncode], [0, 2, 0])
+        self.assertEqual(json.loads(default.stdout), json.loads(warning_gate.stdout))
+        self.assertEqual(json.loads(default.stdout), json.loads(conclusive_gate.stdout))
+        self.assertNotIn(str(self.root), warning_gate.stdout + warning_gate.stderr)
+
+    def test_cli_inconclusive_gate_and_combined_strict_mode(self):
+        wav(self.a)
+        wav(self.b, silence=True)
+        base = [sys.executable, "-m", "mixlab.quality.precision", str(self.a), str(self.b)]
+        cases = [([], 0), (["--fail-on-warnings"], 0),
+                 (["--require-conclusive"], 2),
+                 (["--fail-on-warnings", "--require-conclusive"], 2)]
+        for args, expected in cases:
+            with self.subTest(args=args):
+                proc = subprocess.run(base + args, text=True, capture_output=True, timeout=20)
+                self.assertEqual(proc.returncode, expected, proc.stderr)
+                data = json.loads(proc.stdout)
+                self.assertIsNone(data["candidate_precision_loss_inspect"])
+                self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+
+        wav(self.b, seed=2)
+        clean = subprocess.run(
+            base + ["--fail-on-warnings", "--require-conclusive"],
+            text=True, capture_output=True, timeout=20)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertIs(json.loads(clean.stdout)["candidate_precision_loss_inspect"], False)
+
+    def test_cli_argument_errors_do_not_echo_sensitive_option_values(self):
+        wav(self.a)
+        wav(self.b)
+        private = self.root / "private-token-SECRET.wav"
+        base = [sys.executable, "-m", "mixlab.quality.precision",
+                str(self.a), str(self.b)]
+        malformed = [
+            base + [f"--require-conclusive={private}"],
+            base + [f"--fail-on-warnings={private}"],
+            base + [f"--unrecognized={private}"],
+            [sys.executable, "-m", "mixlab.quality.precision", str(private)],
+        ]
+        for cmd in malformed:
+            with self.subTest(cmd=cmd[-1].split("=")[0]):
+                proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+                self.assertEqual(proc.returncode, 3)
+                self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+                self.assertNotIn("SECRET", proc.stdout + proc.stderr)
+
     def test_cli_valid_json_and_no_private_path_leak_on_failure(self):
         wav(self.a)
         wav(self.b, coarse=(0,))
