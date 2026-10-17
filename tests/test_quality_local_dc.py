@@ -69,6 +69,76 @@ class LocalDCQualityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 local_dc.inspect_batch(self.base, [self.alt])
 
+    def test_corrupt_fmt_average_bytes_per_second_rejected_pre_pcm(self):
+        _wav(self.base)
+        _wav(self.alt)
+        pcm = bytearray(self.alt.read_bytes())
+        self.assertEqual(pcm[12:16], b"fmt ")
+        rate = struct.unpack_from("<I", pcm, 28)[0]
+        struct.pack_into("<I", pcm, 28, rate * 2 + 1)
+        self.alt.write_bytes(pcm)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_corrupt_fmt_block_alignment_rejected_pre_pcm(self):
+        _wav(self.base, channels=2)
+        _wav(self.alt, channels=2)
+        pcm = bytearray(self.alt.read_bytes())
+        self.assertEqual(struct.unpack_from("<H", pcm, 32)[0], 4)
+        struct.pack_into("<H", pcm, 32, 2)
+        self.alt.write_bytes(pcm)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_corrupt_fmt_bit_depth_rejected_pre_pcm(self):
+        _wav(self.base)
+        _wav(self.alt)
+        pcm = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", pcm, 34, 8)
+        self.alt.write_bytes(pcm)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_corrupt_fmt_zero_and_unsupported_channel_counts_rejected(self):
+        _wav(self.base)
+        for channel_count in (0, 3, 65535):
+            with self.subTest(channels=channel_count):
+                _wav(self.alt)
+                pcm = bytearray(self.alt.read_bytes())
+                struct.pack_into("<H", pcm, 22, channel_count)
+                self.alt.write_bytes(pcm)
+                self._assert_riff_rejected_before_pcm()
+
+    def test_corrupt_fmt_zero_rate_and_out_of_bounds_rejected(self):
+        _wav(self.base)
+        for rate in (0, 7999, 96001):
+            with self.subTest(rate=rate):
+                _wav(self.alt)
+                pcm = bytearray(self.alt.read_bytes())
+                struct.pack_into("<I", pcm, 24, rate)
+                self.alt.write_bytes(pcm)
+                self._assert_riff_rejected_before_pcm()
+
+    def test_nonstandard_but_valid_pcm16_rate_header_is_supported(self):
+        _wav(self.base, channels=2, rate=11025)
+        _wav(self.alt, channels=2, rate=11025)
+        data = local_dc.inspect(self.base, self.alt)
+        self.assertIs(data["warning"], False)
+        self.assertEqual(data["sample_rate"], 11025)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_fmt_header_error_cli_is_path_redacted_in_both_modes(self):
+        _wav(self.base)
+        _wav(self.alt)
+        wav_bytes = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", wav_bytes, 32, 3)
+        self.alt.write_bytes(wav_bytes)
+        for additional in ([], ["--batch"]):
+            with self.subTest(batch=bool(additional)):
+                command = [sys.executable, "-m", "mixlab.quality.local_dc",
+                           str(self.base), str(self.alt), *additional]
+                done = subprocess.run(command, capture_output=True, text=True, timeout=20)
+                self.assertEqual(done.returncode, 3)
+                self.assertEqual(done.stdout, "")
+                self.assertNotIn(str(self.tmp.name), done.stderr)
+
     def test_duplicate_data_chunk_rejected_even_when_total_size_valid(self):
         _wav(self.base)
         _wav(self.alt)
