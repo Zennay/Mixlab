@@ -9,6 +9,7 @@ import argparse
 from collections import Counter
 import json
 from math import comb
+import re
 
 from ..evaluation import aggregate
 from ..evaluation.json_admission import load_bounded_json
@@ -34,7 +35,7 @@ def _sign_tail(wins: int, decisive: int) -> float | None:
     return sum(comb(decisive, i) for i in range(wins, decisive + 1)) / (1 << decisive)
 
 
-def inspect_family_sensitivity(summary: object) -> dict:
+def inspect_family_sensitivity(summary: object, *, source_reuse: bool = False) -> dict:
     """Conservatively detect concentration of blind preferences in one family.
 
     A single exploratory family can look strong while all others fail. Treat
@@ -43,7 +44,7 @@ def inspect_family_sensitivity(summary: object) -> dict:
     families (including families not sampled). No individual pair, family
     name, answer, reviewer or private study identifier is returned.
     """
-    if not isinstance(summary, dict):
+    if type(source_reuse) is not bool or not isinstance(summary, dict):
         _reject()
     reviewers, trials = summary.get("reviewers"), summary.get("trials")
     rows, counts = summary.get("per_pair_family"), summary.get("counts")
@@ -117,7 +118,7 @@ def inspect_family_sensitivity(summary: object) -> dict:
                 reviewers >= 3 and decisive >= 5
                 and adjusted is not None and adjusted <= 0.05
                 and adjusted_worst is not None and adjusted_worst <= 0.05
-                and not confounds
+                and not confounds and not source_reuse
             ),
         })
 
@@ -138,9 +139,10 @@ def inspect_family_sensitivity(summary: object) -> dict:
                                           or any(row["pair_count"] < 2 for row in sampled),
         "opposing_family_directions_review": concentration,
         "official_audio_confounds_reported": bool(confounds),
+        "shared_source_across_pairs_detected": source_reuse,
         "any_robust_nominal_family_reference": any_strong,
         "family_sensitivity_review_required": not any_strong or concentration
-            or bool(confounds) or imbalance or len(sampled) != len(_FAMILIES),
+            or bool(confounds) or source_reuse or imbalance or len(sampled) != len(_FAMILIES),
         "source_rights_independently_authenticated": False,
         "listener_independence_authenticated": False,
         "musical_preference_proven": False,
@@ -163,10 +165,16 @@ def inspect_real_families(study_path, pack_path, expected_study_id, rating_paths
         if not isinstance(pairs, list) or len(pairs) != first.get("trial_count"):
             _reject()
         declared = Counter()
+        source_hashes = []
         for pair in pairs:
             if not isinstance(pair, dict) or pair.get("candidate_family") not in _FAMILIES:
                 _reject()
             declared[pair["candidate_family"]] += 1
+            for field in ("a_sha256", "b_sha256"):
+                digest = pair.get(field)
+                if type(digest) is not str or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                    _reject()
+                source_hashes.append(digest)
         official = aggregate(pack_path, rating_paths)
         observed = Counter()
         for row in official.get("per_pair_family", []):
@@ -178,7 +186,8 @@ def inspect_real_families(study_path, pack_path, expected_study_id, rating_paths
             observed[family] += 1
         if observed != declared:
             _reject()
-        report = inspect_family_sensitivity(official)
+        report = inspect_family_sensitivity(
+            official, source_reuse=len(set(source_hashes)) != len(source_hashes))
         if (verify_study_pack_binding(study_path, pack_path, expected_study_id) != first
                 or load_bounded_json(study_path) != study):
             _reject()
