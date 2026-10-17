@@ -375,6 +375,12 @@ def main():
         else:
             file = render_composition(args.session, args.choice_file, args.output)
             payload = {"continuous_set": str(file), "private_receipt": str(file) + ".receipt.private.json"}
+            # WAV publication stays successful even if the optional player fails.
+            try:
+                from .set_player import publish_player
+                payload["offline_player"] = str(publish_player(args.session, file))
+            except (ValueError, OSError, TypeError, KeyError) as exc:
+                payload["player_warning"] = str(exc)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Set Composer: " + str(exc) + "\n")
     payload.update({"mode": "offline-manual-creative", "automatic_beatmatching": False,
