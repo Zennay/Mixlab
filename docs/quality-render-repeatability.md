@@ -35,11 +35,21 @@ Supports standard uncompressed PCM16 mono/stereo RIFF WAV, 8–96 kHz,
 sample rates, channels and frame counts before reading PCM, and must be
 different device/inode files; a self-comparison or hardlink is rejected.
 No-follow, nonblocking read-only descriptors reject symlinks and FIFOs.
+**Every ancestor directory** is opened through a no-follow `O_DIRECTORY`
+descriptor chain from the filesystem root; `O_NOFOLLOW` on the WAV basename
+alone is insufficient. The supplied pathname is traversed component-by-component
+without first calling `resolve()` or `abspath()`, so a disguised
+`symlink-directory/../file.wav` cannot be silently normalized to an allowed
+filename. Intermediate directory descriptors are closed before reading PCM.
 PCM is digested in chunks of at most 4,096 frames, never loaded wholesale.
 The digests are compared in memory only and never serialized. After both scans,
-descriptor identity *and original path identity* are checked against the initial
-device/inode/size/mtime/ctime snapshot. This is a best-effort race defense,
-not an atomic filesystem transaction or a tamper-resistant signature.
+the **complete source path is opened again with the same no-follow dirfd walk**
+and its device/inode/size/mtime/ctime snapshot compared with that of the
+original file descriptor. This rejects an ancestor-directory symlink inserted
+during the scan, even if it points back to the same underlying audio.
+Repeated rejected opens are checked for leaked file descriptors.
+This is a best-effort race defense, not a globally atomic filesystem transaction
+or a tamper-resistant signature.
 
 RIFF non-audio chunk differences and changed-but-equivalent rendering metadata are
 intentionally ignored. Different PCM output does **not** prove a DSP bug without
