@@ -24,6 +24,9 @@ INTERIOR_SILENT_GAP_WARNING_MS = 200
 # Detect only interior runs across all channels, without sample coordinates.
 SHORT_PCM_DROPOUT_WARNING_MS = 50
 QUIET_PCM_ABS_SAMPLE = 64
+# One channel may drop out for 50ms while the other plays normally,
+# without affecting enough RMS windows for the 20% partial-loss check.
+SHORT_STEREO_CHANNEL_DROPOUT_MS = 50
 # Differing start/end silence in a blind pair can give away the variant or
 # make playback timing unequal even with identical frame count.
 EDGE_SILENCE_CONFOUND_MS = 200
@@ -140,6 +143,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             seen_audible_frame = False
             pending_quiet_frames = 0
             longest_interior_quiet_frames = 0
+            stereo_seen_prominent = [False] * channels
+            stereo_pending_quiet = [0] * channels
+            stereo_pending_other_prominent = [0] * channels
+            longest_stereo_channel_gap_frames = 0
             eligible_stereo_windows = 0
             phase_risk_windows = 0
             partial_channel_loss_windows = 0
@@ -225,6 +232,30 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                                 and abs(sample) >= PROMINENT_AUDIO_ABS_SAMPLE):
                             first_prominent_frame_by_channel[channel_index] = processed_frames
                     processed_frames += 1
+                    if channels == 2:
+                        for channel_index in (0, 1):
+                            value = frame[channel_index]
+                            if (stereo_seen_prominent[channel_index]
+                                    and abs(value) <= QUIET_PCM_ABS_SAMPLE):
+                                stereo_pending_quiet[channel_index] += 1
+                                stereo_pending_other_prominent[channel_index] += (
+                                    abs(frame[1 - channel_index]) >= PROMINENT_AUDIO_ABS_SAMPLE
+                                )
+                            else:
+                                quiet_frames = stereo_pending_quiet[channel_index]
+                                # Only a recovered interior dropout while
+                                # the *other* channel remains substantially
+                                # active, not a pan into common silence.
+                                if (quiet_frames
+                                        and 4 * stereo_pending_other_prominent[channel_index]
+                                        >= quiet_frames):
+                                    longest_stereo_channel_gap_frames = max(
+                                        longest_stereo_channel_gap_frames, quiet_frames
+                                    )
+                                stereo_pending_quiet[channel_index] = 0
+                                stereo_pending_other_prominent[channel_index] = 0
+                                if abs(value) >= PROMINENT_AUDIO_ABS_SAMPLE:
+                                    stereo_seen_prominent[channel_index] = True
                     if all(abs(sample) <= QUIET_PCM_ABS_SAMPLE for sample in frame):
                         if seen_audible_frame:
                             pending_quiet_frames += 1
@@ -292,6 +323,14 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     stereo_channel_onset_skew_risk = (
         stereo_channel_onset_gap_ms is not None
         and stereo_channel_onset_gap_ms >= STEREO_CHANNEL_ONSET_SKEW_MS
+    )
+    stereo_interior_quiet_gap_ms = (
+        round(1000 * longest_stereo_channel_gap_frames / rate, 3)
+        if channels == 2 else None
+    )
+    stereo_interior_dropout_risk = (
+        channels == 2 and 1000 * longest_stereo_channel_gap_frames
+        >= SHORT_STEREO_CHANNEL_DROPOUT_MS * rate
     )
     playback_start_peak = max(abs(sample) for sample in first_frame) / 32768
     playback_end_peak = max(abs(sample) for sample in previous) / 32768
@@ -364,6 +403,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "short_interior_pcm_dropout_risk": (
             1000 * longest_interior_quiet_frames >= SHORT_PCM_DROPOUT_WARNING_MS * rate
         ),
+        "longest_interior_stereo_channel_quiet_gap_ms": stereo_interior_quiet_gap_ms,
+        "short_interior_stereo_channel_dropout_risk": stereo_interior_dropout_risk,
         "window_count": windows,
         "min_window_rms_dbfs": _dbfs(min(window_peaks)),
         "max_window_rms_dbfs": _dbfs(max(window_peaks)),
@@ -410,6 +451,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("interior_silent_gap_inspect_for_dropouts")
     if metrics["short_interior_pcm_dropout_risk"]:
         warnings.append("short_interior_pcm_dropout_inspect")
+    if metrics["short_interior_stereo_channel_dropout_risk"]:
+        warnings.append("short_interior_stereo_channel_dropout_inspect")
     if metrics["mono_fold_down_cancellation_risk"]:
         warnings.append("stereo_mono_fold_down_cancellation_inspect")
     if metrics["stereo_channel_silence_risk"]:
