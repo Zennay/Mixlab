@@ -520,6 +520,41 @@ class IntersampleTests(unittest.TestCase):
         open_after = len(list(fd_dir.iterdir()))
         self.assertLessEqual(open_after, open_before + 1)
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX-only FIFO admission check")
+    def test_fifo_candidate_is_rejected_without_waiting_for_writer(self):
+        write_wav(self.a, [0] * 800)
+        os.mkfifo(self.b)
+        result = self.cli(str(self.a), str(self.b))
+        self.assertEqual(3, result.returncode)
+        self.assertNotIn(str(self.root), result.stderr + result.stdout)
+
+    def test_oversized_sparse_file_refused_before_pcm_scan(self):
+        write_wav(self.a, [0] * 800)
+        with self.b.open("wb") as stream:
+            stream.truncate(intersample_module.MAX_SOURCE_BYTES + 1)
+        result = self.cli(str(self.a), str(self.b))
+        self.assertEqual(3, result.returncode)
+        self.assertNotIn(str(self.root), result.stderr + result.stdout)
+
+    def test_earlier_source_timestamp_change_during_later_scan_rejected(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        real_scan = intersample_module._scan
+        count = 0
+
+        def mutate_earlier_timestamp(reader, channels, frames):
+            nonlocal count
+            result = real_scan(reader, channels, frames)
+            count += 1
+            if count == 2:
+                info = self.a.stat()
+                os.utime(self.a, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+            return result
+
+        with patch.object(intersample_module, "_scan", side_effect=mutate_earlier_timestamp):
+            with self.assertRaisesRegex(AudioInputError, "changed during group read"):
+                compare_intersample(self.a, [self.b])
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
