@@ -6,7 +6,7 @@ existing readers. It is not a RIFF-chunk parser or an audio-quality verdict.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import argparse
 import json
 import os
@@ -17,6 +17,8 @@ import wave
 MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
 MAX_PRE_DATA_CHUNKS = 4096
+MAX_GROUP_SOURCES = 8
+MAX_GROUP_FRAMES = 8_000_000
 _ERROR = "Private WAV admission rejected (details withheld)"
 
 
@@ -151,6 +153,46 @@ def validate_private_pcm16(path, *, block_frames=4096):
             "pcm16_payload_complete": True, "human_listening_required": True}
 
 
+
+def _consume_pcm16(reader, *, block_frames=4096):
+    """Read all declared frames without retaining source PCM."""
+    remaining = reader.getnframes()
+    width = reader.getnchannels() * 2
+    while remaining:
+        count = min(block_frames, remaining)
+        if len(reader.readframes(count)) != count * width:
+            raise ValueError(_ERROR)
+        remaining -= count
+
+
+def validate_private_ab_group(paths):
+    """Strict offline A/B input-group integrity preflight.
+
+    Open every participant once, check *all* headers and aggregate limits
+    before reading any PCM, and keep all FDs open until post-scan identity
+    checks. Reject different audio shapes; output no source names/hashes.
+    This does not screen audible duplicates or rate musical quality.
+    """
+    if type(paths) not in (tuple, list) or not 2 <= len(paths) <= MAX_GROUP_SOURCES:
+        raise ValueError(_ERROR)
+    with ExitStack() as stack:
+        readers = [stack.enter_context(admitted_pcm16(path)) for path in paths]
+        header = (readers[0].getframerate(), readers[0].getnchannels(), readers[0].getnframes())
+        for reader in readers[1:]:
+            if (reader.getframerate(), reader.getnchannels(), reader.getnframes()) != header:
+                raise ValueError(_ERROR)
+        if header[2] * len(readers) > MAX_GROUP_FRAMES:
+            raise ValueError(_ERROR)
+        for reader in readers:
+            _consume_pcm16(reader)
+    return {
+        "screen": "ml07-single-fd-ab-group-integrity-v1",
+        "sample_rate": header[0], "channels": header[1], "frames": header[2],
+        "candidate_count": len(paths) - 1, "shape_comparable": True,
+        "pcm16_payloads_complete": True, "human_listening_required": True,
+    }
+
+
 class _PrivateParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, "Invalid WAV admission arguments (details withheld)\\n")
@@ -160,9 +202,16 @@ def main(argv=None):
     """Optional independent probe; this does not activate the main MixLab CLI."""
     parser = _PrivateParser(description="Offline PCM16 integrity, NOT musical quality")
     parser.add_argument("source", help="Private local PCM16 WAV (never echoed)")
+    parser.add_argument("candidates", nargs="*", help="Private candidate WAVs for --ab-group")
+    parser.add_argument("--ab-group", action="store_true", help="Preflight baseline plus 1..7 A/B candidates")
     arguments = parser.parse_args(argv)
+    if bool(arguments.candidates) != arguments.ab_group:
+        parser.error("Mode mismatch")
     try:
-        report = validate_private_pcm16(arguments.source)
+        if arguments.ab_group:
+            report = validate_private_ab_group([arguments.source, *arguments.candidates])
+        else:
+            report = validate_private_pcm16(arguments.source)
     except (OSError, ValueError, EOFError, wave.Error, struct.error):
         parser.exit(3, "Private WAV admission rejected (details withheld)\\n")
     print(json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False))
