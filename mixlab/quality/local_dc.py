@@ -155,10 +155,16 @@ def _compare_scans(ref: dict, alt: dict) -> dict:
 
 def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str]) -> dict:
     """Compare distinct equal-shape private PCM16 files, read-only."""
+    # The single-pair path must enforce the same fail-closed, metadata-only
+    # admission as the one-to-many path. Reject alias/format/shape/resource
+    # issues BEFORE decoding either private PCM source.
+    admitted = _admit_batch([baseline, candidate])
     ref = _scan_private_pcm(baseline)
+    if ref["_identity"] != admitted[0]["identity"]:
+        raise ValueError("Baseline changed after source admission")
     alt = _scan_private_pcm(candidate)
-    if ref["_identity"][:2] == alt["_identity"][:2]:
-        raise ValueError("A/B sources must be distinct regular files")
+    if alt["_identity"] != admitted[1]["identity"]:
+        raise ValueError("Candidate changed after source admission")
     result = _compare_scans(ref, alt)
     _verify_pair_source(baseline, ref["_identity"])
     _verify_pair_source(candidate, alt["_identity"])
