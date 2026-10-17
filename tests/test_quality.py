@@ -1012,6 +1012,55 @@ class QualityTests(unittest.TestCase):
         page.write_text(clean.replace('<audio src=', '<audio controls preload="none" src='))
         self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_public_receipt_rejects_secret_fields_duplicate_keys_and_invalid_status(self):
+        from mixlab.cli import write_review
+        pack = self.root / "public-receipt-schema"
+        review = pack / "review"
+        review.mkdir(parents=True)
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(v * .9) for v in self.samples])
+        public_id = "a" * 64
+        write_review(review / "index.html", ["trial-001"], public_id)
+        receipt_path = pack / "receipt.json"
+        canonical = {
+            "schema_version": 1, "pack_id": public_id, "trial_count": 1,
+            "render_count": 2, "status": "rendered-not-listener-validated",
+            "manifest_sha256": "b" * 64,
+        }
+        receipt_path.write_text(json.dumps(canonical))
+        report = inspect_review_pack(review, require_receipt=True,
+                                     require_generated_html=True)
+        self.assertTrue(report["public_receipt_pack_id_verified"])
+        self.assertFalse(report["answer_key_opened"])
+        malicious = (
+            json.dumps({**canonical, "answer_key": {"trial-001": "baseline-A"}}),
+            json.dumps({**canonical, "source_path": str(self.root / "private.wav")}),
+            json.dumps({**canonical, "status": "/secret/private-path"}),
+            json.dumps({**canonical, "manifest_sha256": "/secret/manifest.json"}),
+            json.dumps({**canonical, "render_count": True}),
+            json.dumps({**canonical, "render_count": 0}),
+            ('{"schema_version": 1, "pack_id": "' + "0" * 64
+             + '", "pack_id": "' + public_id + '", "trial_count": 1}'),
+        )
+        for payload in malicious:
+            with self.subTest(payload=payload[:65]):
+                receipt_path.write_text(payload)
+                with self.assertRaises(ValueError):
+                    inspect_review_pack(review, require_receipt=True)
+                cli = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review),
+                     "--require-receipt"],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, cli.returncode)
+                self.assertFalse(cli.stdout)
+                self.assertNotIn(str(self.root), cli.stderr)
+                self.assertNotIn("baseline-A", cli.stderr)
+                self.assertNotIn("secret", cli.stderr)
+        receipt_path.write_text(json.dumps(canonical))
+        self.assertTrue(inspect_review_pack(review, require_receipt=True)[
+            "public_receipt_pack_id_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
