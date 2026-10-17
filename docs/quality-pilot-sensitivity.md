@@ -80,6 +80,31 @@ run an exact pinned ML-05 producer integration in its own ephemeral checkout.
 No production VPS, real commercial music, SSH escalation, queue/lease,
 worker takeover, deployment or other PR source changes.
 
+## Reproduced with the exact ML-05 study producer
+
+The hosted workflow also checks out the actual independent ML-05 frozen
+producer at `e512d8fc2eae79efe765dc9a523105fad68a196f`. Two
+distinct **real-renderer**, genuine-`aggregate()` experiments run on both
+Python versions without real recordings:
+
+1. The producer's *existing* 5-pair fixture contains only **six original
+   synthetic recordings**, which are reused within the allowed frozen
+   protocol. Even with **15/15 generated candidate preference ratings**,
+   independent-pair significance is not justified. The gate returns
+   `shared_source_across_pairs_detected=true`, both references `null`,
+   and a methodology HOLD. This is not a defect of the original producer;
+   limited reuse was explicitly permitted by its selection protocol.
+2. A freshly generated 10-track collection freezes five pairs with
+   `max_track_uses=1`, renders ten genuine original WAV outputs and
+   produces three synthetic reviewer files. Now source digests are all
+   disjoint, and the exact 5/5 candidate-pair sign reference is 1/32.
+   Dropping any *whole pair*, as opposed to one of its three repeated
+   listener clicks, gives 1/16. The gate returns a sensitivity HOLD.
+
+Even the disjoint ten-track run proves neither true human preference nor
+independent *musical* sampling. It is a structural regression witness,
+not a preregistered empirical significance result.
+
 ## Owner handoff
 
 ML-05 owns preregistration and rating aggregation. ML-07 owns technical
