@@ -87,6 +87,7 @@ def _scan_spectral_private(
                 # Constant memory (eight aggregate bins), never samples or
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
+                span_cross_energy = [0.0] * SPECTRAL_SPANS
                 remaining = frames
                 while remaining:
                     count = min(READ_FRAMES, remaining)
@@ -125,6 +126,8 @@ def _scan_spectral_private(
                         span_energy[span][1] += low_sample_energy
                         span_energy[span][2] += mid_sample_energy
                         span_energy[span][3] += high_sample_energy
+                        if channels == 2 and channel == 1:
+                            span_cross_energy[span] += (samples[index - 1] / 32768) * value
                         if channel == 0:
                             span_energy[span][4] += 1
                     remaining -= count
@@ -173,6 +176,15 @@ def _scan_spectral_private(
                 math.sqrt(total / frames),
             )
             for total, low, mid, high in channel_energy
+        ],
+        "_fold_spans": [
+            (
+                math.sqrt(max(0.0, min(1.0, 0.5 + cross / energy)))
+                if channels == 2 and energy > 0
+                and math.sqrt(energy / (count * channels)) >= SILENT_WINDOW_RMS
+                else None
+            )
+            for (energy, _, _, _, count), cross in zip(span_energy, span_cross_energy)
         ],
         "_spans": [
             (
@@ -337,6 +349,20 @@ def compare_spectral_balance(
             if (eligible >= TEMPORAL_PROXY_MIN_SPANS and differing >= 2
                     and differing / eligible >= TEMPORAL_PROXY_MIN_FRACTION):
                 warnings.append(name + "_temporal_spectral_shift_inspect")
+        # Half the mix may cancel in mono while the *global* mono-fold
+        # ratio is still just -3dB. Two or more strongly cancelling audible
+        # time-spans warrant inspection even when no whole-file gate fires.
+        if reference["channels"] == 2:
+            local_cancellation_spans = sum(
+                ((a is not None and a <= 10 ** (MONO_FOLD_LOSS_DB / 20)) or
+                 (b is not None and b <= 10 ** (MONO_FOLD_LOSS_DB / 20)))
+                for a, b in zip(reference["_fold_spans"], current["_fold_spans"])
+            )
+            deltas["stereo_temporal_mono_fold_cancellation_risk"] = (
+                local_cancellation_spans >= 2
+            )
+            if local_cancellation_spans >= 2:
+                warnings.append("stereo_temporal_mono_fold_cancellation_inspect")
         # Whole-stereo ratios mask shifts in frequency placement between L/R.
         # Compare *each* channel at matched playback positions, but expose
         # just coarse boolean flags, not channel identity or private energies.
