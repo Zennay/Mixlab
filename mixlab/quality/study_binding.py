@@ -203,7 +203,7 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
     return {
         "schema_version": 1,
         "study_pack_metadata_consistent_with_pinned_id": True,
-        "trial_count": len(pairs),
+        "trial_count": len(binding),
         "source_permissions_independently_authenticated": False,
         "actual_source_audio_authenticated_by_this_gate": False,
         "human_preference_proven": False,
