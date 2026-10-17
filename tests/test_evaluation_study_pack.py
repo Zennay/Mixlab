@@ -93,6 +93,17 @@ class StudyPackTests(unittest.TestCase):
         finally:
             evidence_path.write_text(original)
 
+    def test_unselected_render_group_is_rejected(self):
+        import mixlab.evaluation.study_pack as study_pack
+        receipt, evidence, trials = verify_pack(self.pack)
+        extra = dict(evidence["renders"][0], study_pair="pair-99")
+        for renders in (evidence["renders"] + [extra], evidence["renders"] + [extra, dict(extra)]):
+            forged = dict(evidence, renders=renders)
+            with self.subTest(extra=len(renders) - len(evidence["renders"])), \
+                    mock.patch.object(study_pack, "verify_pack", return_value=(receipt, forged, trials)), \
+                    self.assertRaisesRegex(ValueError, "inventory"):
+                verify_study_pack(self.pack, self.study)
+
     def test_existing_aggregation_accepts_the_pack(self):
         _, _, trials = verify_pack(self.pack)
         paths = []

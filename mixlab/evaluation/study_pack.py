@@ -113,6 +113,10 @@ def verify_study_pack(pack, study_path):
     renders = {}
     for row in evidence["renders"]:
         renders.setdefault(row.get("study_pair"), []).append(row)
+    # Exhaustive inventory: no render outside the frozen pairs may ride along.
+    if (len(evidence["renders"]) != 2 * len(study["pairs"]) or
+            set(renders) != {entry["pair_id"] for entry in study["pairs"]}):
+        raise ValueError("Pack renders differ from the frozen study inventory")
     for number, entry in enumerate(study["pairs"], 1):
         trial = trials.get(f"trial-{number:03d}")
         expected = {"baseline", entry["candidate_family"]}
