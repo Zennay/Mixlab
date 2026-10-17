@@ -78,10 +78,45 @@ music, reviewer account, model or external audio package. Most fixtures use
 frames at 96kHz without constructing the full audio in Python memory. The
 2M+1 negative control rejects the actual above-limit source before scanning.
 
+## Independent PCM numerical reference oracle (new large QA work package)
+
+The dedicated `tests/test_quality_pcm_reference_oracle.py` is an
+**independent brute-force decoder oracle**, not a collection of golden output
+snapshots or a call back into the product's metric helpers. It derives sample
+peak/RMS/DC, per-channel RMS, clipped fractions, sample-to-sample jumps,
+short-impulse and plateau counts, prominent onsets, PCM fingerprints, exact
+20–1000ms RMS window averages, and true interior 50ms gaps directly from
+synthesized signed-16-bit frame tuples. It compares those numbers to the
+canonical 4096-frame streaming scanner with no knowledge of read chunks.
+
+- **120 fixed-seed differential cases** include five original wave families:
+  broadband signed extrema, sparse click/dropouts, bounded periodic
+  non-DC signals, sustained high flat tops and genuine quiet PCM; across
+  1/2 channels, 8/44.1/96kHz, tiny/4096-/8192-frame edges and four
+  analysis-window sizes.
+- **64 cross-chunk dropout oracle cases** use full-channel silent runs one
+  frame below/exactly at 50ms for all 8/16/44.1/96kHz mono/stereo formats
+  and 4095/4096/4097/8191-frame start positions. The independent oracle
+  computes first/last quiet-frame intervals, not product detector flags.
+- A separate **mutation sensitivity control** deliberately falsifies five
+  expected measurements (click count, peak, RMS, adjacent jump, plateau
+  count) and proves the oracle comparison rejects the substitutions.
+- Private PCM SHA-256, independently encoded signed inversion and stereo
+  swap fingerprints are checked without serializing hashes, samples,
+  source filenames, private IDs or listener data into any public report.
+- No hypothesis library, corpus access, licensed recordings, external
+  dependency, production daemon or heavy model is used. The new file is
+  add-only; existing rendering/analysis/other-worker modules remain untouched.
+
+A green oracle means the **arithmetic/streaming implementations agree with
+an independently constructed deterministic reference**, not that audio sounds
+better, sources have been licensed, or human blind preference has passed.
+
 ## Reproduction and acceptance
 
 ```bash
 python -m unittest discover -s tests -p 'test_quality_streaming_chunk_invariants.py' -v
+python -m unittest discover -s tests -p 'test_quality_pcm_reference_oracle.py' -v
 ```
 
 The companion GitHub-hosted workflow runs both Python 3.13 and 3.14 at
@@ -93,7 +128,7 @@ is protected, **not** that private WAVs were played or M1 passed.
 
 ## Integration / ownership
 
-Adds only one new test file, this page and a dedicated workflow. It makes
+Adds only two new test files, this page and a dedicated workflow. It makes
 no edits to existing scanner/renderer/evaluator, active ML-05 and ML-07 PR
 paths, zCloud queue, Notion release flags, source music or live VPS resources.
 Keep this PR draft until exact-head CI, an independent owner review and
