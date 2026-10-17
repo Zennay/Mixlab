@@ -366,3 +366,35 @@ digital channel silence, modest adjustment, mono and fully silent
 clips. No second audio read, private channel envelope, absolute
 filename or new music asset is produced. Music preference still needs
 licensed audio and human blind-review evidence.
+
+
+## Time-varying stereo channel levels with globally identical RMS
+
+Whole-recording per-channel RMS can match perfectly even when a transition
+moves a channel's energy to the opposite side for a substantial portion of
+the excerpt. Equally, each **combined stereo** short-window RMS can match
+while individual channel windows differ by more than 9 dB. The earlier
+global channel-level check would not detect this temporal confound.
+
+During the existing single PCM scan, ML-07 now records only two **private
+per-window channel RMS values** (never samples/paths) per stereo window,
+aligned with the existing global RMS windows. The new
+`stereo_window_channel_level_mismatch_fraction` is the aggregate fraction
+of audible windows in which either channel differs by at least 9 dB or
+one audible channel becomes effectively silent. At least three audible
+windows and a mismatch fraction of at least 25% raise the neutral
+`stereo_window_channel_level_mismatch_inspect_not_lufs` warning and
+`stereo_window_channel_level_confound_risk=True`. The additive
+`rms_and_window_level_preflight_pass` then fails, while older
+whole-RMS-only diagnostics retain their meanings. Mono reports `None`
+for the fraction and `False` for stereo risk; silent stereo does not
+invent a mismatch.
+
+The temporary arrays scale with **window count**, not audio frames, and
+contain no audio samples. They are never returned by the public report,
+nor placed in logs or files. `tests/test_stereo_window_balance.py`
+compares a synthetic locally varying stereo pattern with a globally
+RMS-equivalent channel-flipped pattern, a below-threshold one-window
+change, sustained multi-window changes, clean stereo, silence and mono.
+This is a conservative technical listening/confound flag and **not** a
+musical quality, LUFS, preference or production-readiness verdict.
