@@ -231,7 +231,7 @@ sufficient energy from both channels in both sources in *every* subwindow.
 The 250 ms pan-tilt measure and one-second persistence threshold are
 unchanged. Synthetic boundary controls require correct behavior at -45 dBFS
 for quantized PCM16: amplitude 185/32768 must count as active, whereas
-184/32768 must not, checked at 8 kHz, 11.025 kHz and 96 kHz. Additional synthetic tests cover near-equal whole-clip RMS,
+184/32768 must not, checked at 8 kHz, 11.025 kHz and 96 kHz.\nA separate exhaustive synthetic regression also iterates all 20 possible\nresidue classes of `sample_rate % 20` (8,000–8,019 Hz): exactly one second\nof active stereo must pass and one frame less must abstain, proving integer\n50ms subwindow boundaries do not accumulate rounding error. Additional synthetic tests cover near-equal whole-clip RMS,
 bursts on either source, 50 ms gaps at 11,025 Hz, strict CLI exit 3, and
 existing real-M1-renderer integration. All sample rates remain 8–96 kHz;
 no media are retained or uploaded, and the 192 MiB virtual memory limit
