@@ -31,7 +31,12 @@ def open_verified_private_pcm16(path: str | Path, *, max_bytes: int):
     flags = os.O_RDONLY
     for constant in ("O_NONBLOCK", "O_NOFOLLOW", "O_CLOEXEC"):
         flags |= getattr(os, constant, 0)
-    descriptor = os.open(path, flags)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        # The default OSError includes the private source path. Keep the
+        # library exception generic even when it is logged outside the CLI.
+        raise ValueError("Private WAV could not be opened as a regular file") from None
     try:
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1
