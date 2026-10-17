@@ -68,11 +68,11 @@ def make_stereo_split_wav(path, *, left_hz, right_hz, gain=8000, rate=48000):
         output.writeframes(samples.tobytes())
 
 
-def make_stereo_polarity_wav(path, *, right_sign=1, left_sign=1, rate=48000, gain=8000):
+def make_stereo_polarity_wav(path, *, right_sign=1, left_sign=1, right_phase=0.0, rate=48000, gain=8000):
     samples = array("h")
     for i in range(12000):
         value = int(gain * math.sin(2 * math.pi * 600 * i / rate))
-        samples.extend((value * left_sign, value * right_sign))
+        samples.extend((value * left_sign, int(gain * math.sin(2 * math.pi * 600 * i / rate + right_phase)) * right_sign))
     if sys.byteorder != "little":
         samples.byteswap()
     with wave.open(str(path), "wb") as out:
@@ -341,6 +341,24 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
         flipped = compare_spectral_balance(self.other, [self.base])["candidates"][0]
         self.assertIn("stereo_mono_fold_cancellation_inspect", flipped["warnings"])
+
+    def test_stereo_fold_change_detects_large_partial_phase_shift(self):
+        make_stereo_polarity_wav(self.base, right_phase=0.0)
+        make_stereo_polarity_wav(self.other, right_phase=2.3)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertLess(row["stereo_mono_fold_ratio_delta_db"], -6.0)
+        self.assertGreater(row["stereo_mono_fold_ratio_delta_db"], -10.0)
+        self.assertNotIn(str(self.dir), json.dumps(row))
+
+    def test_small_stereo_phase_shift_does_not_trigger_mono_fold_warning(self):
+        make_stereo_polarity_wav(self.base)
+        make_stereo_polarity_wav(self.other, right_phase=math.pi / 3)
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertGreater(row["stereo_mono_fold_ratio_delta_db"], -6.0)
 
     def test_stereo_mono_fold_gain_invariant_and_healthy_in_phase(self):
         make_stereo_polarity_wav(self.base, gain=8000)
