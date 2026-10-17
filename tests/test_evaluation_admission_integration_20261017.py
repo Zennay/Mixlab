@@ -12,7 +12,9 @@ import time
 import unittest
 from unittest import mock
 
-from mixlab.evaluation import _load, main
+from mixlab.evaluation import _load, verify_pack
+from mixlab.cli import fixture, benchmark
+from mixlab.ingest import MAX_BYTES
 from mixlab.evaluation import json_admission
 
 
@@ -94,6 +96,64 @@ class EvaluationAdmissionIntegrationTests(unittest.TestCase):
         self.assertNotIn("SECRET_RATING_SOURCE_781", proc.stdout + proc.stderr)
         self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
+
+
+class FrozenReviewAudioAdmissionTests(unittest.TestCase):
+    """Frozen synthetic review WAVs must remain bounded regular inputs."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp = tempfile.TemporaryDirectory(prefix="mixlab-eval-audio-")
+        cls.root = Path(cls.temp.name)
+        manifest = fixture(cls.root / "library")
+        cls.pack = cls.root / "pack"
+        benchmark(manifest, cls.pack, seed=17)
+        cls.wav = cls.pack / "review" / "trial-001-A.wav"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def test_real_synthetic_frozen_pack_still_verifies(self):
+        _receipt, _evidence, trials = verify_pack(self.pack)
+        self.assertIn("trial-001", trials)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_replaced_review_wav_fifo_fails_before_blocking(self):
+        original = self.wav.with_suffix(".original")
+        self.wav.rename(original)
+        try:
+            os.mkfifo(self.wav)
+            started = time.monotonic()
+            with self.assertRaises(ValueError):
+                verify_pack(self.pack)
+            self.assertLess(time.monotonic() - started, 2.0)
+        finally:
+            self.wav.unlink()
+            original.rename(self.wav)
+
+    def test_replaced_review_wav_symlink_rejected(self):
+        original = self.wav.with_suffix(".original")
+        self.wav.rename(original)
+        try:
+            self.wav.symlink_to(original.name)
+            with self.assertRaisesRegex(ValueError, "regular PCM16 WAV"):
+                verify_pack(self.pack)
+        finally:
+            self.wav.unlink()
+            original.rename(self.wav)
+
+    def test_oversize_sparse_review_wav_refused(self):
+        original = self.wav.with_suffix(".original")
+        self.wav.rename(original)
+        try:
+            with self.wav.open("wb") as stream:
+                stream.truncate(MAX_BYTES + 1)
+            with self.assertRaisesRegex(ValueError, "32 MiB"):
+                verify_pack(self.pack)
+        finally:
+            self.wav.unlink()
+            original.rename(self.wav)
 
 
 if __name__ == "__main__":

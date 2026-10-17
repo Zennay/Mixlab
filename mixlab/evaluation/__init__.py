@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from ..ingest import digest
+from ..ingest import inspect_wav_and_digest
 from .json_admission import load_bounded_json as _load
 
 CHOICES = {"A", "B", "Tie", "Both unusable"}
@@ -49,7 +49,11 @@ def verify_pack(root):
             if reference is None:
                 raise ValueError("Trial references missing render")
             wav = root / "review" / f"{tid}-{label}.wav"
-            if digest(wav) != reference["output_sha256"]:
+            # Render integrity must be checked on a bounded regular PCM16
+            # descriptor, not with the unbounded digest(path) iterator:
+            # a replaced review WAV could otherwise block on a FIFO or
+            # consume unbounded bytes before rejecting the frozen pack.
+            if inspect_wav_and_digest(wav)[1] != reference["output_sha256"]:
                 raise ValueError("Listening audio changed after pack freeze")
         trials[tid] = row
     return receipt, evidence, trials
