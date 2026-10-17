@@ -115,6 +115,21 @@ def make_stereo_window_dropout_wav(path, masks, *, gain=8000, match_rms=False):
         output.writeframes(samples.tobytes())
 
 
+def make_loudness_envelope_wav(path, gains, *, channels=1, rate=48000):
+    samples = array("h")
+    for span, gain in enumerate(gains):
+        for i in range(6000):
+            value = int(gain * math.sin(2 * math.pi * 600 * (span * 6000 + i) / rate))
+            samples.extend([value] * channels)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(channels)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -773,6 +788,48 @@ class SpectralBalanceTests(unittest.TestCase):
                     compare_spectral_balance(self.base, [self.other, self.other])
         self.assertEqual(6, len(calls))
         self.assertEqual(before, (self.base.read_bytes(), self.other.read_bytes()))
+
+    def test_swapped_loudness_halves_flag_envelope_at_equal_global_rms(self):
+        make_loudness_envelope_wav(self.base, [9000] * 4 + [3000] * 4)
+        make_loudness_envelope_wav(self.other, [3000] * 4 + [9000] * 4)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(0, row["rms_delta_db_vs_baseline"], delta=0.001)
+        self.assertNotIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+        self.assertEqual(1.0, row["temporal_rms_envelope_mismatch_fraction"])
+        self.assertIn("temporal_rms_envelope_shift_inspect_not_lufs", row["warnings"])
+        report = json.dumps(self.report())
+        self.assertNotIn(str(self.dir), report)
+        self.assertNotIn("envelope_rms_samples", report)
+
+    def test_relative_envelope_is_unchanged_by_uniform_gain_and_stereo(self):
+        make_loudness_envelope_wav(self.base, [9000] * 4 + [3000] * 4, channels=2)
+        make_loudness_envelope_wav(self.other, [7200] * 4 + [2400] * 4, channels=2)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0, row["temporal_rms_envelope_mismatch_fraction"])
+        self.assertNotIn("temporal_rms_envelope_shift_inspect_not_lufs", row["warnings"])
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+
+    def test_one_changed_loudness_span_is_not_persistent_envelope_bias(self):
+        make_loudness_envelope_wav(self.base, [6000] * 8)
+        make_loudness_envelope_wav(self.other, [11000] + [6000] * 7)
+        row = self.report()["candidates"][0]
+        self.assertLess(row["temporal_rms_envelope_mismatch_fraction"], .25)
+        self.assertNotIn("temporal_rms_envelope_shift_inspect_not_lufs", row["warnings"])
+
+    def test_envelope_with_insufficient_overlapping_audio_is_unresolved(self):
+        make_loudness_envelope_wav(self.base, [6000] + [0] * 7)
+        make_loudness_envelope_wav(self.other, [6000] + [0] * 7)
+        row = self.report()["candidates"][0]
+        self.assertIsNone(row["temporal_rms_envelope_mismatch_fraction"])
+        self.assertIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+
+    def test_swapped_loudness_envelope_streaming_block_invariance(self):
+        make_loudness_envelope_wav(self.base, [9000] * 4 + [3000] * 4)
+        make_loudness_envelope_wav(self.other, [3000] * 4 + [9000] * 4)
+        reference = self.report()
+        for block in (1, 257, 4096, 8191):
+            with self.subTest(block=block), patch.object(spectral, "READ_FRAMES", block):
+                self.assertEqual(reference, self.report())
 
     def test_swapped_spectral_halves_are_detected_despite_matched_global_ratios(self):
         base_frequencies = [100] * 4 + [5000] * 4
