@@ -131,3 +131,46 @@ retains the declared registered pairs and manual provenance.
 No active owners of analysis, DSP, evaluation/QA or zCloud shared runtime
 files are replaced or overridden; the package is an isolated product
 entry point.
+
+
+## NEW: make a complete two-song mix while finishing the session
+
+The finish step can now produce a **full-length WAV in the same
+private interactive project**, instead of only short transition previews.
+Choose the exact pair and one of the existing four DSP families:
+
+~~~bash
+python3 -m mixlab.interactive_session finish \
+  /private/mixlab-interactive-01 \
+  /private/mixlab-cue-selections.json \
+  --pair pair-001 \
+  --full-song \
+  --full-song-family bass_swap \
+  --full-song-gain-db -9
+~~~
+
+The normal private transition audition remains available at
+studio/index.html. The newly connected full-song output appears at:
+
+~~~text
+full-song/
+  full-song-mix.wav
+  index.html
+  full-mix-receipt.private.json
+~~~
+
+Open full-song/index.html to hear track A from its beginning through the
+chosen transition into the remaining part of track B, then download the
+whole private WAV.
+
+This is a complete M1 two-track creative export, not M3 autonomous
+multi-song set planning. The workflow still requires manually checked
+pair BPM and cue points, explicit local music rights, and exact PCM
+format compatibility. It never infers automatic DJ alignment or
+publishes source music. The session's final receipt now also binds
+the full-song export receipt SHA256 when this option is enabled.
+
+Without --full-song, the default finish behavior is unchanged. When
+using --full-song, --pair is required; this avoids unexpectedly exporting
+every source recording in a 10-pair project. Each project is finalized
+once; create a new project to try another full-song family.

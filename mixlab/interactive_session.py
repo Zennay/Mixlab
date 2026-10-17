@@ -21,6 +21,8 @@ from .cue_suggest import suggest as suggest_cues
 from .cueprep import _read_spec, compile_cues
 from .media_import import import_library
 from .studio import build_studio
+from .full_mix import full_mix
+from .engine import FAMILY_NAMES
 
 WORKFLOW_KIND = "private-interactive-mixlab-session"
 WORKFLOW_VERSION = 1
@@ -127,7 +129,8 @@ def _admit_receipt(project):
     return data, sources
 
 
-def finish_session(session, selections, *, pair=None):
+def finish_session(session, selections, *, pair=None, export_full_song=False,
+                   full_song_family="bass_swap", full_song_gain_db=-9.):
     """Finalize separately approved browser cues into immutable WAV renders."""
     lexical = Path(session).absolute()
     if lexical.is_symlink():
@@ -137,6 +140,10 @@ def finish_session(session, selections, *, pair=None):
         raise ValueError("Private MixLab session directory unavailable")
     _check_git_destination(root)
     data, converted_manifest = _admit_receipt(root)
+    if export_full_song and pair is None:
+        raise ValueError("--full-song requires --pair to select one entire two-track mix")
+    if full_song_family not in FAMILY_NAMES:
+        raise ValueError("Unknown full-song transition family")
     if pair is not None:
         spec = _read_spec(converted_manifest)
         if not any(isinstance(item, dict) and item.get("id") == pair for item in spec.get("pairs", [])):
@@ -147,7 +154,9 @@ def finish_session(session, selections, *, pair=None):
     excerpts = root / "excerpts"
     studio = root / "studio"
     complete = root / "completed-receipt.private.json"
-    if any(path.exists() or path.is_symlink() for path in (output_manifest, excerpts, studio, complete)):
+    full_song_dir = root / "full-song"
+    if any(path.exists() or path.is_symlink() for path in
+           (output_manifest, excerpts, studio, complete, full_song_dir)):
         raise ValueError("Session already finalized or contains reserved product files; use a new session")
     created = []
     try:
@@ -157,6 +166,11 @@ def finish_session(session, selections, *, pair=None):
         created.append(excerpts)
         index = build_studio(excerpt_manifest, studio, pair_id=pair)
         created.append(studio)
+        full_song_result = None
+        if export_full_song:
+            full_song_result = full_mix(output_manifest, full_song_dir, pair_id=pair,
+                                        family=full_song_family, gain_db=full_song_gain_db)
+            created.append(full_song_dir)
         finish = {
             "schema_version": WORKFLOW_VERSION,
             "kind": WORKFLOW_KIND, "state": "manual-cues-rendered",
@@ -166,6 +180,9 @@ def finish_session(session, selections, *, pair=None):
             "studio_receipt_sha256": _checksum(studio / "studio-receipt.private.json"),
             "selected_pair": pair,
             "studio_page": "studio/index.html",
+            "full_song_wav": "full-song/full-song-mix.wav" if export_full_song else None,
+            "full_song_receipt_sha256": (_checksum(full_song_dir / "full-mix-receipt.private.json")
+                                          if full_song_result is not None else None),
             "source_manifest": "sources/approved-cues.json",
             "limitations": ["not a frozen blind listening study",
                             "timing and BPM manually approved",
@@ -198,6 +215,10 @@ def main():
     p.add_argument("private_project")
     p.add_argument("selection_json")
     p.add_argument("--pair", help="Render studio for just one pre-registered pair")
+    p.add_argument("--full-song", action="store_true",
+                   help="Also render the complete two-song WAV; requires --pair")
+    p.add_argument("--full-song-family", choices=FAMILY_NAMES, default="bass_swap")
+    p.add_argument("--full-song-gain-db", type=float, default=-9.)
     args = parser.parse_args()
     try:
         result = (start_session(args.source_manifest, args.private_project,
@@ -205,7 +226,9 @@ def main():
                                 timeout_seconds=args.timeout_seconds)
                   if args.action == "start" else
                   finish_session(args.private_project, args.selection_json,
-                                 pair=args.pair))
+                                 pair=args.pair, export_full_song=args.full_song,
+                                 full_song_family=args.full_song_family,
+                                 full_song_gain_db=args.full_song_gain_db))
     except (ValueError, OSError, TypeError, KeyError) as exc:
         parser.exit(2, "MixLab interactive session: " + str(exc) + "\n")
     print(json.dumps({"ready": True, "private_page": str(result),
