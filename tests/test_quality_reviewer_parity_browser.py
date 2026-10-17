@@ -118,6 +118,77 @@ class ReviewerParityBrowserTests(unittest.TestCase):
                                      "browser reviewer grammar/export mismatch")
 
 
+
+    def test_chromium_reviewer_pattern_matches_actual_python_ingest_edge_matrix(self):
+        """Native v-mode pattern agrees with the real aggregator grammar.
+
+        Compare the browser's *sanitized input.value*, not the assigned raw
+        test string (HTML text inputs can normalize carriage returns).
+        """
+        from mixlab.quality.reviewer_export_parity import INGEST_PATTERN
+        candidates = [
+            "", " ", "A", "a", "7", "-", "_", "0_", "A-", "A_",
+            "A"*40, "A"*41, "A"*39+"_", "A"*39+"-", "A"*39+" ",
+            "A\n", "A\rB", "A\tB", "é", "Aé", "e\u0301", "B\u200bC",
+            "A😀", "🔒", "A！", "a\u00a0", " a", "a ", "A/B",
+            "Z" * 39 + "é", "Z" * 40 + "é", "A" * 40 + "-",
+        ]
+        candidates.extend(chr(n) for n in range(32, 127))
+        candidates.extend("A" + chr(n) for n in range(32, 127))
+        candidates.extend(chr(n) + "7" for n in range(32, 127))
+        candidates.extend("a" * n for n in range(1, 43))
+        # Use only synthetic pseudonyms; no personal identifiers or audio.
+        self.assertGreater(len(candidates), 300)
+        with tempfile.TemporaryDirectory(prefix="mixlab-browser-parity-matrix-") as temp:
+            root = Path(temp)
+            page = root / "synthetic-pattern.html"
+            write_review(page, ["trial-001"], "a" * 64)
+            raw = page.read_text(encoding="utf-8").replace(
+                'name="reviewer" required maxlength="40"',
+                'name="reviewer" required pattern="' + BROWSER_PATTERN +
+                '" maxlength="40"', 1,
+            )
+            script = """
+(() => {
+  const input = document.querySelector('input[name="reviewer"]');
+  const values = __VALUES__;
+  let mismatch = 0;
+  let observed = 0;
+  const re = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
+  for (const name of values) {
+    input.value = name;
+    // Check the final DOM value: the actual value the form would export.
+    const normalized = input.value;
+    const expected = re.test(normalized);
+    const valid = input.checkValidity();
+    if (expected !== valid) mismatch++;
+    observed++;
+  }
+  document.documentElement.dataset.matrixObserved = String(observed);
+  document.documentElement.dataset.matrixMismatch = String(mismatch);
+})();
+""".replace("__VALUES__", json.dumps(candidates, ensure_ascii=True))
+            page.write_text(raw.replace("</html>", "<script>" + script + "</script></html>"),
+                            encoding="utf-8")
+            cmd = [
+                _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+                "--disable-dev-shm-usage", "--disable-background-networking",
+                "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+                "--disable-sync", "--virtual-time-budget=2500",
+                "--user-data-dir=" + str(root / "chrome-profile"),
+                "--dump-dom", page.as_uri(),
+            ]
+            env = dict(os.environ)
+            env["HOME"] = str(root)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=35, env=env)
+            self.assertEqual(result.returncode, 0)
+            measured = re.search(r'data-matrix-observed="([0-9]+)"', result.stdout)
+            self.assertIsNotNone(measured, "chromium did not execute input matrix")
+            self.assertEqual(int(measured.group(1)), len(candidates))
+            errors = re.search(r'data-matrix-mismatch="([0-9]+)"', result.stdout)
+            self.assertIsNotNone(errors)
+            self.assertEqual(int(errors.group(1)), 0, "browser/ingest pattern parity drift")
+
     def test_real_synthetic_renderer_browser_export_to_aggregate(self):
         """Actual bounded MixLab engine + Chrome + rating ingest; never human evidence."""
         with tempfile.TemporaryDirectory(prefix="mixlab-parity-aggregate-") as temp:
