@@ -385,6 +385,87 @@ class ResolutionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bitdepth.inspect_ab(self.base, [duplicate])
 
+    def test_parent_directory_swap_cannot_open_a_private_external_inode(self):
+        # Reproduce a TOCTOU: the checked parent is a real directory, but it
+        # becomes a symlink to a different directory just as the file opens.
+        # O_NOFOLLOW on the *final basename* alone does not protect parents.
+        allowed = self.root / "allowed"
+        outside = self.root / "outside-private"
+        displaced = self.root / "allowed-displaced"
+        allowed.mkdir()
+        outside.mkdir()
+        source = allowed / "raced.wav"
+        secret = outside / "raced.wav"
+        wav(source, samples())
+        wav(secret, samples(collapse=True))
+        private_identity = (secret.stat().st_dev, secret.stat().st_ino)
+        opened_private = []
+        original_open = os.open
+        swapped = False
+
+        def swap_just_before_file_open(path, flags, *args, **kwargs):
+            nonlocal swapped
+            if os.fspath(path).endswith("raced.wav") and not swapped:
+                allowed.rename(displaced)
+                allowed.symlink_to(outside, target_is_directory=True)
+                swapped = True
+            fd = original_open(path, flags, *args, **kwargs)
+            if (os.fstat(fd).st_dev, os.fstat(fd).st_ino) == private_identity:
+                opened_private.append(True)
+            return fd
+
+        try:
+            with patch.object(bitdepth.os, "open", side_effect=swap_just_before_file_open):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    bitdepth.inspect_ab(source, [self.good])
+        finally:
+            if allowed.is_symlink():
+                allowed.unlink()
+            if displaced.exists():
+                displaced.rename(allowed)
+        self.assertTrue(swapped, "The swap must execute for this to prove anything")
+        self.assertFalse(opened_private, "Race crossed the inspected parent into a private inode")
+
+    def test_parent_symlink_appearing_before_directory_open_is_not_followed(self):
+        allowed = self.root / "allowed-early"
+        outside = self.root / "outside-early"
+        displaced = self.root / "allowed-early-moved"
+        allowed.mkdir()
+        outside.mkdir()
+        wav(allowed / "raced.wav", samples())
+        secret = outside / "raced.wav"
+        wav(secret, samples(collapse=True))
+        external = (secret.stat().st_dev, secret.stat().st_ino)
+        original_open = os.open
+        opened_private = []
+        swapped = False
+
+        def swap_before_parent_open(path, flags, *args, **kwargs):
+            nonlocal swapped
+            if not swapped and (
+                os.fspath(path) == "allowed-early"
+                or os.fspath(path).endswith("allowed-early/raced.wav")
+            ):
+                allowed.rename(displaced)
+                allowed.symlink_to(outside, target_is_directory=True)
+                swapped = True
+            fd = original_open(path, flags, *args, **kwargs)
+            if (os.fstat(fd).st_dev, os.fstat(fd).st_ino) == external:
+                opened_private.append(True)
+            return fd
+
+        try:
+            with patch.object(bitdepth.os, "open", side_effect=swap_before_parent_open):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    bitdepth.inspect_ab(allowed / "raced.wav", [self.good])
+        finally:
+            if allowed.is_symlink():
+                allowed.unlink()
+            if displaced.exists():
+                displaced.rename(allowed)
+        self.assertTrue(swapped)
+        self.assertFalse(opened_private, "Directory traversal must not follow an exchanged parent")
+
     def test_non_regular_and_missing_sources_do_not_leak_path(self):
         for path in [self.root / "not-found-private.wav", self.root]:
             with self.assertRaises(ValueError) as ctx:
