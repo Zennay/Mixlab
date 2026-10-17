@@ -228,6 +228,46 @@ class IntersampleTests(unittest.TestCase):
         self.assertTrue(row["high_frequency_near_ceiling_ambiguity_risk"])
         self.assertEqual(1, row["high_frequency_near_ceiling_crossings"])
 
+    def test_hot_start_without_full_fir_context_requires_review(self):
+        pcm = [0] * 80
+        pcm[0] = 32500
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["intersample_over_risk"])
+        self.assertTrue(row["screen_evaluable"])
+        self.assertTrue(row["edge_interpolation_ambiguity_risk"])
+        self.assertTrue(row["technical_review_required"])
+        self.assertEqual(2, self.cli(str(self.a), str(self.b), "--fail-on-risk").returncode)
+
+    def test_hot_final_sample_without_right_context_requires_review(self):
+        pcm = [0] * 80
+        pcm[-1] = -32500
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["edge_interpolation_ambiguity_risk"])
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+
+    def test_hot_interior_impulse_with_quiet_edges_remains_evaluable(self):
+        pcm = [0] * 80
+        pcm[40] = 32500
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["edge_interpolation_ambiguity_risk"])
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertFalse(row["technical_review_required"])
+
+    def test_stereo_single_channel_hot_edge_is_not_ignored(self):
+        stereo = [0] * 160
+        stereo[1] = 32600
+        write_wav(self.a, [0] * len(stereo), channels=2)
+        write_wav(self.b, stereo, channels=2)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["edge_interpolation_ambiguity_risk"])
+        self.assertNotIn(str(self.root), json.dumps(row))
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
