@@ -30,15 +30,23 @@ class ReviewerExportParityTests(unittest.TestCase):
         self.page.write_text(html.replace(old, new, 1), encoding="utf-8")
 
     def fixed(self):
+        """Idempotent after the CLI integration owner ships the pattern."""
+        page = self.page.read_text(encoding="utf-8")
+        if 'name="reviewer" required pattern="' + BROWSER_PATTERN + '"' in page:
+            return
         self.patch('name="reviewer" required maxlength="40"',
                    'name="reviewer" required pattern="' + BROWSER_PATTERN +
                    '" maxlength="40"')
 
-    def test_current_canonical_generator_has_real_ingest_mismatch(self):
-        # Expected release HOLD until the separate CLI generator owner fixes it.
+    def test_canonical_generator_emits_a_truthful_ingest_parity_verdict(self):
+        # Current main is HOLD. Once the CLI owner fixes it, this test must
+        # turn green-as-PASS rather than forever expecting the known defect.
+        html = self.page.read_text(encoding="utf-8")
+        has_guard = 'name="reviewer" required pattern="' + BROWSER_PATTERN + '"' in html
+        self.assertTrue(has_guard or 'name="reviewer" required maxlength="40"' in html)
         report = self.checked()
-        self.assertEqual(report["technical_gate"], "hold")
-        self.assertFalse(report["reviewer_input_contract_compatible"])
+        self.assertEqual(report["technical_gate"], "pass" if has_guard else "hold")
+        self.assertIs(report["reviewer_input_contract_compatible"], has_guard)
         self.assertFalse(report["release_authorized"])
         self.assertNotIn(str(self.root), json.dumps(report))
         self.assertNotIn("trial-001", json.dumps(report))
@@ -159,9 +167,12 @@ class ReviewerExportParityTests(unittest.TestCase):
 
     def test_cli_distinguishes_hold_from_invalid_from_parity(self):
         cmd = [sys.executable, "-m", "mixlab.quality.reviewer_export_parity", str(self.page)]
-        hold = subprocess.run(cmd, text=True, capture_output=True, timeout=10)
-        self.assertEqual(hold.returncode, 3, hold.stderr)
-        self.assertEqual(json.loads(hold.stdout)["technical_gate"], "hold")
+        baseline = subprocess.run(cmd, text=True, capture_output=True, timeout=10)
+        official_html = self.page.read_text(encoding="utf-8")
+        official_guarded = ('name="reviewer" required pattern="' + BROWSER_PATTERN + '"') in official_html
+        self.assertEqual(baseline.returncode, 0 if official_guarded else 3, baseline.stderr)
+        self.assertEqual(json.loads(baseline.stdout)["technical_gate"],
+                         "pass" if official_guarded else "hold")
         self.fixed()
         passed = subprocess.run(cmd, text=True, capture_output=True, timeout=10)
         self.assertEqual(passed.returncode, 0, passed.stderr)
@@ -169,7 +180,7 @@ class ReviewerExportParityTests(unittest.TestCase):
         self.page.unlink()
         invalid = subprocess.run(cmd, text=True, capture_output=True, timeout=10)
         self.assertEqual(invalid.returncode, 2)
-        for result in (hold, passed, invalid):
+        for result in (baseline, passed, invalid):
             self.assertNotIn(str(self.root), result.stdout + result.stderr)
         extra = subprocess.run(cmd + [str(self.root / "SECRET.wav")],
                                text=True, capture_output=True, timeout=10)
