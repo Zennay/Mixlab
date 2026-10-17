@@ -349,6 +349,11 @@ def validate_library(manifest_path):
         if not isinstance(sha, str) or not HASH.fullmatch(sha):
             raise ValueError("Invalid source checksum")
         number(track.get("bpm"), "manual bpm", 30, 300)
+        if "downbeat_seconds" in track:
+            downbeat = track["downbeat_seconds"]
+            if (type(downbeat) not in (int, float) or not math.isfinite(downbeat)
+                    or downbeat < 0):
+                raise ValueError("manual downbeat must be finite and nonnegative")
         partition = track.get("partition")
         if partitioned and (not isinstance(partition, str) or
                             partition not in {"development", "evaluation"}):
