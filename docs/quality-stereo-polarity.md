@@ -522,3 +522,23 @@ batch-wide resource admission remain unchanged.
 These checks diagnose **signal continuity risk** only. They are not
 LUFS, a mixing aesthetic score, or a replacement for licensed music,
 human blind A/B tests or an independent M1 quality audit.
+
+
+### Independent mathematical DC validation and threshold boundaries
+
+The additive `tests/test_dc_independent_oracle.py` does **not** reuse
+quality-module DC-window implementation. It computes a window's exact
+integer sum of `candidate_sample - baseline_sample`, normalizes it by
+window frame count and the PCM16 full-scale denominator, and checks the
+strict **3% FS** threshold independently, for both one- and two-channel
+fixtures. A fixed seed tests clips with **800, 801, 4095, 4096, 4097
+and 9003 frames**, with both **20ms and 100ms** RMS-window settings,
+including short last windows and multiple PCM streaming blocks. One
+stereo fixture independently checks a signed global DC difference,
+and all fixtures assert private path/filename suppression and source
+immutability. This is deterministic synthetic arithmetic only.
+
+The companion CI discovery contract requires this oracle alongside both
+relative DC regression modules. The corresponding stress is confined
+to GitHub-hosted small synthetic fixtures; no private real music is
+published and no resource-limited VPS worker is exercised.
