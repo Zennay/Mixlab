@@ -167,6 +167,86 @@ class PrivateSourceIdentityTests(unittest.TestCase):
         # 9003 frames require exactly 4096 + 4096 + 811 per side.
         self.assertEqual([4096, 4096, 811, 4096, 4096, 811], requested)
 
+    def test_baseline_modified_after_own_scan_is_refused_by_full_comparison(self):
+        # The baseline fd is already closed when the next candidate starts.
+        # A valid per-file post-scan fstat alone cannot detect this edit.
+        import mixlab.quality as quality_module
+
+        native = quality_module._scan_wav_with_digest
+        calls = []
+
+        def mutate_after_first(path, **kwargs):
+            outcome = native(path, **kwargs)
+            calls.append(path)
+            if len(calls) == 1:
+                with self.private.open("r+b") as writer:
+                    writer.seek(46)
+                    writer.write(b"\x28\x19")
+            return outcome
+
+        with patch("mixlab.quality._scan_wav_with_digest",
+                   side_effect=mutate_after_first):
+            with self.assertRaisesRegex(ValueError, "changed during quality comparison"):
+                compare_wavs(self.private, [self.other])
+        self.assertEqual(2, len(calls))
+
+    def test_candidate_modified_after_own_scan_is_refused_by_full_comparison(self):
+        # The final candidate changes after its scan but before the overall
+        # report can be returned; its own reader cannot observe this.
+        import mixlab.quality as quality_module
+
+        native = quality_module._scan_wav_with_digest
+        calls = []
+
+        def mutate_after_second(path, **kwargs):
+            outcome = native(path, **kwargs)
+            calls.append(path)
+            if len(calls) == 2:
+                with self.other.open("r+b") as writer:
+                    writer.seek(46)
+                    writer.write(b"\x21\x19")
+            return outcome
+
+        with patch("mixlab.quality._scan_wav_with_digest",
+                   side_effect=mutate_after_second):
+            with self.assertRaisesRegex(ValueError, "changed during quality comparison"):
+                compare_wavs(self.private, [self.other])
+        self.assertEqual(2, len(calls))
+
+    def test_replacement_of_baseline_path_after_scan_is_refused_even_if_pcm_equal(self):
+        import mixlab.quality as quality_module
+
+        native = quality_module._scan_wav_with_digest
+        original = self.private.read_bytes()
+        old = self.root / "moved-baseline-private.wav"
+        calls = 0
+
+        def replace_after_first(path, **kwargs):
+            nonlocal calls
+            result = native(path, **kwargs)
+            calls += 1
+            if calls == 1:
+                self.private.rename(old)
+                self.private.write_bytes(original)
+            return result
+
+        with patch("mixlab.quality._scan_wav_with_digest",
+                   side_effect=replace_after_first):
+            with self.assertRaisesRegex(ValueError, "changed during quality comparison"):
+                compare_wavs(self.private, [self.other])
+        self.assertEqual(original, self.private.read_bytes())
+
+    def test_clean_multicandidate_report_does_not_expose_input_identity(self):
+        extra = self.root / "sensitive-artist-third.wav"
+        write_wav(extra, amplitude=1700)
+        report = compare_wavs(self.private, [self.other, extra])
+        self.assertEqual(2, len(report["candidates"]))
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("sensitive-artist", serialized)
+        self.assertNotIn("st_ino", serialized)
+        self.assertNotIn("mtime", serialized)
+
     def test_missing_file_error_does_not_reveal_secret_filename(self):
         missing = self.root / "PRIVATE_EXPERIMENTAL_TRACK_CREDS_443.wav"
         with self.assertRaises(ValueError) as captured:
