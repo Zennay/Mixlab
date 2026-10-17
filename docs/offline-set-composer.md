@@ -35,6 +35,12 @@ pair IDs and transition families into a long shell command.
       /private/mixlab-set-plan.private.json \
       /private/final-set-01.wav
 
+The composer additionally publishes `<output>.wav.player.html` next to the
+finished audio: a local continuous player with clickable song/transition
+chapters, JSON chapter export and a compatible `.cue` download. The original
+WAV survives even if the optional HTML publication fails. See
+[Full Set Player](private-full-set-player.md).
+
 The output is one full-length local PCM16-WAV plus its private SHA-256 receipt
 (`final-set-01.wav.receipt.private.json`). The standard exporter uses the
 original normalized solo passages between selected transitions; it does not
