@@ -1368,6 +1368,53 @@ class QualityTests(unittest.TestCase):
         self.assertNotIn("short_interior_pcm_dropout_inspect",
                          report["candidates"][0]["warnings"])
 
+    def test_prominent_audio_onset_alignment_catches_short_blind_ab_mismatch(self):
+        # A 100ms delayed audible start is below the existing 200ms
+        # edge-silence confound threshold despite matching file duration.
+        delayed = [0] * 800 + self.samples[:7200]
+        wav(self.candidate, delayed)
+        report = compare_wavs(self.base, [self.candidate])
+        row = report["candidates"][0]
+        self.assertFalse(row["edge_silence_mismatch_risk"])
+        self.assertTrue(row["prominent_onset_mismatch_risk"])
+        self.assertAlmostEqual(100, row["prominent_onset_mismatch_ms"], delta=.01)
+        self.assertIn("ab_prominent_audio_onset_mismatch_inspect", row["warnings"])
+        self.assertFalse(report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("7200", json.dumps(report))
+        # Unlike RMS window silence, sample-level onset is window-invariant.
+        slow_window = compare_wavs(self.base, [self.candidate], window_ms=250)
+        self.assertEqual(row["prominent_onset_mismatch_ms"],
+                         slow_window["candidates"][0]["prominent_onset_mismatch_ms"])
+
+    def test_prominent_onset_threshold_silence_stereo_and_reversed_baseline(self):
+        for shift, expected in ((400, False), (600, True)):
+            with self.subTest(shift=shift):
+                wav(self.candidate, [0] * shift + self.samples[:-shift])
+                row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+                self.assertEqual(expected, row["prominent_onset_mismatch_risk"])
+                self.assertAlmostEqual(1000 * shift / 8000,
+                                       row["prominent_onset_mismatch_ms"], delta=.01)
+        wav(self.candidate, [0] * len(self.samples))
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertIsNone(row["metrics"]["prominent_audio_onset_ms"])
+        self.assertIsNone(row["prominent_onset_mismatch_ms"])
+        self.assertFalse(row["prominent_onset_mismatch_risk"])
+        self.assertNotIn("ab_prominent_audio_onset_mismatch_inspect", row["warnings"])
+        # With stereo, an audible left channel means audio has started even
+        # when the right channel is absent (reported by separate QC metric).
+        stereo = self.root / "early-left.wav"
+        wav(stereo, [v for x in self.samples for v in (x, 0)], channels=2)
+        self.assertAlmostEqual(scan_wav(self.base)["prominent_audio_onset_ms"],
+                               scan_wav(stereo)["prominent_audio_onset_ms"])
+        # When the delay is on the reference rather than the candidate,
+        # the aligned timing diagnostic is still emitted on the A/B pair.
+        wav(self.base, [0] * 800 + self.samples[:7200])
+        wav(self.candidate, self.samples)
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(row["prominent_onset_mismatch_risk"])
+        self.assertIn("ab_prominent_audio_onset_mismatch_inspect", row["warnings"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
