@@ -2,13 +2,62 @@
 
 An offline AI-DJ research project: understand track segments, discover surprising combinations, render real transitions and eventually build full sets around context and an energy journey.
 
-**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. This first slice uses manually aligned, equal-tempo excerpts; regular-tempo beat proposals and manual annotation providers are implemented, but automatic downbeat/phrase/key analysis, stems, discovery and set planning remain future work.
+**Current phase: M1 — Transition Lab (OPEN).** MixLab now has a private real-music import route, a visual two-deck cue editor, a local transition Studio, a two-song full-length WAV exporter, a manual multi-song party-mix exporter, and a one-command playable synthetic DJ demo. These are creative product features, not proof of superior musical quality. Equal-BPM/manual-cue constraints remain. Automatic downbeat/phrase/key analysis, actual source separation, approved real-track listening evidence and blinded preference comparisons have **not** passed M1 gates.
 
 - [Notion project](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
 - [Current handoff](https://app.notion.com/p/3e79e19ac95581f4bf15c26a833da642)
 - [Architecture and evaluation](docs/architecture.md)
 - [Infrastructure plan](docs/infrastructure.md)
 - [Worker tasks and ownership](docs/worker-plan.md)
+
+## Probeer MixLab direct — geen muziekbestanden nodig
+
+Er is nu een **volledig lokale, luisterbare DJ-productdemo**. Deze maakt twee
+originele synthetische 120-BPM-nummers, genereert vier echte
+overgangsvarianten en een complete twee-track-mix, plus een visuele
+cue-editor. Er worden geen beschermde muziektracks, modellen of
+externe diensten gedownload; voor deze WAV-demo is geen FFmpeg nodig.
+
+~~~bash
+python3 -m mixlab.demo /private/mixlab-demo-01
+~~~
+
+Open vervolgens **/private/mixlab-demo-01/index.html** in je browser.
+Gebruik een nieuwe directory buiten je Git-checkout. De
+synthetische productdemo is géén bewijs voor echte muziekkwaliteit of een
+geblindeerde gebruikersstudie. Zie [de demo-handleiding](docs/offline-dj-demo.md).
+
+### Eigen muziek: van nummers naar echte DJ-overgang
+
+MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
+cues visueel laten goedkeuren en een volledige mix exporteren.
+Gecomprimeerde audio vereist bestaande FFmpeg/FFprobe; 44,1 kHz PCM16-WAV
+werkt ook direct met de Python-standaardbibliotheek.
+
+~~~bash
+python3 -m mixlab.project_wizard /private/music /private/music/sources.json
+python3 -m mixlab.interactive_session start /private/music/sources.json /private/mixlab-project-01
+~~~
+
+Open **/private/mixlab-project-01/sources/cue-editor.html**, beluister de
+nummers, selecteer handmatig de A/B-startmomenten en download de keuze-JSON.
+Rond vervolgens af en maak optioneel direct één volledig tweetrack-WAV:
+
+~~~bash
+python3 -m mixlab.interactive_session finish /private/mixlab-project-01 /private/mixlab-cue-selections.json \\
+  --pair pair-001 --full-song --full-song-family bass_swap
+~~~
+
+Open **/private/mixlab-project-01/studio/index.html** voor de korte
+transities of **/private/mixlab-project-01/full-song/index.html** voor de
+volledige mix. Zie [interactieve workflow](docs/interactive-private-studio.md),
+[complete mix](docs/full-song-mix-export.md) en
+[volledige sets met meerdere tracks](docs/continuous-set-export.md).
+
+**Privacy / grens:** bronmuziek blijft buiten Git en wordt niet geüpload.
+Een rechtenverklaring is geen juridisch bewijs. Automatische BPM-
+matching, echt key/phrase/downbeat-begrip en human-preference bewijs
+zijn niet afgerond; experimenteer alleen met bronnen die je mag gebruiken.
 
 ## Implemented
 
@@ -37,7 +86,7 @@ python3 -m mixlab benchmark /tmp/mixlab-example-library/library.json /tmp/mixlab
 
 Use fresh output directories; existing packs are never overwritten. Open `review/index.html` locally. Only the `review/` directory goes to listeners; `private/` contains identity mappings, recipes, source paths and metrics. Omit `--seed` for real listening pilots. The synthetic fixture is **not** a music benchmark.
 
-Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding and tempo stretching are not implemented. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
+The canonical M1 benchmark still consumes short uncompressed PCM16 WAV excerpts with identical source channel count/sample rate (8–96 kHz), manual equal BPM, and max 32 MiB / 2 million frames per excerpt. **Separate new product modules do accept bounded full-length WAV and optionally FFmpeg-decoded MP3/FLAC/M4A**, and can export private continuous mixes. Tempo stretching and automatic musical alignment remain separate, unfinished work. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
 
 The current pilot uses common gain, not matched perceived loudness; this is a known listening confound to fix before a milestone-quality benchmark. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
 
