@@ -314,6 +314,25 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self._assert_bad_rehashed_study(lambda d:
             d["pairs"][1].__setitem__("a", d["pairs"][0]["a"]))
 
+    def test_rehashed_malformed_digest_type_fails_cleanly(self):
+        original = self.study.read_bytes()
+        for invalid in ([], {}, {"hidden": "source"}, True, None, 9):
+            with self.subTest(digest=repr(invalid)):
+                self.study.write_bytes(original)
+                self._assert_bad_rehashed_study(lambda d:
+                    d["pairs"][0].__setitem__("a_sha256", invalid))
+
+    def test_reuse_exactly_at_allowed_limit_is_valid_study_shape(self):
+        from mixlab.quality.study_binding import _verified_study
+        doc = json.loads(self.study.read_text(encoding="utf-8"))
+        doc["pairs"][1]["a"] = doc["pairs"][0]["a"]
+        doc["pairs"][1]["a_sha256"] = doc["pairs"][0]["a_sha256"]
+        doc.pop("study_id")
+        ident = _canonical_sha(doc)
+        doc["study_id"] = ident
+        _write_json(self.study, doc)
+        self.assertEqual(_verified_study(self.study, ident)["max_track_uses"], 2)
+
 
 
 if __name__ == "__main__":
