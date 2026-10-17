@@ -147,6 +147,30 @@ real-world runtime for the maximum **2,000,000-frame per-source** case.
 It does catch cardinality-dependent integration errors at the documented
 10-pair / 5-reviewer maximum.
 
+## Integration regression: dependency changes must re-run the full suite
+
+The GitHub Actions workflow no longer watches only this module. On every
+pull request to `main` and every `main` push touching one of the imported
+quality gates or evaluation admission files, it re-runs the complete bundled
+M1 quality integration **and** component regression tests.
+
+The exact-commit, no-persisted-credentials Python 3.13/3.14 matrix runs:
+
+- `test_quality_m1_gate_bundle.py` — genuine synthetic frozen PCM and ratings,
+  both legacy and protected stdin invocation, no-preference exit, and privacy.
+- `test_quality_composed_m1_gates.py` — independent cross-gate invariants.
+- `test_quality_assignment_balance.py`, `test_quality_listener_position.py`,
+  `test_quality_pilot_sensitivity.py`, `test_quality_reviewer_influence.py`,
+  and `test_quality_study_binding.py` — underlying dependency regressions.
+
+The workflow also watches dependency tests, changes to the private bounded JSON
+loader and pack helpers, its own configuration and this documentation. A later
+merge modifying a validator cannot silently skip the composition gate simply
+because `m1_gate_bundle.py` itself was unchanged. `workflow_dispatch`
+remains available for a deliberate integration re-run. A green technical
+matrix is not M1 musical evidence and is not a substitute for a separately
+approved integration/merge decision.
+
 ## Gate and ownership
 
 Owns only this newly added module, test suite, workflow and document.
