@@ -27,6 +27,11 @@ QUIET_PCM_ABS_SAMPLE = 64
 # Differing start/end silence in a blind pair can give away the variant or
 # make playback timing unequal even with identical frame count.
 EDGE_SILENCE_CONFOUND_MS = 200
+# Review A/B clips can start noticeably out of sync even when both have
+# identical durations and less than 200ms coarse-window silence difference.
+# Inspect the first >=5%-FS PCM sample, not a beat/downbeat prediction.
+PROMINENT_AUDIO_ABS_SAMPLE = 1638
+PROMINENT_ONSET_MISMATCH_MS = 75
 # Flag apparent stereo channel loss, not artistic panning: one channel
 # below -55 dBFS while the other is clearly active above -35 dBFS.
 ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
@@ -106,6 +111,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             previous = None
             previous_previous = None
             first_frame = None
+            processed_frames = 0
+            first_prominent_frame = None
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
             window_mid_sum_squares = 0.0
@@ -183,6 +190,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     frame = values[i:i + channels]
                     if first_frame is None:
                         first_frame = frame
+                    if (first_prominent_frame is None
+                            and any(abs(sample) >= PROMINENT_AUDIO_ABS_SAMPLE for sample in frame)):
+                        first_prominent_frame = processed_frames
+                    processed_frames += 1
                     if all(abs(sample) <= QUIET_PCM_ABS_SAMPLE for sample in frame):
                         if seen_audible_frame:
                             pending_quiet_frames += 1
@@ -237,6 +248,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
 
     rms = math.sqrt(sum_squares / total_samples) / 32768
     peak = peak_sample / 32768
+    prominent_onset_ms = (
+        round(1000 * first_prominent_frame / rate, 3)
+        if first_prominent_frame is not None else None
+    )
     playback_start_peak = max(abs(sample) for sample in first_frame) / 32768
     playback_end_peak = max(abs(sample) for sample in previous) / 32768
     playback_boundary_pop_risk = (
@@ -299,6 +314,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "silent_window_fraction": round(silent_windows / windows, 6),
         "leading_silence_ms": leading_silence_ms,
         "trailing_silence_ms": trailing_silence_ms,
+        "prominent_audio_onset_ms": prominent_onset_ms,
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
         "interior_silent_gap_risk": interior_silent_gap_ms >= INTERIOR_SILENT_GAP_WARNING_MS,
         "longest_interior_quiet_pcm_gap_ms": short_interior_quiet_gap_ms,
@@ -432,6 +448,18 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         )
         if edge_silence_mismatch_risk:
             warnings.append("ab_edge_silence_alignment_confound_inspect")
+        # This is only a sample-onset timing heuristic, not a beat-grid,
+        # phrase or musical synchronization measurement.
+        onset_gap_ms = (
+            round(abs(metrics["prominent_audio_onset_ms"] - base["prominent_audio_onset_ms"]), 3)
+            if (metrics["prominent_audio_onset_ms"] is not None
+                and base["prominent_audio_onset_ms"] is not None) else None
+        )
+        prominent_onset_mismatch_risk = (
+            onset_gap_ms is not None and onset_gap_ms >= PROMINENT_ONSET_MISMATCH_MS
+        )
+        if prominent_onset_mismatch_risk:
+            warnings.append("ab_prominent_audio_onset_mismatch_inspect")
         duplicate_pcm_of = None
         if candidate_digest == base_digest:
             duplicate_pcm_of = "baseline"
@@ -452,6 +480,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
             "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
             "edge_silence_mismatch_risk": edge_silence_mismatch_risk,
+            "prominent_onset_mismatch_ms": onset_gap_ms,
+            "prominent_onset_mismatch_risk": prominent_onset_mismatch_risk,
             "warnings": warnings,
             "duplicate_pcm_of": duplicate_pcm_of,
             "requires_human_review": True,
