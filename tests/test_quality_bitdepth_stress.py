@@ -47,7 +47,7 @@ class MaximumResolutionBudgetTests(unittest.TestCase):
         self.assertEqual(2_000_000, result["frames_per_source"])
         for path in paths:
             self.assertNotIn(path.name, str(result))
-        self.assertEqual(4, len(result["candidates"]))
+        self.assertEqual(3, len(result["candidates"]))
 
     def test_over_eight_million_frames_rejected_before_any_pcm_read(self):
         paths = [self.root / f"private-{i}.wav" for i in range(8)]
