@@ -1,0 +1,32 @@
+name: MixLab ML-07 bounded intersample screening
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/intersample.py"
+      - "tests/test_quality_intersample.py"
+      - "docs/quality-intersample.md"
+      - ".github/workflows/ml07-intersample.yml"
+permissions:
+  contents: read
+jobs:
+  synthetic-intersample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Exact SHA checkout, no persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify immutable source identity
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile isolated quality source and tests
+        run: python3 -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py
+      - name: Synthetic privacy, clipping and A/B admission regression with RSS
+        run: |
+          /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample.py' -v
+      - name: Existing offline preflight CLI privacy regression
+        run: python3 -m unittest discover -s tests -p 'test_quality_cli_privacy.py' -v
