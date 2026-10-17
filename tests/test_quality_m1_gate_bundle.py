@@ -76,6 +76,12 @@ class PureM1ReportContract(unittest.TestCase):
             with self.subTest(field=key):
                 inputs = reports()
                 inputs[idx][key] = False
+                if key == "sufficient_for_position_screen":
+                    # A real underpowered position report has a null finding.
+                    # Both independent analyses must agree on its vote count.
+                    inputs[2]["decisive_vote_count"] = 3
+                    inputs[4]["full_decisive_vote_count"] = 3
+                    inputs[2]["aggregate_position_dominance_review"] = None
                 self.assertEqual(compose(*inputs)["technical_screen"], "REVIEW_REQUIRED")
 
     def test_rejects_inconsistent_counts_forged_success_and_missing_gates(self):
