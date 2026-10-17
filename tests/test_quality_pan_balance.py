@@ -156,6 +156,24 @@ class PanBalanceTests(unittest.TestCase):
         self.assertNotIn(str(self.root), bad.stdout + bad.stderr)
         self.assertNotIn(self.b.name, bad.stdout + bad.stderr)
 
+    def test_cli_parse_errors_never_echo_private_arguments(self):
+        wav(self.a)
+        wav(self.b)
+        base = [sys.executable, "-m", "mixlab.quality.pan_balance"]
+        invalid_argvs = [
+            [],
+            [str(self.a)],
+            [str(self.a), str(self.b), str(self.root / "SECRET.EXTRA.WAV")],
+            [str(self.a), str(self.b), "--unexpected=" + str(self.root / "SECRET.WAV")],
+        ]
+        for argv in invalid_argvs:
+            with self.subTest(argv_length=len(argv)):
+                result = subprocess.run(base + argv, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn(str(self.root), result.stdout + result.stderr)
+                self.assertNotIn("SECRET", result.stdout + result.stderr)
+                self.assertIn("rejected private arguments", result.stderr)
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
