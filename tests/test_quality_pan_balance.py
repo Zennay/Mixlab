@@ -36,6 +36,7 @@ class PanBalanceTests(unittest.TestCase):
         wav(self.b, left=8000, right=2000)
         result = pan_balance.inspect(self.a, self.b)
         self.assertTrue(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "review_pan_balance")
         self.assertEqual(result["longest_sustained_shift_ms"], 1000)
         self.assertAlmostEqual(result["max_pan_balance_delta_db"], 12.041, places=2)
         self.assertEqual(result["active_windows"], 4)
@@ -46,6 +47,7 @@ class PanBalanceTests(unittest.TestCase):
         wav(self.b, left=6000, right=6000)
         result = pan_balance.inspect(self.a, self.b)
         self.assertFalse(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "no_sustained_pan_bias_detected")
         self.assertEqual(result["max_pan_balance_delta_db"], 0)
 
     def test_balanced_channel_energy_not_a_loudness_or_music_score(self):
@@ -58,14 +60,32 @@ class PanBalanceTests(unittest.TestCase):
         wav(self.b, left=8000, right=10)
         result = pan_balance.inspect(self.a, self.b)
         self.assertIsNone(result["max_pan_balance_delta_db"])
-        self.assertFalse(result["stereo_pan_confound_review"])
+        self.assertIsNone(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "insufficient_active_audio")
 
     def test_subsecond_shift_cannot_pass_one_second_persistence_gate(self):
         wav(self.a, frames=6000)
         wav(self.b, frames=6000, left=8000, right=2000)
         result = pan_balance.inspect(self.a, self.b)
-        self.assertFalse(result["stereo_pan_confound_review"])
+        self.assertIsNone(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "insufficient_active_audio")
         self.assertEqual(result["longest_sustained_shift_ms"], 750)
+
+    def test_partial_active_blocks_do_not_count_as_one_second_of_evidence(self):
+        # 4 windows of valid stereo, but with one near-silent window between
+        # active regions; no continuous audible second can be inferred.
+        wav(self.a, frames=8000)
+        with wave.open(str(self.b), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(struct.pack("<hh", 8000, 2000) * 4000)
+            out.writeframes(struct.pack("<hh", 0, 0) * 2000)
+            out.writeframes(struct.pack("<hh", 8000, 2000) * 2000)
+        report = pan_balance.inspect(self.a, self.b)
+        self.assertIsNone(report["stereo_pan_confound_review"])
+        self.assertEqual(report["evidence_status"], "insufficient_active_audio")
+        self.assertEqual(report["longest_continuous_active_ms"], 500)
 
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
