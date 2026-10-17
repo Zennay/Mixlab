@@ -63,6 +63,19 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "UTF-8"):
             load_bounded_json(self.source)
 
+    def test_exponent_overflow_floats_are_rejected_not_infinite(self):
+        for payload in ("1e999", "-1e999", '{"a":1e999}',
+                        '{"a":-9.1e999}', "[1.0e500, 3]"):
+            with self.subTest(payload=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Nonfinite"):
+                    load_bounded_json(self.source)
+        for payload in ('{"value":1.25}', "[1e2, -0.125]"):
+            with self.subTest(valid=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                self.assertEqual(load_bounded_json(self.source),
+                                 json.loads(payload))
+
     def test_reject_deep_parser_recursion_as_validation_error(self):
         self.source.write_text("[" * 1500 + "0" + "]" * 1500,
                                encoding="utf-8")
