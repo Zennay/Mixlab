@@ -23,7 +23,7 @@ MIN_DISTINCT_VALUES = 32
 # while fewer than 10% of corresponding baseline samples do.
 CANDIDATE_GRID_FRACTION = 0.995
 BASELINE_GRID_FRACTION = 0.10
-GRID_STEPS = (256, 64)
+GRID_STEPS = (256, 128, 64, 32, 16)
 REGIONS = 8
 MIN_REGION_INFORMATIVE = 512
 MIN_REGION_DISTINCT = 16
@@ -52,7 +52,7 @@ def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
             informative = [0] * channels
             # Residue histograms detect arbitrary quantizer phase, not only
             # PCM samples divisible by 64/256. Memory is fixed: at most
-            # 8 regions x 2 channels x (64+256) bounded counters.
+            # 8 regions x 2 channels x (16+32+64+128+256) counters.
             grids = [{step: [0] * step for step in GRID_STEPS}
                      for _ in range(channels)]
             distinct = [set() for _ in range(channels)]
