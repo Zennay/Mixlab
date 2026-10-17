@@ -94,6 +94,28 @@ class PrivateFdGuardTests(unittest.TestCase):
         make_wav(self.source, frames=0)
         self.assert_rejected(self.source)
 
+    def test_real_maximum_two_million_stereo_frames_stream_without_full_copy(self):
+        # Actual maximum payload, not merely a large WAV-header declaration.
+        # Stream small synthetic blocks to keep generation/read memory bounded.
+        block = b"\x00\x01\x00\xfe" * 4096
+        with wave.open(str(self.source), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(96000)
+            for _ in range(488):
+                writer.writeframesraw(block)
+            writer.writeframesraw(b"\x00\x01\x00\xfe" * 1152)
+        with admitted_pcm16(self.source) as reader:
+            self.assertEqual(2_000_000, reader.getnframes())
+            frames_seen = 0
+            while True:
+                payload = reader.readframes(4096)
+                if not payload:
+                    break
+                self.assertEqual(0, len(payload) % 4)
+                frames_seen += len(payload) // 4
+            self.assertEqual(2_000_000, frames_seen)
+
     def test_more_than_two_million_frames_rejected_from_header(self):
         # A sparse extension avoids allocating >4 MiB sample arrays.
         with open(self.source, "r+b") as file:
