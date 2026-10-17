@@ -244,6 +244,22 @@ and actual DJ preference remain **external approval gates**. The pilot
 tool is deliberately not imported into the shared renderer/CLI or ML-05
 owner files, to avoid parallel ownership conflicts.
 
+### Cross-validator mutation fence
+
+Each component independently checks its own inputs, but a sequential
+three-stage gate must also protect the interval *between* those checks.
+The single-command admission snapshots the canonical study JSON, public
+receipt, private evidence/answer-key, generated review HTML, all neutral A/B
+WAV identities and parent directory inventory **before and after** all
+component scans. Device, inode, mode, size, mtime and ctime are compared.
+Final symlinks and nonregular inventory entries fail closed.
+
+Synthetic regressions show the old gate incorrectly accepted a reviewer
+page or public receipt edited after its previous checker returned; both
+interleaved changes now cause sanitized exit 3. This is best-effort
+cooperative filesystem consistency and **not** an atomic read transaction
+or protection against a malicious actor able to forge timestamps.
+
 The hosted CI additionally exercises the gate against a real five-pair
 procedural frozen-study fixture already covered by the independent
 study-binding contract, including corrupt PCM, modified HTML, forged
