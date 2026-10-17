@@ -62,6 +62,21 @@ class PrivateFdGuardTests(unittest.TestCase):
         os.mkfifo(fifo)
         self.assert_rejected(fifo)
 
+    def test_nul_and_invalid_fspath_errors_are_sanitized(self):
+        class InvalidPath:
+            def __fspath__(self):
+                return object()
+
+        for candidate in ("SECRET_WAV\x00secret.wav",
+                          b"SECRET_WAV\x00secret.wav",
+                          InvalidPath()):
+            with self.subTest(kind=type(candidate).__name__):
+                with self.assertRaisesRegex(ValueError, "details withheld") as issue:
+                    validate_private_pcm16(candidate)
+                self.assertEqual("Private WAV admission rejected (details withheld)",
+                                 str(issue.exception))
+                self.assertNotIn("SECRET", str(issue.exception))
+
     def test_directory_and_missing_path_rejected(self):
         self.assert_rejected(self.root)
         self.assert_rejected(self.root / "missing-private.wav")
