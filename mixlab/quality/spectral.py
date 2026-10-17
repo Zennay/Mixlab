@@ -237,6 +237,26 @@ def compare_spectral_balance(
         for name in ("low", "mid", "high"):
             deltas.setdefault(name + "_proxy_delta_db", None)
 
+        # A/B can have identical whole-file energy yet move silence to
+        # different positions. Comparing *only* simultaneously audible
+        # segments then skips the evidence and can falsely look clean.
+        # Report a coarse fraction, never source-specific time coordinates.
+        activity = [
+            ((ref_span[3] >= SILENT_WINDOW_RMS), (cur_span[3] >= SILENT_WINDOW_RMS))
+            for ref_span, cur_span in zip(reference["_spans"], current["_spans"])
+        ]
+        activity_mismatches = sum(a != b for a, b in activity)
+        comparable_activity = sum(a and b for a, b in activity)
+        deltas["temporal_audibility_mismatch_fraction"] = round(
+            activity_mismatches / len(activity), 6
+        )
+        if activity_mismatches:
+            warnings.append("temporal_audibility_alignment_inspect")
+        if (reference["_rms"] >= SILENT_WINDOW_RMS
+                and current["_rms"] >= SILENT_WINDOW_RMS
+                and comparable_activity < TEMPORAL_PROXY_MIN_SPANS):
+            warnings.append("insufficient_temporal_spectral_coverage_inspect")
+
         # A/B can have *equal global* low/high ratios even if the bass and
         # treble moments were swapped. Eight private time-aligned summaries
         # expose persistent level-normalized band changes without exporting
@@ -253,7 +273,7 @@ def compare_spectral_balance(
                 eligible += 1
                 if abs(20 * math.log10(b / a)) >= TEMPORAL_PROXY_THRESHOLD_DB:
                     differing += 1
-            fraction = round(differing / eligible, 6) if eligible else None
+            fraction = round(differing / eligible, 6) if eligible >= TEMPORAL_PROXY_MIN_SPANS else None
             deltas["temporal_" + name + "_proxy_mismatch_fraction"] = fraction
             if (eligible >= TEMPORAL_PROXY_MIN_SPANS and differing >= 2
                     and differing / eligible >= TEMPORAL_PROXY_MIN_FRACTION):
