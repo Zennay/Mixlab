@@ -110,3 +110,14 @@ behavior in one headless engine. It is **not** independent human usability,
 a multi-browser/screen-reader/keyboard audit, listener preference evidence or
 a release authorization. Run a separate manual, rights-safe listener study
 before any M1 preference claims.
+
+## Forced answers and offline submission safeguards
+The exact official reviewer `input`, submit `button` and each rating
+`option` have a strict attribute contract. Even apparently harmless extra
+attributes are refused until reviewed: `readonly`, preset reviewer `value`,
+restrictive `pattern`, preselected A/B options, misleading `label`,
+`formnovalidate` (which would bypass mandatory choices) and button
+`formaction` (which could redirect the offline response) are not permitted.
+The select's empty placeholder is the only option allowed an explicit
+`value=""`; all four substantive options must be unselected without any
+extra attributes. Generated official markup remains the positive fixture.
