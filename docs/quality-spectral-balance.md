@@ -149,14 +149,17 @@ a creative choice, not a proven fault.
 A **temporal stereo channel-dropout** screen adds eight private L/R energy
 accumulators (at most 16 additional floating-point sums). It detects when
 one channel is nearly silent (<-55 dBFS RMS) and the other remains active
-(>-35 dBFS RMS) in **at least two** eight-way spans in either source.
+(>-35 dBFS RMS) in **at least two spans of the same source** (A or B).
 This catches alternating L/R dropouts that can leave both *whole-file*
 channel RMS levels, global low/mid/high ratios and arithmetic mono-fold
 RMS apparently healthy. It publishes only the neutral
 `stereo_temporal_channel_dropout_inspect` warning and one
 `stereo_temporal_channel_dropout_risk` boolean; no per-source channel,
 segment position, amplitudes, envelope or identities are exposed.
-One isolated segment is deliberately below the persistent-risk gate and
+One isolated segment *in each source at different positions* is also
+below the persistent-risk gate; A/B events are never pooled into a
+fictitious persistent defect in either recording. One isolated segment
+is deliberately below the persistent-risk gate and
 should still be checked by ear if relevant. Full-track stereo-silence
 and mono-fold tests remain separate, complementary checks.
 
@@ -230,8 +233,8 @@ four 6000-frame segments in phase, four opposite-phase leave a global
 fold difference near -3dB, which does not trigger the 6dB whole-track
 change or the -10dB full-track cancellation thresholds, but half the mix
 is absent in mono. Therefore each of eight private time spans also
-accumulates L/R cross-energy. If at least **two audible spans** in either
-source have a mono-fold ratio <=-10dB, a single
+accumulates L/R cross-energy. If at least **two audible spans in the same source** have a mono-fold
+ratio <=-10dB, a single
 `stereo_temporal_mono_fold_cancellation_inspect` warning and
 `stereo_temporal_mono_fold_cancellation_risk: true` are returned.
 A single short span is not claimed to be persistent; it can still
