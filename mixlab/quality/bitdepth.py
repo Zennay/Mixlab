@@ -88,6 +88,8 @@ def _scan(source):
     # Fixed 256-bin per-channel low-byte histograms catch shifted 8-bit
     # amplitude lattices whose bottom byte is e.g. 37 rather than zero.
     low_byte_histogram = [[0] * 256 for _ in range(channels)]
+    low_nibble_histogram = [[0] * 16 for _ in range(channels)]
+    low_two_histogram = [[0] * 4 for _ in range(channels)]
     # A 100 ms bucket with >=32 high-level samples is only a diagnostic;
     # stronger sustained occupancy is required before a conclusive result.
     window_counts = [{} for _ in range(channels)]
@@ -110,6 +112,8 @@ def _scan(source):
                     eligible[channel] += 1
                     residue = value & 255
                     low_byte_histogram[channel][residue] += 1
+                    low_nibble_histogram[channel][residue & 15] += 1
+                    low_two_histogram[channel][residue & 3] += 1
                     if residue == 0:
                         trailing_zero[channel] += 1
                     counts = window_counts[channel]
@@ -136,6 +140,11 @@ def _scan(source):
             previous = w
         evidenced = eligible[channel] >= MIN_ELIGIBLE and longest_streak >= MIN_ACTIVE_WINDOWS
         dominant_count = max(low_byte_histogram[channel])
+        dominant_residues = {
+            "2": max(low_two_histogram[channel]),
+            "4": max(low_nibble_histogram[channel]),
+            "8": dominant_count,
+        }
         output.append({
             "evidenced": evidenced,
             "active_windows": len(present),
@@ -144,6 +153,7 @@ def _scan(source):
             "eligible_samples": eligible[channel],
             "low_byte_zero_samples": trailing_zero[channel],
             "dominant_low_byte_samples": dominant_count,
+            "dominant_residue_counts": dominant_residues,
             "dominant_low_byte_fraction": round(dominant_count / eligible[channel], 6)
             if evidenced else None,
             "low_byte_zero_fraction": round(trailing_zero[channel] / eligible[channel], 6)
@@ -153,11 +163,30 @@ def _scan(source):
 
 
 def _coarse_loss(base, candidate):
-    """Compare exact integer counts, never presentation-rounded fractions."""
+    """Detect a candidate-specific two-, four- or eight-LSB quantisation lattice.
+
+    Compare exact integer counts, never presentation-rounded fractions.
+    The legacy two-dict fallback allows isolated decision-boundary testing.
+    """
+    if "dominant_residue_counts" in base and "dominant_residue_counts" in candidate:
+        return any(
+            20 * base["dominant_residue_counts"][bits] <= 7 * base["eligible_samples"]
+            and 200 * candidate["dominant_residue_counts"][bits] >= 199 * candidate["eligible_samples"]
+            for bits in ("2", "4", "8")
+        )
     baseline_concentrated = base.get("dominant_low_byte_samples", base["low_byte_zero_samples"])
     candidate_concentrated = candidate.get("dominant_low_byte_samples", candidate["low_byte_zero_samples"])
     return (20 * baseline_concentrated <= 7 * base["eligible_samples"]
             and 200 * candidate_concentrated >= 199 * candidate["eligible_samples"])
+
+
+def _baseline_diverse(base):
+    """Refuse a definitive negative if the baseline already has locked low bits."""
+    if "dominant_residue_counts" in base:
+        return all(20 * count <= 7 * base["eligible_samples"]
+                   for count in base["dominant_residue_counts"].values())
+    dominant = base.get("dominant_low_byte_samples", base["low_byte_zero_samples"])
+    return 20 * dominant <= 7 * base["eligible_samples"]
 
 
 def inspect_ab(baseline, candidates):
@@ -201,13 +230,16 @@ def inspect_ab(baseline, candidates):
         for index, candidate in enumerate(results[1:], start=1):
             per_channel = []
             for base, current in zip(results[0], candidate):
-                if (not base["evidenced"] or not current["evidenced"]
-                        or 20 * base["dominant_low_byte_samples"] > 7 * base["eligible_samples"]):
-                    # An already low-diversity baseline cannot establish
-                    # a clean candidate: no trustworthy reference exists.
+                if not base["evidenced"] or not current["evidenced"]:
+                    per_channel.append(None)
+                elif _coarse_loss(base, current):
+                    # Further candidate-specific loss can still be detected
+                    # even if the reference is already less than full precision.
+                    per_channel.append(True)
+                elif not _baseline_diverse(base):
                     per_channel.append(None)
                 else:
-                    per_channel.append(_coarse_loss(base, current))
+                    per_channel.append(False)
             status = True if True in per_channel else (
                 False if all(v is False for v in per_channel) else None
             )
@@ -218,7 +250,7 @@ def inspect_ab(baseline, candidates):
                 "per_channel_review": per_channel,
             })
         return {
-            "metric": "pcm16_low_byte_lattice_vs_baseline_v2",
+            "metric": "pcm16_multi_resolution_lattice_vs_baseline_v3",
             "technical_proxy_only": True,
             "channels": shape[0],
             "sample_rate": shape[1],
