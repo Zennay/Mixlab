@@ -1,0 +1,44 @@
+name: MixLab ML-02 single-descriptor source identity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/ingest.py"
+      - "tests/test_ingest_singlefd.py"
+      - ".github/workflows/ml02-ingest-singlefd.yml"
+  push:
+    branches: [fix/ml02-validated-source-single-fd-20261017-zsentinel]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-identity:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact candidate commit without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify immutable tested source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile production ingest and test modules
+        run: python3 -m compileall -q mixlab/ingest.py tests/test_ingest.py tests/test_ingest_singlefd.py
+      - name: Run source identity and current ingest tests
+        run: python3 -m unittest -v tests.test_ingest_singlefd tests.test_ingest
+      - name: Run complete synthetic suite without music or models
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v

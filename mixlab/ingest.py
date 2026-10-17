@@ -3,6 +3,8 @@ from array import array
 import hashlib
 import json
 import math
+import os
+import stat
 from pathlib import Path
 import re
 import sys
@@ -29,33 +31,75 @@ def digest(path):
     return h.hexdigest()
 
 
-def inspect_wav(path):
-    """Validate every declared byte in bounded chunks, without float tuples."""
-    path = Path(path)
-    if not path.is_file() or path.stat().st_size > MAX_BYTES:
-        raise ValueError("Source missing or exceeds 32 MiB")
-    try:
-        with wave.open(str(path), "rb") as source:
-            channels, width, rate, count, compression, _ = source.getparams()
-            if channels not in (1, 2) or width != 2 or compression != "NONE":
-                raise ValueError("Only PCM16 mono/stereo WAV is supported")
-            if not 8000 <= rate <= 96000 or not 1 <= count <= MAX_FRAMES:
-                raise ValueError("Sample rate or frame budget exceeded")
-            pcm = hashlib.sha256()
-            pcm.update(f"{rate}:{channels}:".encode())
-            remaining = count
-            while remaining:
-                size = min(8192, remaining)
-                block = source.readframes(size)
-                if len(block) != size * channels * 2:
-                    raise ValueError("Truncated WAV data")
-                pcm.update(block)
-                remaining -= size
-    except (wave.Error, EOFError) as exc:
-        raise ValueError("Invalid PCM16 WAV") from exc
-    return {"sample_rate": rate, "channels": channels, "frame_count": count,
-            "duration_seconds": count / rate, "pcm_sha256": pcm.hexdigest()}
+def _source_snapshot(metadata):
+    return (metadata.st_dev, metadata.st_ino, metadata.st_size,
+            metadata.st_mtime_ns, metadata.st_ctime_ns)
 
+
+def inspect_wav_and_digest(path):
+    """Check PCM and checksum on ONE bounded file descriptor, reject visible races.
+
+    The final identity recheck catches ordinary source replacements/edits
+    during validation; this is not a signed or immutable filesystem snapshot.
+    """
+    path = Path(path)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("Source is not an accessible regular PCM16 WAV") from exc
+    try:
+        with os.fdopen(fd, "rb") as source:
+            before = os.fstat(source.fileno())
+            if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_BYTES:
+                raise ValueError("Source missing or exceeds 32 MiB")
+            try:
+                with wave.open(source, "rb") as audio:
+                    channels, width, rate, count, compression, _ = audio.getparams()
+                    if channels not in (1, 2) or width != 2 or compression != "NONE":
+                        raise ValueError("Only PCM16 mono/stereo WAV is supported")
+                    if not 8000 <= rate <= 96000 or not 1 <= count <= MAX_FRAMES:
+                        raise ValueError("Sample rate or frame budget exceeded")
+                    pcm = hashlib.sha256()
+                    pcm.update(f"{rate}:{channels}:".encode())
+                    remaining = count
+                    while remaining:
+                        size = min(8192, remaining)
+                        block = audio.readframes(size)
+                        if len(block) != size * channels * 2:
+                            raise ValueError("Truncated WAV data")
+                        pcm.update(block)
+                        remaining -= size
+            except (wave.Error, EOFError) as exc:
+                raise ValueError("Invalid PCM16 WAV") from exc
+            source.seek(0)
+            content = hashlib.sha256()
+            total = 0
+            for block in iter(lambda: source.read(65536), b""):
+                total += len(block)
+                if total > MAX_BYTES:
+                    raise ValueError("Source grew beyond 32 MiB during inspection")
+                content.update(block)
+            after = os.fstat(source.fileno())
+    except OSError as exc:
+        raise ValueError("Source changed or became unreadable during inspection") from exc
+    try:
+        final = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("Source changed during inspection") from exc
+    if (_source_snapshot(before) != _source_snapshot(after)
+            or _source_snapshot(before) != _source_snapshot(final)
+            or not stat.S_ISREG(final.st_mode)):
+        raise ValueError("Source changed during inspection")
+    return ({"sample_rate": rate, "channels": channels, "frame_count": count,
+             "duration_seconds": count / rate, "pcm_sha256": pcm.hexdigest()},
+            content.hexdigest())
+
+
+def inspect_wav(path):
+    """Public metadata-only interface backed by the same one-fd verification."""
+    info, _checksum = inspect_wav_and_digest(path)
+    return info
 
 def pcm_blocks(path, start=0, frames=None, block_frames=4096):
     """Yield interleaved native int16 arrays; caller validates metadata first."""
@@ -211,8 +255,8 @@ def validate_library(manifest_path):
         sha = track.get("sha256")
         if not isinstance(sha, str) or not HASH.fullmatch(sha):
             raise ValueError("Invalid source checksum")
-        info = inspect_wav(path)
-        if digest(path) != sha:
+        info, observed_sha = inspect_wav_and_digest(path)
+        if observed_sha != sha:
             raise ValueError("Source checksum mismatch")
         number(track.get("bpm"), "manual bpm", 30, 300)
         if "downbeat_seconds" in track:
