@@ -101,6 +101,61 @@ class OrphanRenderAdmissionTests(unittest.TestCase):
             self.check()
         self.assertNotIn("SECRET-REAL-MUSIC-DO-NOT-LOG", str(err.exception))
 
+    def test_rehashed_orphan_pack_passes_legacy_pcm_validator_but_not_pinned_binding(self):
+        """Real procedural WAVs, checksum-consistent receipt, no actual music.
+
+        A forged orphan metadata row can survive verify_pack's base checks;
+        the dedicated frozen-study gate must reject it before rescanning PCM.
+        """
+        import hashlib
+        from pathlib import Path
+        from test_quality_study_binding import FrozenStudyBindingTests
+        from mixlab.evaluation import verify_pack
+        from mixlab.quality.study_binding import verify_study_pack_binding
+
+        fixture = FrozenStudyBindingTests(
+            "test_valid_five_pair_study_is_bound_to_actual_pcm_receipts"
+        )
+        fixture.setUp()
+        try:
+            self.assertEqual(len(verify_pack(fixture.pack)[2]), 5)
+            with (fixture.private / "evidence.json").open(encoding="utf-8") as handle:
+                evidence = json.load(handle)
+            with (fixture.private / "answer-key.json").open(encoding="utf-8") as handle:
+                answers = json.load(handle)
+            with (fixture.pack / "receipt.json").open(encoding="utf-8") as handle:
+                receipt = json.load(handle)
+            extra = copy.deepcopy(evidence["renders"][0])
+            extra["study_pair"] = "pair-99"
+            extra["pair"] = "synthetic-orphan-unselected"
+            extra["output_sha256"] = "f" * 64
+            evidence["renders"].append(extra)
+            identity = {
+                "manifest": evidence["manifest_sha256"], "answers": answers,
+                "outputs": [row["output_sha256"] for row in evidence["renders"]],
+            }
+            forged_pack_id = hashlib.sha256(
+                json.dumps(identity, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            evidence["pack_id"] = forged_pack_id
+            receipt["pack_id"] = forged_pack_id
+            receipt["render_count"] = len(evidence["renders"])
+            (fixture.private / "evidence.json").write_text(json.dumps(evidence))
+            (fixture.pack / "receipt.json").write_text(json.dumps(receipt))
+
+            # The generic PCM pack verifier accepts the now checksum-consistent
+            # extra metadata row because it only opens selected A/B trial WAVs.
+            generic_receipt, _, generic_trials = verify_pack(fixture.pack)
+            self.assertEqual(generic_receipt["render_count"], 11)
+            self.assertEqual(len(generic_trials), 5)
+            with patch("mixlab.quality.study_binding.verify_pack",
+                       side_effect=AssertionError("orphan reached private audio")) as scanner:
+                with self.assertRaisesRegex(ValueError, "do not match"):
+                    verify_study_pack_binding(fixture.study, fixture.pack, fixture.pinned)
+                scanner.assert_not_called()
+        finally:
+            fixture.doCleanups()
+
     def test_early_rejection_does_not_invoke_private_pcm_scanner(self):
         self.evidence["renders"].append(copy.deepcopy(self.evidence["renders"][0]))
         with patch("mixlab.quality.study_binding.verify_pack",
