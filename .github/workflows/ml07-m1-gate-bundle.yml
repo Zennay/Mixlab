@@ -21,7 +21,6 @@ on:
       - "tests/test_quality_pilot_sensitivity.py"
       - "tests/test_quality_reviewer_influence.py"
       - "tests/test_quality_study_binding.py"
-      - "docs/quality-m1-gate-bundle.md"
       - ".github/workflows/ml07-m1-gate-bundle.yml"
   push:
     branches: [main]
@@ -43,7 +42,6 @@ on:
       - "tests/test_quality_pilot_sensitivity.py"
       - "tests/test_quality_reviewer_influence.py"
       - "tests/test_quality_study_binding.py"
-      - "docs/quality-m1-gate-bundle.md"
       - ".github/workflows/ml07-m1-gate-bundle.yml"
   workflow_dispatch:
 
@@ -52,7 +50,7 @@ permissions:
 
 concurrency:
   group: ml07-m1-bundle-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   synthetic-frozen-pcm:
