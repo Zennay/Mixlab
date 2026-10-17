@@ -78,7 +78,7 @@ python3 -m mixlab.playlist_studio \
   --beats 16 --ideas
 ~~~
 
-Deze optie gebruikt de bestaande energie-analyse op lokale WAV-data.
+Deze optie gebruikt de bestaande energie-analyse op lokale WAV-data. De energievensters volgen **exact het in de playlist vastgelegde aantal overgangsbeats** (bijvoorbeeld 8, 16 of 32); dit wordt ook bij een herstart uit het opgeslagen manifest gelezen en niet vanuit een stilzwijgende standaard vervangen. Een bestaande playlist met onderling verschillende beatlengtes kan de gedeelde suggesties daarom niet in één bundel aanvragen.
 Naast de gewone Studio en Set Composer wordt dan
 `/private/mixlab-playlist-01/sources/transition-ideas.html` aangemaakt.
 Open het bestand, vergelijk handmatige cues met de energievoorstellen
