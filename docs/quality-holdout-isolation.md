@@ -42,13 +42,23 @@ tool, pack and tuning pipeline.
    channels. Re-encoded or renamed copies cannot silently become holdouts.
    The `recording_id` metadata catches known same-song remasters/edits
    with changed PCM when the user supplies the correct lineage.
-3. The externally pinned 5–10 pair study is validated using MixLab's existing
+3. A separate bounded CPU-only **exact audible excerpt reuse** screen
+   samples up to three approximately 200-ms non-silent PCM windows from each
+   validated source and scans all other sources of the same sample rate and
+   channel count with overlapping streaming blocks. A byte-for-byte reused
+   cropped excerpt is held even when neither full-file checksum, complete
+   decoded-PCM hash nor declared recording ID agrees. Development-development
+   reuse is outside this gate; development-evaluation and evaluation-evaluation
+   reuse are screened. Common silence and quiet spacers are intentionally not
+   treated as musical duplicates. All PCM reads finish the underlying
+   source-identity check before a collision is reported.
+4. The externally pinned 5–10 pair study is validated using MixLab's existing
    strict study proof. **Every evaluation track** must appear in that frozen
    study and its ID, full-WAV SHA-256 and BPM must agree exactly. Every
    evaluation pair must preserve the frozen ordered source assignment.
    Unselected evaluation tracks are deliberately excluded to prevent a
    changing study population from being presented as frozen.
-4. Different IDs in the evaluation subset may not claim the same underlying
+5. Different IDs in the evaluation subset may not claim the same underlying
    `recording_id` or decoded PCM fingerprint. Both libraries and the
    externally pinned study are revalidated before reporting an outcome to
    detect ordinary observed source changes during the preflight.
@@ -64,7 +74,7 @@ libraries containing short original tones, checks a legitimate five-pair
 study, and mutates one input at a time: same WAV; different container
 checksum but same decoded PCM; altered recording with reused recording ID;
 reused track ID; repeated evaluation recording; rehashed frozen-source
-forgeries; wrong pair orientation; unselected evaluation additions;
+forgeries; wrong pair orientation; identical audible PCM cropped into a distinct longer WAV inside either library, and shared silence that must not trigger a false positive; unselected evaluation additions;
 missing partitions or rights metadata; bad pinned ID; malformed JSON; and
 redaction in actual CLI subprocesses.
 
@@ -72,7 +82,10 @@ The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
 and does not mount private music or access the production VPS/queue.
 
-**Boundary:** File hashes cannot identify all perceptually identical
+**Boundary:** This sparse exact-sample screen does not detect time-stretched, resampled,
+phase-shifted or acoustically re-mastered copies, nor every small reused
+fragment. It is a contamination **preflight**, not a music-identification
+system. File hashes cannot identify all perceptually identical
 remasters or bootleg versions. `recording_id`, provenance and rights are
 self-declared and must be audited by a person. Technical pass is **not**
 license verification, an assurance of sampling independence, experimental
