@@ -128,10 +128,18 @@ def load_bounded_json(path):
             raise ValueError("Evaluation JSON number underflows to zero")
         return value
 
+    def bounded_int(token):
+        # A 4 MiB JSON file can still hold a multi-million-digit integer.
+        # Python versions differ in integer-string safety limits; enforce
+        # a deterministic one before expensive arbitrary-precision parsing.
+        if len(token.lstrip("-")) > 256:
+            raise ValueError("Evaluation JSON integer exceeds 256 digits")
+        return int(token)
+
     try:
         result = json.loads(decoded, object_pairs_hook=unique_pairs,
                             parse_constant=refuse_nonfinite,
-                            parse_float=finite_float)
+                            parse_float=finite_float, parse_int=bounded_int)
     except RecursionError:
         raise ValueError("Evaluation JSON nesting limit exceeded") from None
 
