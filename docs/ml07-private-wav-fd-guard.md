@@ -20,10 +20,16 @@ quality CLI's path-stat/open race until its integration owner adopts it.
   and including the first `data` chunk**. Every pre-data chunk fits inside
   the RIFF-declared and physical bounds; malformed lengths or header floods
   fail closed before Python's WAV parser can do unbounded header work.
+- The bounded pre-data walk also rejects duplicate `fmt ` chunks and
+  contradictory PCM format declarations: channels (1–2), 16-bit sample
+  width, 8–96kHz sample rate, `block_align == channels * 2` and
+  `byte_rate == rate * block_align`. It accepts coherent classic PCM and
+  supported WAVE_FORMAT_EXTENSIBLE PCM16 with its canonical layout. This
+  catches otherwise player-dependent byte-rate/alignment confusion.
 - Python `wave` must recognize uncompressed PCM16, 1–2 channels, 8–96 kHz,
   1–2,000,000 frames with an **exact integral-frame data chunk** at the actual
-  `data` offset. Legal odd-size padded `JUNK`/metadata chunks remain supported.
-  A fixed 44-byte assumption could wrongly admit truncated audio.
+  `data` offset. Legal odd-size padded `JUNK`/metadata chunks remain supported
+  in default mode. A fixed 44-byte assumption could admit truncated audio.
 - Only the caller sees PCM frames, while the context is live. The helper does
   not retain or output PCM, source paths, digests or listener identities.
 - Successful exit compares device, inode, size, nanosecond mtime and ctime
@@ -96,6 +102,31 @@ All source files remain private; do not run this workflow against public
 music or log operator-provided paths. Avoid additional VPS work while
 PWQ-320 is ineligible or admission/capacity is uncertain.
 
+## Optional canonical-neutral container gate for frozen blind A/B
+
+```sh
+python3 -m mixlab.quality.fd_guard --require-neutral-container /private/output.wav
+python3 -m mixlab.quality.fd_guard --require-neutral-container --ab-group /private/reference.wav /private/variant.wav
+```
+
+In the optional strict mode the same single descriptor must contain **only**
+the canonical 44-byte `RIFF/WAVE + fmt(16) + data` structure, with **no**
+pre-data metadata, post-data chunks, underdeclared RIFF length or bytes
+after the PCM payload. Extra JUNK/LIST/INFO/bext chunks can silently encode
+study source identities in review media; rejecting them helps preflight the
+generated **neutral review WAVs**, not original music masters. The JSON adds
+only `"neutral_container_verified": true` if the stronger structural
+checks passed. Default mode omits that key and continues to accept coherent
+WAVE_FORMAT_EXTENSIBLE/metadata-bearing source masters. Keep this distinction
+visible: a neutral container check does not inspect or certify PCM content,
+copyright permissions, labels hidden **inside** waveform samples or musical
+blindness. Pair with ML-05's official review-pack check before listener
+delivery; this helper is not integrated into the shared pack generator.
+
+Privacy-safe exit contract is unchanged: 0 validated, 2 invalid arguments,
+3 invalid/redacted audio. Neither mode exports music, file paths, sample
+positions, fingerprints, source identities or answer keys.
+
 ## Reproducible acceptance
 
 ```sh
@@ -103,6 +134,7 @@ python3 -m compileall -q mixlab/quality/fd_guard.py tests/test_quality_fd_guard.
 python3 -m unittest discover -s tests -p 'test_quality_fd_guard.py' -v
 python3 -m mixlab.quality.fd_guard /path/to/permitted-private.wav
 python3 -m mixlab.quality.fd_guard --ab-group /private/baseline.wav /private/candidate.wav
+python3 -m mixlab.quality.fd_guard --require-neutral-container --ab-group /private/baseline.wav /private/candidate.wav
 python3 -m unittest discover -s tests -p 'test_quality.py' -v
 ```
 
