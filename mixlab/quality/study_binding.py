@@ -183,13 +183,17 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
     root = Path(pack_path)
     public_hint = load_bounded_json(root / "receipt.json")
     private_hint = load_bounded_json(root / "private" / "evidence.json")
+    # Schema-v1 public receipts intentionally contain NO study_id: the
+    # strict public ML-07 allowlist rejects unknown keys to avoid leaking
+    # source/answer provenance. The separately pinned study commitment is
+    # checked solely against private evidence; never demand a public leak.
     if (not isinstance(public_hint, dict) or not isinstance(private_hint, dict)
-            or public_hint.get("study_id") != expected_study_id
+            or "study_id" in public_hint
             or private_hint.get("study_id") != expected_study_id):
         _fail()
     binding = _preflight_render_claims(study, private_hint)
     receipt, evidence, trials = verify_pack(pack_path)
-    if (receipt.get("study_id") != expected_study_id
+    if (receipt != public_hint or "study_id" in receipt
             or evidence.get("study_id") != expected_study_id
             or evidence.get("renders") != private_hint.get("renders")
             or len(trials) != len(binding)):
