@@ -398,3 +398,50 @@ RMS-equivalent channel-flipped pattern, a below-threshold one-window
 change, sustained multi-window changes, clean stereo, silence and mono.
 This is a conservative technical listening/confound flag and **not** a
 musical quality, LUFS, preference or production-readiness verdict.
+
+
+## Relative mono fold-down A/B confounds (whole-file and time-local)
+
+Equal stereo RMS, per-channel RMS and stereo RMS window values cannot
+ensure equal **mono playback** level. A stereo candidate with inverted
+phase can disappear when summed to mono while retaining its full stereo
+energy. This is a concrete blinded-listening level confound and does
+**not** establish any preference, integrated loudness or DJ mix quality.
+
+The quality preflight now compares already-computed
+`mono_fold_down_loss_db` across baseline and candidate. The additive
+`mono_fold_down_level_delta_db_vs_baseline` is the signed difference
+in decibels **only when both have finite audible downmix RMS**. A loss
+difference >=6 dB, or a fully cancelling (undefined / infinite loss)
+stereo file compared against one with finite loss, emits the neutral
+`ab_mono_fold_down_level_confound_inspect_not_lufs` warning and the
+`ab_mono_fold_down_level_confound_risk` boolean. Two fully cancelling
+clips have **no relative difference**, but **cannot pass** the technical
+`rms_and_window_level_preflight_pass` gate because neither yields a
+usable mono playback. Mono input and silent stereo input have no
+comparable stereo-to-mono delta.
+
+Global downmix energy may still be identical while cancellation moves
+between the beginning and end of a transition. The existing stereo
+`window_mid_sum_squares` is now accumulated into a **private per-window
+mono-downmix RMS summary**, never exposed as a time series, audio samples
+or raw path. The same >=9 dB discrepancy in >=25% of >=3 audible
+aligned windows raises
+`ab_mono_fold_down_window_confound_inspect_not_lufs`,
+`ab_mono_fold_down_window_level_confound_risk=True`, and an aggregate
+`ab_mono_fold_down_window_level_mismatch_fraction`.
+Both comparative flags make the conservative *technical* level pass
+false, without changing the original RMS-only
+`level_comparable_for_blind_ab` definition.
+
+`tests/test_fold_down_ab_level.py` covers full and partial cancellation,
+small panning differences, baseline/candidate reversal, equally cancelling
+files, silence, mono, privacy and the non-greenlighting of completely
+cancelled stereo. `tests/test_fold_down_windows.py` covers swapped
+time-half cancellation that preserves global downmix RMS, 1/10 vs 3/10
+window warning limits, identical tracks, silence and mono. Both suites
+are mandatory in `tests/test_discovery_contract.py`.
+
+These are deliberately **signal-level heuristics**, not integrated
+BS.1770/LUFS or human preference evidence. No private media enters GitHub
+or CI and no audio changes are made.
