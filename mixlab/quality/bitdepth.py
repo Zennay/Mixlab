@@ -54,9 +54,31 @@ def _walk(path):
     return absolute, os.lstat(absolute)
 
 
+def _open_nofollow_components(absolute):
+    """Anchor every ancestor to a checked directory FD; never traverse a link.
+
+    O_NOFOLLOW on only the basename is inadequate: its parent can become a
+    symlink between lstat() and open(). Open each component relative to the
+    previously opened O_DIRECTORY|O_NOFOLLOW descriptor instead. Every
+    intermediate descriptor is closed even when admission fails.
+    """
+    directory_flags = (os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                       | os.O_NONBLOCK | os.O_CLOEXEC)
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    current = os.open(absolute.anchor, directory_flags)
+    try:
+        for part in absolute.parts[1:-1]:
+            next_fd = os.open(part, directory_flags, dir_fd=current)
+            os.close(current)
+            current = next_fd
+        return os.open(absolute.name, file_flags, dir_fd=current)
+    finally:
+        os.close(current)
+
+
 def _open_source(path, stack):
     absolute, initial = _walk(path)
-    fd = os.open(absolute, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    fd = _open_nofollow_components(absolute)
     try:
         handle = os.fdopen(fd, "rb", buffering=0)
     except BaseException:
