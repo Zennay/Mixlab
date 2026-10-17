@@ -28,6 +28,8 @@ REGIONS = 8
 MIN_REGION_INFORMATIVE = 512
 MIN_REGION_DISTINCT = 16
 MIN_PERSISTENT_REGIONS = 2
+MAX_CANDIDATES = 8
+MAX_BATCH_FRAMES = 8_000_000
 
 
 def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
@@ -124,23 +126,10 @@ def _precision_grid_loss(reference: dict, candidate: dict, an: int, bn: int) -> 
                for step in GRID_STEPS)
 
 
-def compare_precision(baseline: str | Path, candidate: str | Path,
-                      *, chunk_frames: int = 4096) -> dict:
-    """Return a conservative anonymous candidate-vs-baseline inspection flag.
-
-    null = insufficient signal/diversity; false = evaluated without this
-    narrow coarse-grid pattern; true = a likely lost-precision artifact.
-    """
-    a = _scan(baseline, chunk_frames=chunk_frames)
-    b = _scan(candidate, chunk_frames=chunk_frames)
+def _evaluate_precision(a: dict, b: dict) -> dict:
+    """Evaluate two already-inspected sources without accessing raw audio."""
     if any(a[key] != b[key] for key in ("rate", "channels", "frames")):
         raise ValueError("incomparable WAV format/duration")
-    # Each scan's own fstat guard is necessary but not sufficient. A baseline
-    # could be replaced while the candidate is being read, yielding a mixed
-    # comparison that looks authoritative. Revalidate both paths after BOTH
-    # complete scans, including inode changes and newly inserted symlinks.
-    _assert_source_identity(baseline, a["_source_identity"])
-    _assert_source_identity(candidate, b["_source_identity"])
     decisions = []
     for ch in range(a["channels"]):
         an, bn = a["informative"][ch], b["informative"][ch]
@@ -174,6 +163,83 @@ def compare_precision(baseline: str | Path, candidate: str | Path,
                          if outcome is True else [])}
 
 
+def compare_precision(baseline: str | Path, candidate: str | Path,
+                      *, chunk_frames: int = 4096) -> dict:
+    """Compare one candidate with a private baseline; no input mutation."""
+    a = _scan(baseline, chunk_frames=chunk_frames)
+    b = _scan(candidate, chunk_frames=chunk_frames)
+    _assert_source_identity(baseline, a["_source_identity"])
+    _assert_source_identity(candidate, b["_source_identity"])
+    return _evaluate_precision(a, b)
+
+
+def _preadmit_wav(path: str | Path) -> dict:
+    """Admit lightweight private WAV metadata before starting any PCM scan."""
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as file:
+        before = os.fstat(file.fileno())
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_BYTES:
+            raise ValueError("not a bounded regular WAV")
+        with wave.open(file, "rb") as source:
+            channels, rate, frames = (source.getnchannels(),
+                                      source.getframerate(), source.getnframes())
+            if (source.getsampwidth() != 2 or source.getcomptype() != "NONE"
+                    or channels not in (1, 2) or not 8000 <= rate <= 96000
+                    or not 1 <= frames <= MAX_FRAMES):
+                raise ValueError("unsupported WAV metadata")
+        after = os.fstat(file.fileno())
+        if _identity(before) != _identity(after):
+            raise ValueError("WAV changed during admission")
+    return {"rate": rate, "channels": channels, "frames": frames,
+            "identity": _identity(after)}
+
+
+def compare_precision_batch(baseline: str | Path,
+                            candidates: list[str | Path] | tuple[str | Path, ...],
+                            *, chunk_frames: int = 4096) -> dict:
+    """Bounded A/B pool, scanning the baseline once and publishing only neutral IDs.
+
+    All sources are metadata-admitted first and rechecked after the final scan.
+    No partial results escape if any source fails admission or changes.
+    """
+    if type(chunk_frames) is not int or not 1 <= chunk_frames <= 4096:
+        raise ValueError("invalid chunk size")
+    if type(candidates) not in (list, tuple) or not 1 <= len(candidates) <= MAX_CANDIDATES:
+        raise ValueError("expected 1..8 candidates")
+    paths = [baseline, *candidates]
+    receipts = [_preadmit_wav(p) for p in paths]
+    if sum(x["frames"] for x in receipts) > MAX_BATCH_FRAMES:
+        raise ValueError("aggregate PCM frame budget exceeded")
+    if any(any(x[k] != receipts[0][k] for k in ("rate", "channels", "frames"))
+           for x in receipts[1:]):
+        raise ValueError("incomparable WAV format/duration")
+    # A duplicate alias defeats a blind comparison and makes the workload
+    # appear larger than its distinct audio set. Reject even hardlink aliases.
+    identities = [(x["identity"][0], x["identity"][1]) for x in receipts]
+    if len(set(identities)) != len(identities):
+        raise ValueError("duplicate A/B audio source")
+    a = _scan(baseline, chunk_frames=chunk_frames)
+    if a["_source_identity"] != receipts[0]["identity"]:
+        raise ValueError("baseline modified after admission")
+    results = []
+    for index, path in enumerate(candidates, 1):
+        b = _scan(path, chunk_frames=chunk_frames)
+        if b["_source_identity"] != receipts[index]["identity"]:
+            raise ValueError("candidate modified after admission")
+        outcome = _evaluate_precision(a, b)
+        results.append({
+            "candidate_id": f"candidate-{index:03d}",
+            "candidate_precision_loss_inspect": outcome["candidate_precision_loss_inspect"],
+            "warnings": outcome["warnings"],
+        })
+    for path, receipt in zip(paths, receipts):
+        _assert_source_identity(path, receipt["identity"])
+    return {"schema_version": 1, "status": "technical-inspection-only",
+            "candidates": results}
+
+
 class _PrivateArgumentParser(argparse.ArgumentParser):
     """Never echo private command-line operands in parser error messages."""
 
@@ -186,6 +252,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Private, bounded PCM16 A/B precision-loss screen")
     parser.add_argument("baseline", metavar="BASELINE.wav")
     parser.add_argument("candidate", metavar="CANDIDATE.wav")
+    parser.add_argument("additional_candidates", metavar="MORE.wav", nargs="*")
+    parser.add_argument("--batch", action="store_true",
+                        help="Compare 1..8 neutral candidates against one baseline")
     parser.add_argument(
         "--fail-on-warnings", action="store_true",
         help="Exit 2 on an inspection warning (not a music-quality judgment)",
@@ -198,7 +267,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if unknown:
             raise ValueError("unexpected argument")
-        result = compare_precision(args.baseline, args.candidate)
+        if args.batch:
+            result = compare_precision_batch(
+                args.baseline, [args.candidate, *args.additional_candidates])
+        else:
+            if args.additional_candidates:
+                raise ValueError("batch switch required")
+            result = compare_precision(args.baseline, args.candidate)
     except (OSError, ValueError, EOFError, wave.Error):
         print("MixLab precision: invalid or incomparable private WAVs", file=sys.stderr)
         return 3
@@ -206,9 +281,11 @@ def main(argv: list[str] | None = None) -> int:
     # A strict preflight can distinguish an invalid input (exit 3), a
     # technical inspection gate not met (exit 2), and a reportable check
     # (exit 0). The default mode remains descriptive and backward compatible.
-    if ((args.fail_on_warnings and result["warnings"])
-            or (args.require_conclusive
-                and result["candidate_precision_loss_inspect"] is None)):
+    entries = result["candidates"] if args.batch else [result]
+    if ((args.fail_on_warnings and any(row["warnings"] for row in entries))
+            or (args.require_conclusive and any(
+                row["candidate_precision_loss_inspect"] is None
+                for row in entries))):
         return 2
     return 0
 
