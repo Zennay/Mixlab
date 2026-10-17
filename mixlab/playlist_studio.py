@@ -24,7 +24,7 @@ MAX_PLAYLIST_TRACKS = 11
 MAX_SPEC_BYTES = 1024 * 1024
 
 
-def _check_paths(music_dir, manifest_path, destination):
+def _check_paths(music_dir, manifest_path, destination, *, resume=False):
     source = Path(music_dir).absolute()
     if source.is_symlink() or not source.is_dir():
         raise ValueError("Select an existing non-symlink music folder")
@@ -32,7 +32,12 @@ def _check_paths(music_dir, manifest_path, destination):
     manifest = Path(manifest_path).absolute()
     if manifest.parent != source or manifest.suffix.lower() != ".json":
         raise ValueError("New private .json playlist manifest must be saved next to the music files")
-    if manifest.exists() or manifest.is_symlink():
+    if manifest.is_symlink():
+        raise ValueError("Manifest symlinks are forbidden")
+    if resume:
+        if not manifest.is_file() or not 0 < manifest.stat().st_size <= MAX_SPEC_BYTES:
+            raise ValueError("Resume requires an existing bounded regular private source manifest")
+    elif manifest.exists():
         raise ValueError("Never overwrite an existing music manifest")
     for item in (source, *source.parents):
         if (item / ".git").exists():
@@ -134,14 +139,26 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
 
 def build_playlist_studio(music_directory, output_manifest, new_session,
                           *, read=input, write=print, beats=16,
-                          timeout_seconds=600, partition="development"):
+                          timeout_seconds=600, partition="development",
+                          resume=False, manifest_only=False):
     """Run the complete local product workflow after explicit human annotation."""
+    if resume and manifest_only:
+        raise ValueError("Choose either --resume or --manifest-only, never both")
     source, manifest, destination = _check_paths(
-        music_directory, output_manifest, new_session)
+        music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
         raise ValueError("Audio decoder timeout must be between 30 and 900 seconds")
-    create_playlist_manifest(source, manifest, destination, read=read, write=write,
-                             beats=beats, partition=partition)
+    if resume:
+        write("Resuming the exact existing private playlist manifest without changing its cues.")
+    else:
+        create_playlist_manifest(source, manifest, destination, read=read, write=write,
+                                 beats=beats, partition=partition)
+    if manifest_only:
+        write("Manifest saved. Render later with the same command and --resume.")
+        return {"ready": True, "stage": "manual-playlist-manifest",
+                "private_source_manifest": str(manifest), "session_directory": None,
+                "offline": True, "automatic_tempo_matching": False,
+                "music_preference_proven": False}
     # Existing session admission and hash policies remain authoritative. It
     # also cleans up its own fresh output folder on decoding/render errors.
     studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
@@ -184,12 +201,17 @@ def main():
     parser.add_argument("--partition", choices=("development", "evaluation"),
                         default="development")
     parser.add_argument("--timeout-seconds", type=int, default=600)
+    parser.add_argument("--manifest-only", action="store_true",
+                        help="Record the verified ordered playlist without decoding or rendering")
+    parser.add_argument("--resume", action="store_true",
+                        help="Render a new private session from an existing unchanged source manifest")
     args = parser.parse_args()
     try:
         result = build_playlist_studio(
             args.private_music_directory, args.new_source_manifest,
             args.new_session_directory, beats=args.beats, partition=args.partition,
-            timeout_seconds=args.timeout_seconds)
+            timeout_seconds=args.timeout_seconds,
+            resume=args.resume, manifest_only=args.manifest_only)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))

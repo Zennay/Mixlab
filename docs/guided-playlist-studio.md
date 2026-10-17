@@ -64,6 +64,42 @@ python3 -m mixlab.set_composer render \
   /private/mixlab-party.wav
 ~~~
 
+## Plannen bewaren en later verder renderen
+
+Je kunt de handmatige songvolgorde, bronrechten, BPM en overgangscues eerst
+vastleggen **zonder de Studio te renderen**. Ideaal wanneer je meerdere
+nummers voorbereidt of FFmpeg/audioverwerking nog niet beschikbaar is.
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --beats 16 --manifest-only
+~~~
+
+MixLab schrijft dan alleen `my-playlist.private.json` en stopt vóór de
+CPU-intensieve audio-import. De hele begeleide invoer is daarmee veilig bewaard.
+
+Maak later met exact diezelfde bronmanifest een **nieuwe** sessie en de
+browsergebaseerde Studio. Alle hashes, rechtenverklaringen en handmatige
+cuepunten worden ongewijzigd opnieuw gebruikt:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-02 \
+  --resume
+~~~
+
+Deze `--resume`-route is ook bruikbaar als de eerste import mislukte:
+de bronmanifest blijft intact en je kiest een nieuwe projectmap. MixLab
+controleert daarna opnieuw de bestaande officiële manifest-,
+bronhash-, cue- en audioadmission. Er wordt **niets** stilzwijgend
+hersteld, opnieuw getimed of over bestaande uitvoer geschreven.
+`--resume` en `--manifest-only` mogen niet tegelijk worden gekozen.
+
 ## Privacy, herstel en echte beperkingen
 
 De uitvoer wordt nooit over bestaande bestanden geschreven. Audio en
