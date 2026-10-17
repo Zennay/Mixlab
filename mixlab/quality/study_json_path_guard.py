@@ -59,6 +59,21 @@ def _snapshot_directory(path):
         os.close(fd)
 
 
+def _capture_path(value):
+    """Resolve a custom PathLike exactly once and suppress its private errors.
+
+    A malicious PathLike can alternate destinations between preflight and
+    verification; use the one lexical string throughout the whole transaction.
+    """
+    try:
+        raw = os.fspath(value)
+        if type(raw) is not str or "\\x00" in raw:
+            raise ValueError(_ERROR)
+        return Path(raw)
+    except Exception:
+        raise ValueError(_ERROR) from None
+
+
 def _inventory(study, root):
     root = Path(root)
     return (
@@ -83,9 +98,11 @@ def inspect_pinned_study_json_paths(study, pack, expected_study_id):
     try:
         if not isinstance(expected_study_id, str) or _ID.fullmatch(expected_study_id) is None:
             raise ValueError(_ERROR)
-        before = _inventory(study, pack)
-        verified = verify_study_pack_binding(study, pack, expected_study_id)
-        if (_inventory(study, pack) != before
+        source = _capture_path(study)
+        root = _capture_path(pack)
+        before = _inventory(source, root)
+        verified = verify_study_pack_binding(source, root, expected_study_id)
+        if (_inventory(source, root) != before
                 or verified.get("study_pack_metadata_consistent_with_pinned_id") is not True
                 or verified.get("milestone_pass") is not False):
             raise ValueError(_ERROR)
