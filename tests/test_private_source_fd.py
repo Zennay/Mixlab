@@ -132,6 +132,14 @@ class PrivateSourceIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "32 MiB"):
                 scan_wav(oversized)
 
+    def test_missing_file_error_does_not_reveal_secret_filename(self):
+        missing = self.root / "PRIVATE_EXPERIMENTAL_TRACK_CREDS_443.wav"
+        with self.assertRaises(ValueError) as captured:
+            scan_wav(missing)
+        self.assertNotIn("PRIVATE_EXPERIMENTAL_TRACK", str(captured.exception))
+        self.assertNotIn(str(self.root), str(captured.exception))
+        self.assertIn("regular file", str(captured.exception))
+
     def test_failure_returns_no_private_source_path(self):
         # The direct library intentionally raises a generic message; only
         # the CLI wrappers implement stdout/stderr privacy and exit codes.
