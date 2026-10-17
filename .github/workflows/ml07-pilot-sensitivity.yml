@@ -105,13 +105,19 @@ jobs:
               assert original["counts"]["candidate"] == 15
               report = inspect_real_pilot(
                   fixture.study, fixture.pack, fixture.study_doc["study_id"], votes)
-              assert report["one_sided_pair_sign_reference_probability"] == 1 / 32
-              assert report["worst_leave_one_pair_out_reference_probability"] == 1 / 16
+              # The actual producer fixture selects 5 frozen pairs from only
+              # SIX source recordings, so track reuse is inevitable. Even
+              # though all 15 listener votes are for candidates, reporting
+              # a 1/32 independent-pair tail would be methodologically false.
+              assert report["shared_source_across_pairs_detected"] is True
+              assert report["one_sided_pair_sign_reference_probability"] is None
+              assert report["worst_leave_one_pair_out_reference_probability"] is None
+              assert report["minimum_data_for_pair_reference"] is False
               assert report["pair_sensitivity_review_required"] is True
               assert report["milestone_pass"] is False
               assert str(fixture.root) not in json.dumps(report)
               assert receipt["pack_id"] not in json.dumps(report)
-              print("Real pinned ML-05: valid 5-pair 10-WAV PCM + 3 synthetic raters => 1/32 falls to 1/16 under pair omission; HOLD")
+              print("Real pinned ML-05: valid 5-pair/10-WAV and 15/15 simulated candidate votes, but six shared sources => no independent-pair sign reference; HOLD")
           finally:
               fixture.tearDownClass()
           PY
