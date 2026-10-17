@@ -29,7 +29,13 @@ def verify_pack(root):
     pack_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     if evidence.get("pack_id") != pack_id or receipt.get("pack_id") != pack_id:
         raise ValueError("Pack identity mismatch")
-    if receipt.get("trial_count") != len(key) or receipt.get("render_count") != len(renders):
+    # JSON floats with integral values compare equal to ints (3.0 == 3),
+    # and bool is a subclass of int. Neither is valid provenance for frozen
+    # experiment counts: insist on the actual JSON integer representation.
+    if (type(receipt.get("trial_count")) is not int
+            or type(receipt.get("render_count")) is not int
+            or receipt["trial_count"] != len(key)
+            or receipt["render_count"] != len(renders)):
         raise ValueError("Pack count mismatch")
     render_by_pair = {}
     for row in renders:

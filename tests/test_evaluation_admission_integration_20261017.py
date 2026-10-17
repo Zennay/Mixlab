@@ -114,6 +114,27 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
+    def test_receipt_counts_require_exact_json_integer_type(self):
+        # A numeric float such as 3.0 compares equal to int 3 in Python,
+        # but it must not be admitted as an integer count in the frozen
+        # experimental evidence envelope.
+        path = self.pack / "receipt.json"
+        original = path.read_bytes()
+        try:
+            baseline = json.loads(original)
+            for field in ("trial_count", "render_count"):
+                count = baseline[field]
+                self.assertIs(type(count), int)
+                for replacement in (float(count), str(count), None):
+                    with self.subTest(field=field, replacement=replacement):
+                        mutated = dict(baseline)
+                        mutated[field] = replacement
+                        path.write_text(json.dumps(mutated), encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, "count"):
+                            verify_pack(self.pack)
+        finally:
+            path.write_bytes(original)
+
     def test_real_synthetic_frozen_pack_still_verifies(self):
         _receipt, _evidence, trials = verify_pack(self.pack)
         self.assertIn("trial-001", trials)
