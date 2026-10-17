@@ -248,6 +248,57 @@ class StreamingChunkInvariants(unittest.TestCase):
         self.assertFalse(report["contains_source_paths_or_audio"])
         self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_public_review_rejects_riff_metadata_families_in_both_locations(self):
+        from mixlab.quality.pack import inspect_review_pack
+        review = self.root / "metadata-families"
+        review.mkdir()
+        baseline = review / "trial-001-A.wav"
+        suspect = review / "trial-001-B.wav"
+        frames = [(3000, 2000)] * 8000
+        _write(baseline, 2, frames)
+        private_marker = b"hidden-private-label"
+        for tag in (b"LIST", b"bext", b"iXML", b"JUNK"):
+            for placement in ("before", "after"):
+                with self.subTest(tag=tag, placement=placement):
+                    _write(suspect, 2, frames, extra_chunk=(placement == "before"))
+                    source = suspect.read_bytes()
+                    if placement == "before":
+                        # Replace only the optional RIFF tag, not PCM/audio
+                        # or the private metadata payload.
+                        self.assertEqual(source[36:40], b"JUNK")
+                        source = source[:36] + tag + source[40:]
+                    else:
+                        extra = (tag + struct.pack("<I", len(private_marker))
+                                 + private_marker
+                                 + (bytes(1) if len(private_marker) & 1 else b""))
+                        source = (source[:4]
+                                  + struct.pack("<I", len(source) - 8 + len(extra))
+                                  + source[8:] + extra)
+                    suspect.write_bytes(source)
+                    # Scanner admits a harmless RIFF extension as PCM16.
+                    self.assertEqual(scan_wav(suspect)["frames"], len(frames))
+                    # But publishing *any* hidden metadata alongside A/B
+                    # evidence is forbidden before opening private PCM.
+                    with mock.patch("mixlab.quality.pack.compare_wavs",
+                                    side_effect=AssertionError("scanned private PCM")):
+                        with self.assertRaises(ValueError):
+                            inspect_review_pack(review)
+
+    def test_public_review_rejects_unaccounted_trailing_bytes(self):
+        from mixlab.quality.pack import inspect_review_pack
+        review = self.root / "trailing-wav-bytes"
+        review.mkdir()
+        baseline = review / "trial-001-A.wav"
+        suspect = review / "trial-001-B.wav"
+        _write(baseline, 2, [(1500, 1800)] * 8000)
+        _write(suspect, 2, [(1500, 1800)] * 8000)
+        suspect.write_bytes(suspect.read_bytes() + b"not-public")
+        self.assertEqual(scan_wav(suspect)["frames"], 8000)
+        with mock.patch("mixlab.quality.pack.compare_wavs",
+                        side_effect=AssertionError("scanned private PCM")):
+            with self.assertRaises(ValueError):
+                inspect_review_pack(review)
+
     def test_public_review_rejects_extra_riff_metadata_before_pcm_scan(self):
         from mixlab.quality.pack import inspect_review_pack
 
