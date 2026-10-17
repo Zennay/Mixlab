@@ -29,8 +29,12 @@ changes, including path swaps. Single-pair and batch execution both
 pre-admit every source **before any PCM decoding**. The RIFF/WAVE physical
 container length must match the declared RIFF size exactly. A bounded
 **1,024-header maximum** then checks all RIFF chunk offsets, sizes, required
-alignment padding, unique ordered `fmt `/`data` chunks and PCM payload length
-against complete decoded frames. Forged outer or inner chunk lengths, duplicate
+alignment padding, unique ordered `fmt `/`data` chunks, PCM payload length
+against complete decoded frames, and the first **16 bytes of the `fmt ` header**:
+only 1–2 channels, 16-bit samples, 8–96 kHz, `block_align = channels × 2`
+and `byte_rate = sample_rate × block_align` are admitted. This closes a
+metadata inconsistency that a WAV reader may otherwise ignore, without
+reading PCM before admission. Forged outer or inner chunk lengths, duplicate
 `fmt `/`data`, trailing orphan bytes, sub-frame PCM and oversized chunk graphs
 fail closed before PCM decoding; properly accounted metadata/JUNK chunks,
 including odd-sized chunks with a pad byte, remain valid. The check only reads RIFF *headers* during admission, not private PCM; the
