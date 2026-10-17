@@ -7,12 +7,14 @@ paths, hashes, or listener identifiers appear in the result.
 """
 from __future__ import annotations
 
+from array import array
 import argparse
 import json
 import os
 from pathlib import Path
 import stat
 import sys
+import wave
 
 from . import MAX_SOURCE_BYTES, compare_wavs
 
@@ -21,16 +23,31 @@ MAX_SILENT_WINDOW_FRACTION = 0.2
 MIN_CANDIDATE_RISK_FRACTION = 0.25
 MIN_ADDED_RISK_FRACTION = 0.25
 MAX_CANDIDATES = 4
+WINDOW_MS = 100
+STREAM_FRAMES = 4096
+FRAME_ACTIVITY_ABS = 512  # 1.56% FS, sample-level screen (not LUFS)
+MIN_JOINT_WINDOW_FRACTION = 0.5
+MIN_JOINT_FRAMES = 4096
+MIN_CONSECUTIVE_JOINT_WINDOWS = 4
+MONO_LOSS_RATIO = 10 ** (-9 / 10)
 
 
-def assess(report: dict) -> dict:
-    """Interpret existing bounded 100ms stereo metrics; abstain on weak evidence."""
+def assess(
+    report: dict,
+    jointly_audible: dict[str, tuple[float, float] | None] | None = None,
+) -> dict:
+    """Only compare aligned *simultaneously active* stereo evidence.
+
+    The existing per-file metrics remain a quick admission condition. A
+    positive/no-new-risk verdict also needs the independently checked paired
+    same-frame windows. Calling assess() on an untrusted report alone must
+    conservatively abstain.
+    """
     baseline = report["baseline"]
     output = []
     for row in report["candidates"]:
         candidate = row["metrics"]
-        base_risk = baseline.get("mono_fold_down_risky_window_fraction")
-        candidate_risk = candidate.get("mono_fold_down_risky_window_fraction")
+        shared = jointly_audible.get(row["candidate_id"]) if jointly_audible else None
         adequate = (
             baseline["channels"] == candidate["channels"] == 2
             and baseline["duration_seconds"] >= MIN_DURATION_SECONDS
@@ -39,12 +56,13 @@ def assess(report: dict) -> dict:
             and candidate["silent_window_fraction"] <= MAX_SILENT_WINDOW_FRACTION
             and baseline["rms_dbfs"] is not None
             and candidate["rms_dbfs"] is not None
-            and base_risk is not None and candidate_risk is not None
+            and shared is not None
         )
         if not adequate:
             status = "insufficient_stereo_evidence"
             delta = None
         else:
+            base_risk, candidate_risk = shared
             delta = round(candidate_risk - base_risk, 6)
             if (candidate_risk >= MIN_CANDIDATE_RISK_FRACTION
                     and delta >= MIN_ADDED_RISK_FRACTION):
@@ -70,7 +88,80 @@ def assess(report: dict) -> dict:
     }
 
 
-def _admit_regular_path(source: str) -> None:
+def _paired_phase_fractions(baseline: str, candidate: str) -> tuple[float, float] | None:
+    """Read bounded aligned PCM16 windows, retaining no audio or source IDs.
+
+    A file-wise 100ms RMS scanner cannot distinguish alternating even/odd
+    samples with zero simultaneous audible frames. Require >=50% jointly
+    active frames in each eligible 100ms interval, at least four *consecutive*
+    eligible windows, and >=4096 jointly active frames in accepted windows.
+    A loss is assessed on those same overlapping frames in both variants.
+    """
+    with wave.open(str(baseline), "rb") as a, wave.open(str(candidate), "rb") as b:
+        left, right = a.getparams(), b.getparams()
+        if (left.nchannels != 2 or right.nchannels != 2
+                or left.sampwidth != 2 or right.sampwidth != 2
+                or left.comptype != "NONE" or right.comptype != "NONE"
+                or left.framerate != right.framerate
+                or left.nframes != right.nframes
+                or not 8000 <= left.framerate <= 96000
+                or not 1 <= left.nframes <= 2_000_000):
+            raise ValueError("private stereo A/B format mismatch")
+        step = round(left.framerate * WINDOW_MS / 1000)
+        eligible = bad_a = bad_b = matched_frames = 0
+        consecutive = longest_consecutive = 0
+        in_window = joint = a_energy = b_energy = a_mix = b_mix = 0
+
+        def _accepted() -> None:
+            nonlocal eligible, bad_a, bad_b, matched_frames
+            nonlocal consecutive, longest_consecutive
+            if joint * 2 < step:
+                consecutive = 0
+                return
+            eligible += 1
+            matched_frames += joint
+            consecutive += 1
+            longest_consecutive = max(longest_consecutive, consecutive)
+            if a_mix <= 2 * MONO_LOSS_RATIO * a_energy:
+                bad_a += 1
+            if b_mix <= 2 * MONO_LOSS_RATIO * b_energy:
+                bad_b += 1
+
+        for start in range(0, left.nframes, STREAM_FRAMES):
+            count = min(STREAM_FRAMES, left.nframes - start)
+            chunk_a, chunk_b = a.readframes(count), b.readframes(count)
+            if len(chunk_a) != 4 * count or len(chunk_b) != 4 * count:
+                raise ValueError("private PCM16 truncated during aligned scan")
+            samples_a, samples_b = array("h"), array("h")
+            samples_a.frombytes(chunk_a)
+            samples_b.frombytes(chunk_b)
+            if sys.byteorder != "little":
+                samples_a.byteswap()
+                samples_b.byteswap()
+            for position in range(0, len(samples_a), 2):
+                al, ar = samples_a[position], samples_a[position + 1]
+                bl, br = samples_b[position], samples_b[position + 1]
+                if (max(abs(al), abs(ar)) >= FRAME_ACTIVITY_ABS
+                        and max(abs(bl), abs(br)) >= FRAME_ACTIVITY_ABS):
+                    joint += 1
+                    a_energy += al * al + ar * ar
+                    b_energy += bl * bl + br * br
+                    a_mix += (al + ar) ** 2
+                    b_mix += (bl + br) ** 2
+                in_window += 1
+                if in_window == step:
+                    _accepted()
+                    in_window = joint = a_energy = b_energy = a_mix = b_mix = 0
+
+        # Partial trailing windows carry too little evidence and never pass.
+        if (eligible < MIN_CONSECUTIVE_JOINT_WINDOWS
+                or longest_consecutive < MIN_CONSECUTIVE_JOINT_WINDOWS
+                or matched_frames < MIN_JOINT_FRAMES):
+            return None
+        return bad_a / eligible, bad_b / eligible
+
+
+def _admit_regular_path(source: str) -> tuple[int, ...]:
     """Reject symlinked paths, special files, and overlarge input before scan.
 
     This is a static admission guard, NOT an atomic open-descriptor binding
@@ -83,14 +174,22 @@ def _admit_regular_path(source: str) -> None:
     leaf = os.lstat(path)
     if not stat.S_ISREG(leaf.st_mode) or not 44 <= leaf.st_size <= MAX_SOURCE_BYTES:
         raise ValueError("private input must be a bounded regular WAV")
+    return (leaf.st_dev, leaf.st_ino, leaf.st_size, leaf.st_mtime_ns, leaf.st_ctime_ns)
 
 
 def inspect(baseline: str, candidates: list[str]) -> dict:
     if not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError("expected 1..4 candidates")
-    for path in (baseline, *candidates):
-        _admit_regular_path(path)
-    return assess(compare_wavs(baseline, candidates, window_ms=100))
+    paths = (baseline, *candidates)
+    identities = tuple(_admit_regular_path(path) for path in paths)
+    report = compare_wavs(baseline, candidates, window_ms=WINDOW_MS)
+    paired = {
+        f"candidate-{index:02d}": _paired_phase_fractions(baseline, candidate)
+        for index, candidate in enumerate(candidates, 1)
+    }
+    if tuple(_admit_regular_path(path) for path in paths) != identities:
+        raise ValueError("private PCM source changed during QA scan")
+    return assess(report, paired)
 
 
 def main(argv: list[str] | None = None) -> int:
