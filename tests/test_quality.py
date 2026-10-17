@@ -453,6 +453,55 @@ class QualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unexpected WAV"):
             inspect_review_pack(review)
 
+    def test_review_pack_rejects_accidentally_published_answer_keys(self):
+        review = self.root / "review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x / 2) for x in self.samples])
+        (review / "index.html").write_text("<p>blinded trial</p>")
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+        secret = review / "answer-key.json"
+        secret.write_text('{"trial-001": "baseline-A"}')
+        with self.assertRaisesRegex(ValueError, "unexpected public asset"):
+            inspect_review_pack(review)
+        args = [sys.executable, "-m", "mixlab.quality.pack", str(review)]
+        result = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(3, result.returncode)
+        self.assertFalse(result.stdout)
+        self.assertNotIn("baseline-A", result.stderr)
+        self.assertNotIn(str(self.root), result.stderr)
+        secret.unlink()
+        index = review / "index.html"
+        index.unlink()
+        index.symlink_to(self.base)
+        with self.assertRaisesRegex(ValueError, "Review index"):
+            inspect_review_pack(review)
+
+    def test_official_synthetic_benchmark_review_pack_contract(self):
+        # Exercise the production fixture -> benchmark -> review directory
+        # sequence without opening the private answer key or using real music.
+        from mixlab.cli import benchmark, fixture
+        fixture_root = self.root / "official-fixture"
+        manifest = fixture(fixture_root)
+        output = self.root / "official-benchmark"
+        receipt_path = benchmark(manifest, output, seed=42)
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(4, receipt["render_count"])
+        self.assertEqual(3, receipt["trial_count"])
+        self.assertTrue((output / "private" / "answer-key.json").exists())
+        public_files = list((output / "review").iterdir())
+        self.assertEqual(7, len(public_files))  # index.html and six WAVs.
+        report = inspect_review_pack(output / "review")
+        self.assertEqual(3, report["trial_count"])
+        self.assertEqual(["trial-001", "trial-002", "trial-003"],
+                         [trial["trial_id"] for trial in report["trials"]])
+        self.assertFalse(report["answer_key_opened"])
+        self.assertTrue(report["human_preference_test_required"])
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("sha256", serialized)
+        self.assertNotIn("answer-key", serialized)
+
     def test_renderer_to_blind_review_quality_preflight_integration(self):
         # Exercise the actual streaming renderer, not only hand-built WAV
         # fixtures. No real copyrighted source media or private key is needed.
