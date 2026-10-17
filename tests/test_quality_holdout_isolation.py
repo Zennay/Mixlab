@@ -264,7 +264,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
                     self.study["pairs"][0][("a" if index == 0 else "b") + "_sha256"] = sha
         self.freeze()
 
-    def _make_unique_stereo_with_shared_silent_right(self):
+    def _make_unique_stereo_with_shared_silent_right(self, right_value=0):
         # Deliberately unrelated left-channel melodies, but an all-zero
         # right channel in both sets. Silence is not musical provenance.
         for group, directory in ((self.dev, self.dev_dir),
@@ -273,7 +273,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
                 path = directory / f"clip-{i:02d}.wav"
                 with wave.open(str(path), "rb") as reader:
                     mono = reader.readframes(reader.getnframes())
-                stereo = b"".join(struct.pack("<hh", value, 0)
+                stereo = b"".join(struct.pack("<hh", value, right_value)
                                   for (value,) in struct.iter_unpack("<h", mono))
                 with wave.open(str(path), "wb") as writer:
                     writer.setnchannels(2)
@@ -292,6 +292,19 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         report = self.audit()
         self.assertIs(report["development_evaluation_source_identity_separate"], True)
         self.assertIs(report["milestone_pass"], False)
+
+    def test_shared_dc_or_quiet_stereo_channel_does_not_imply_same_music(self):
+        # Recorder/converter DC bias, like silence, is not an audible shared
+        # composition. Constant +2400 and -2400 must not trigger a leak.
+        # Near-silent repetitive dither also must not count as provenance.
+        for value in (400, 2400, -2400):
+            with self.subTest(common_right_channel=value):
+                self._make_unique_stereo_with_shared_silent_right(
+                    right_value=value)
+                result = self.audit()
+                self.assertTrue(
+                    result["development_evaluation_source_identity_separate"])
+                self.assertFalse(result["milestone_pass"])
 
     def test_copy_of_real_audible_channel_rejected_even_with_shared_silence(self):
         self._make_unique_stereo_with_shared_silent_right()
