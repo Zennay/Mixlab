@@ -211,6 +211,93 @@ class RepeatabilityTests(unittest.TestCase):
                 self.assertNotIn(str(self.root),
                                  json.dumps(verify_repeatability(one, two)))
 
+    def _render_fixture_with_receipts(self):
+        import math
+        from mixlab.dsp import render as streaming_render
+        from mixlab.models import Recipe
+
+        first_input = self.root / "receipt-input-a.wav"
+        second_input = self.root / "receipt-input-b.wav"
+        make_wav(first_input, [int(3000 * math.sin(i * .11))
+                               for i in range(8000)])
+        make_wav(second_input, [int(2500 * math.cos(i * .17))
+                                for i in range(8000)])
+        one = self.root / "receipt-output-a.wav"
+        two = self.root / "receipt-output-b.wav"
+        first_receipt = streaming_render(first_input, second_input, one,
+                                         Recipe(beats=1), block_frames=7)
+        second_receipt = streaming_render(first_input, second_input, two,
+                                          Recipe(beats=1), block_frames=4096)
+        return one, two, first_receipt, second_receipt
+
+    def test_receipts_bind_full_output_bytes_across_different_dsp_blocks(self):
+        one, two, first_receipt, second_receipt = self._render_fixture_with_receipts()
+        self.assertNotEqual(first_receipt["block_frames"],
+                            second_receipt["block_frames"])
+        report = verify_repeatability(
+            one, two, receipts=(first_receipt, second_receipt)
+        )
+        self.assertTrue(report["repeatable_pcm"])
+        self.assertTrue(report["render_receipts_consistent"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("sha256", json.dumps(report))
+        self.assertNotIn("source", json.dumps(report).replace(
+            "independent_sources_verified", ""))
+
+        # Metadata-only mutation leaves PCM equal but must break the receipt
+        # SHA binding. Without receipts, PCM-only equality is intentionally
+        # retained, since the two modes answer different questions.
+        with two.open("ab") as dest:
+            dest.write(b"private-trailer-not-a-valid-receipt")
+        self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
+        with self.assertRaises(RepeatabilityError):
+            verify_repeatability(one, two, receipts=(first_receipt, second_receipt))
+
+    def test_receipt_recipe_input_and_output_tampering_fail_closed(self):
+        import copy
+        one, two, original_a, original_b = self._render_fixture_with_receipts()
+        self.assertTrue(verify_repeatability(
+            one, two, receipts=(original_a, original_b)
+        )["render_receipts_consistent"])
+        modifications = (
+            lambda r: r["recipe"].__setitem__("beats", 2),
+            lambda r: r["sources"][0].__setitem__("sha256", "0" * 64),
+            lambda r: r.__setitem__("output_sha256", "f" * 64),
+            lambda r: r.__setitem__("engine_version", "changed-version"),
+            lambda r: r.__setitem__("sample_rate", 16000),
+            lambda r: r.__setitem__("frames", 1234),
+            lambda r: r.__setitem__("start_frames", {}),
+            lambda r: r.__setitem__("sources", []),
+        )
+        for mutate in modifications:
+            with self.subTest(modification=modifications.index(mutate)):
+                tampered = copy.deepcopy(original_b)
+                mutate(tampered)
+                with self.assertRaisesRegex(
+                    RepeatabilityError,
+                    "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=(original_a, tampered))
+
+    def test_receipt_malformed_and_oversized_metadata_is_rejected_privately(self):
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        invalid = (
+            (ra,),
+            "not receipts",
+            (ra, None),
+            (ra, {"secret_path": str(self.root)}),
+            (ra, dict(rb, dangerous_string="private" * 5000)),
+            (ra, dict(rb, output_sha256="not-a-sha")),
+            (ra, dict(rb, duration_seconds=float("nan"))),
+        )
+        for pair in invalid:
+            with self.subTest(kind=type(pair).__name__):
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=pair)
+        self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
+
     def test_full_two_million_frame_stereo_capacity_and_last_frame_integrity(self):
         # Exercise the actual 2M-frame/source ceiling, not only 8k-frame
         # fixtures. Generate two separate regular WAVs with bounded writes.
