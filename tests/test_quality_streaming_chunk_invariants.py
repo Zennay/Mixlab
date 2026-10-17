@@ -134,7 +134,7 @@ class StreamingChunkInvariants(unittest.TestCase):
         report = compare_wavs(baseline, [variant])
         self.assertIn("isolated_sample_impulse_inspect_for_clicks",
                       report["candidates"][0]["warnings"])
-        self.assertEqual(report["candidates"][0]["candidate_number"], 1)
+        self.assertEqual(report["candidates"][0]["candidate_id"], "candidate-01")
         self.assertFalse(report["contains_source_paths_or_audio"])
         self.assertNotIn(str(self.root), json.dumps(report))
 
