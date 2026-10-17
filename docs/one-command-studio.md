@@ -123,3 +123,37 @@ CPU-belasting, opgegeven rechten, fragmentlengte en audio-output gelden nog.
 maar geen automatisch beatmatching-systeem, commerciële muziekdienst,
 source-separation-engine of bewijs dat een overgang beter klinkt dan een
 crossfade. Blind luisteren en rechtenbewijzen blijven afzonderlijke gates.
+
+## Nieuwe route: één opdracht tot een complete WAV-set
+
+Wil je de hele keten automatisch *uitvoeren*, zonder zelf eerst de Studio
+en daarna de losse set-export CLI te starten? Gebruik de nieuwe lokale
+`mixlab.party_mix` opdracht met **expliciet handmatig geselecteerde** paren
+en stijlen:
+
+```bash
+python3 -m mixlab.party_mix \
+  /private/songs/input.json \
+  /private/mixlab-sessie \
+  /private/volledige-set.wav \
+  --transition pair-001:bass_swap \
+  --transition pair-002:echo_exit
+```
+
+De bronbibliotheek en beide doelpaden moeten vooraf veilig gekozen zijn.
+De sessiemap en WAV **mogen niet bestaan**; bestaande resultaten worden
+niet overschreven. De opdracht valideert eerst de handmatige keuzes en
+paden, bouwt vervolgens de bestaande import/Studio, en gebruikt de
+gecontroleerde [continuous set-export](continuous-set-export.md).
+
+Bij succes ontstaat de gehele afspeelbare WAV plus een private, checksum-
+gebonden receipt. Als de Studio succesvol is gemaakt maar de laatste
+playlistcompositie faalt (bijv. een A→B→C-route die terugloopt), blijft
+die **nieuwe eigen private Studio-map** bestaan, zodat je de fout kunt
+corrigeren en alleen de set-export opnieuw kunt uitvoeren. Originele
+muziek en bestaande exports blijven onaangetast.
+
+Dit is geen automatische DJ-routeplanning: de gebruiker kiest de
+specifieke paren en overgangsstijlen vooraf. Vereist een reeds
+geïnstalleerde lokale FFmpeg, en mist nog menselijk luisterbewijs op
+echte tracks.
