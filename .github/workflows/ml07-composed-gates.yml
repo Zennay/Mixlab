@@ -1,0 +1,66 @@
+name: MixLab ML-07 composed opt-in gates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/assignment_balance.py"
+      - "mixlab/quality/listener_position.py"
+      - "mixlab/quality/pilot_sensitivity.py"
+      - "mixlab/quality/reviewer_influence.py"
+      - "tests/test_quality_composed_m1_gates.py"
+      - ".github/workflows/ml07-composed-gates.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ml07-composed-four-gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  integrated-opt-in-qa:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Four merged frozen PCM gates (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Exact PR source and no credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact expected revision
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Set up stdlib Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run actual PCM cross-gate integration and all four component suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile tests/test_quality_composed_m1_gates.py
+          for pattern in \
+            test_quality_assignment_balance.py \
+            test_quality_listener_position.py \
+            test_quality_pilot_sensitivity.py \
+            test_quality_reviewer_influence.py \
+            test_quality_composed_m1_gates.py; do
+            echo "=== exact source regression: $pattern ==="
+            /usr/bin/time -v python -m unittest discover -s tests -p "$pattern" -v
+          done
