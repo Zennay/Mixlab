@@ -20,6 +20,7 @@ MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
 MAX_TOTAL_FRAMES = 8_000_000
 MAX_CANDIDATES = 8
+READ_BLOCK_FRAMES = 4096
 BIN_SECONDS = 0.005
 MAX_LAG_SECONDS = 0.200
 MIN_LAG_SECONDS = 0.030
@@ -58,7 +59,7 @@ def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
             in_bin = 0
             processed = 0
             while processed < frames:
-                count = min(4096, frames - processed)
+                count = min(READ_BLOCK_FRAMES, frames - processed)
                 data = wav.readframes(count)
                 if len(data) != count * channels * 2:
                     raise ValueError("Truncated PCM")
