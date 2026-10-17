@@ -1,0 +1,36 @@
+name: ML-07 local DC-bias preflight
+on:
+  pull_request:
+    paths:
+      - 'mixlab/quality/local_dc.py'
+      - 'tests/test_quality_local_dc.py'
+      - 'docs/quality-local-dc.md'
+      - '.github/workflows/ml07-local-dc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-dc-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify immutable source and Python syntax
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 -m compileall -q mixlab/quality/local_dc.py tests/test_quality_local_dc.py
+      - name: Bounded synthetic DC, canonical quality and privacy tests
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          /usr/bin/time -v python3 -m unittest discover -v -s tests -p 'test_quality_local_dc.py'
+          /usr/bin/time -v python3 -m unittest discover -v -s tests -p 'test_quality.py'
+          /usr/bin/time -v python3 -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
