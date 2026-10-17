@@ -63,6 +63,35 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "UTF-8"):
             load_bounded_json(self.source)
 
+    def test_unpaired_utf16_surrogates_rejected_in_keys_and_values(self):
+        for payload in (
+            r'{"reviewer":"\ud800"}',
+            r'{"reviewer":"\udc00"}',
+            r'{"nested":{"\ud800":"ok"}}',
+            r'{"ratings":[{"\udfff":1}]}',
+            r'["valid", {"x":"\udbff"}]',
+        ):
+            with self.subTest(payload=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Unicode scalar"):
+                    load_bounded_json(self.source)
+
+    def test_unicode_scalar_pairs_and_flat_structures_still_pass(self):
+        for payload in (
+            r'{"text":"\ud83d\ude00"}',
+            '{"text":"😃"}',
+            r'{"\ud83d\ude00":"ok"}',
+        ):
+            with self.subTest(payload=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                self.assertEqual(load_bounded_json(self.source),
+                                 json.loads(payload))
+        # The unicode validator must not recurse into each object:
+        # modest, flat lists are accepted within the 4 MiB budget.
+        payload = json.dumps([{"id": n} for n in range(500)])
+        self.source.write_text(payload, encoding="utf-8")
+        self.assertEqual(load_bounded_json(self.source), json.loads(payload))
+
     def test_exponent_overflow_floats_are_rejected_not_infinite(self):
         for payload in ("1e999", "-1e999", '{"a":1e999}',
                         '{"a":-9.1e999}', "[1.0e500, 3]"):
