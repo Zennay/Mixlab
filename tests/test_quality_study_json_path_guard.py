@@ -51,6 +51,49 @@ class PinnedJSONPathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "details withheld"):
             self.checked(study=linked_study)
 
+    def test_symlinked_ancestor_cannot_be_erased_by_dotdot(self):
+        real = self.fx.root / "real-component"
+        real.mkdir()
+        linked = self.fx.root / "linked-component"
+        linked.symlink_to(real, target_is_directory=True)
+        # The lexical pathname traverses the link before '..' can escape.
+        unsafe = linked / ".." / self.fx.study.name
+        self.assertEqual(load_bounded_json(unsafe)["study_id"], self.fx.pinned)
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            self.checked(study=unsafe)
+
+    def test_custom_pathlike_alternating_names_is_captured_once(self):
+        class Alternating:
+            def __init__(self, primary, secondary):
+                self.primary = str(primary)
+                self.secondary = str(secondary)
+                self.calls = 0
+
+            def __fspath__(self):
+                self.calls += 1
+                return self.primary if self.calls == 1 else self.secondary
+
+        value = Alternating(self.fx.study, self.fx.root / "private-other")
+        self.assertEqual(self.checked(study=value)["technical_gate"], "pass")
+        self.assertEqual(value.calls, 1)
+
+    def test_pathlike_exception_or_nul_is_redacted(self):
+        class Toxic:
+            def __fspath__(self):
+                raise RuntimeError("VERY-PRIVATE-SOURCE-PATH")
+
+        class BadNul:
+            def __fspath__(self):
+                return str(self_test.fx.study) + chr(0) + "SECRET"
+
+        self_test = self
+        for value in (Toxic(), BadNul()):
+            with self.subTest(kind=type(value).__name__):
+                with self.assertRaisesRegex(ValueError, "details withheld") as caught:
+                    self.checked(study=value)
+                self.assertNotIn("PRIVATE", str(caught.exception))
+                self.assertNotIn("SECRET", str(caught.exception))
+
     def test_parent_symlink_on_pack_root_is_rejected(self):
         linked = self.fx.root / "linked-pack"
         linked.symlink_to(self.fx.pack, target_is_directory=True)
