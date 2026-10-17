@@ -39,7 +39,11 @@ def _walk(path):
     # Resolve an untrusted custom PathLike exactly once. Multiple __fspath__
     # calls may return different names, allowing validation of one path but
     # attempted opening of another (or leaked caller exception details).
-    raw = os.fspath(path)
+    try:
+        raw = os.fspath(path)
+    except Exception:
+        # __fspath__ is user code and may raise with private source names.
+        raise ValueError("unsafe source (details withheld)") from None
     if not isinstance(raw, str) or ".." in Path(raw).parts or "\x00" in raw:
         raise ValueError("unsafe source")
     absolute = Path(os.path.abspath(raw))
