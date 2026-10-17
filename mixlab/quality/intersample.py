@@ -43,6 +43,12 @@ def _coefficients(fraction: float) -> tuple[float, ...]:
 
 
 _PHASES = tuple(_coefficients(k / 4) for k in (1, 2, 3))
+# Only near-ceiling windows pay for additional half-quarter sample phases.
+# This catches sub-quarter phase overs missed by uniform 4x screening while
+# leaving typical quiet frames on the cheaper 4x path.
+_REFINE_PHASES = tuple(_coefficients(k / 8) for k in (1, 3, 5, 7))
+_REFINE_THRESHOLD_PCM = round(0.97 * 32768)
+
 
 
 class AudioInputError(ValueError):
@@ -77,6 +83,7 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
     full_scale_pcm_sample_count = 0
     interpolated_peak = 0.0
     intersample_over_count = 0
+    adaptive_refined_windows = 0
     # Even this finite interpolation kernel attenuates signals near Nyquist.
     # A high-amplitude sign reversal can hide an analog over even when the
     # interpolated estimate stays below full-scale. This conservative guard
@@ -119,12 +126,24 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
             history.append(frame)
             if len(history) == 16:
                 # Ring indices 7 and 8 bracket the fractional reconstruction.
+                # Start at 4x; only evaluate eighth-frame phases if close to
+                # the PCM rail. Every refinement event is anonymous metadata.
+                local_peak = 0.0
                 for coeffs in _PHASES:
                     for ch in range(channels):
                         value = abs(sum(coeffs[k] * history[k][ch] for k in range(16)))
+                        local_peak = max(local_peak, value)
                         interpolated_peak = max(interpolated_peak, value)
                         if value > 32768.0:
                             intersample_over_count += 1
+                if local_peak >= _REFINE_THRESHOLD_PCM:
+                    adaptive_refined_windows += 1
+                    for coeffs in _REFINE_PHASES:
+                        for ch in range(channels):
+                            value = abs(sum(coeffs[k] * history[k][ch] for k in range(16)))
+                            interpolated_peak = max(interpolated_peak, value)
+                            if value > 32768.0:
+                                intersample_over_count += 1
         seen += want
     peak = max(sample_peak, interpolated_peak)
     edge_ambiguity = (
@@ -135,6 +154,7 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "sample_peak_dbfs": round(20 * math.log10(sample_peak / 32768), 3) if sample_peak else None,
         "interpolated_peak_dbfs_estimate": round(20 * math.log10(peak / 32768), 3) if peak else None,
         "intersample_overs_estimated": intersample_over_count,
+        "adaptive_8x_refined_windows": adaptive_refined_windows,
         "full_scale_pcm_samples": full_scale_pcm_sample_count,
         "full_scale_pcm_risk": bool(full_scale_pcm_sample_count),
         "screen_evaluable": nframes >= 16,
@@ -181,7 +201,7 @@ def compare_intersample(baseline: str | Path, candidates: list[str | Path]) -> d
                 raise AudioInputError("Source changed during group read")
     return {
         "schema_version": 1,
-        "method": "four_times_sixteen_tap_windowed_sinc_screen_not_bs1770",
+        "method": "adaptive_four_to_eight_times_sixteen_tap_windowed_sinc_screen_not_bs1770",
         "sample_rate_hz": shapes[0][0],
         "channels": shapes[0][1],
         "frames_per_source": shapes[0][2],
