@@ -133,6 +133,24 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
                 self.assertEqual(load_bounded_json(self.source),
                                  json.loads(payload))
 
+    def test_invalid_syntax_never_leaks_private_input_or_decoder_doc(self):
+        secrets = ("PRIVATE_REVIEWER_X12", "SECRETS_SHOULD_NOT_LOG")
+        invalid = (
+            '{"private": "PRIVATE_REVIEWER_X12", "data": }',
+            '{"private": "SECRETS_SHOULD_NOT_LOG"',
+            '{"a": true, "b": [1, ]}',
+        )
+        for payload in invalid:
+            with self.subTest(case=payload[:17]):
+                self.source.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Invalid evaluation JSON syntax") as caught:
+                    load_bounded_json(self.source)
+                diagnostic = str(caught.exception) + "".join(
+                    traceback.format_exception(caught.exception))
+                for secret in secrets:
+                    self.assertNotIn(secret, diagnostic)
+                self.assertNotIsInstance(caught.exception, json.JSONDecodeError)
+
     def test_reject_deep_parser_recursion_as_validation_error(self):
         self.source.write_text("[" * 1500 + "0" + "]" * 1500,
                                encoding="utf-8")
