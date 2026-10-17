@@ -97,6 +97,12 @@ def _verified_study(path, expected_study_id):
             val = row.get(field)
             if type(val) not in (int, float) or not math.isfinite(val) or not 30 <= val <= 300:
                 _fail()
+        # The frozen study producer explicitly marks pairs that require
+        # time stretching. The current production MixLab renderer cannot
+        # render those pairs, so a fabricated PCM pack cannot certify them.
+        if (row.get("renderable_without_stretch") is not True
+                or row["a_bpm"] != row["b_bpm"]):
+            _fail()
     if max(families.values()) - min(families.values()) > 1:
         _fail()
     return study
