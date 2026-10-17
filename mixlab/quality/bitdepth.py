@@ -36,9 +36,13 @@ def _identity(info):
 
 def _walk(path):
     """Check every current pathname component, never following a symlink."""
-    if ".." in Path(path).parts or "\x00" in os.fspath(path):
+    # Resolve an untrusted custom PathLike exactly once. Multiple __fspath__
+    # calls may return different names, allowing validation of one path but
+    # attempted opening of another (or leaked caller exception details).
+    raw = os.fspath(path)
+    if not isinstance(raw, str) or ".." in Path(raw).parts or "\x00" in raw:
         raise ValueError("unsafe source")
-    absolute = Path(os.path.abspath(os.fspath(path)))
+    absolute = Path(os.path.abspath(raw))
     if len(os.fspath(absolute)) > 4096 or len(absolute.parts) > 65:
         raise ValueError("invalid path size")
     cursor = Path(absolute.anchor)
