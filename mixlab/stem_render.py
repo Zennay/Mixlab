@@ -121,6 +121,7 @@ def _render_one(sources, out, frames, rate, channels, family, gain_db):
                 for index in range(0, len(pieces[0]), channels):
                     progress = position / (frames - 1)
                     weights = _weights(family, progress)
+                    frame_values = []
                     for channel in range(channels):
                         value = gain * sum(
                             weights[role] * pieces[role][index + channel] / 32768
@@ -128,10 +129,9 @@ def _render_one(sources, out, frames, rate, channels, family, gain_db):
                         # No hidden clipping or auto limiter: reject instead.
                         if not -1. <= value <= 32767 / 32768:
                             raise ValueError("Stem transition would clip; lower --gain-db")
-                        meter.add((value,)) if channels == 1 else None
+                        frame_values.append(value)
                         result.append(round(value * 32768))
-                    if channels == 2:
-                        meter.add(tuple(result[-channels + c] / 32768 for c in range(channels)))
+                    meter.add(tuple(frame_values))
                     position += 1
                 if sys.byteorder != "little":
                     result.byteswap()
