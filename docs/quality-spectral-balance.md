@@ -80,6 +80,15 @@ Stereo swaps may be creative or intentional; the output is an inspect
 warning, not an acoustic quality verdict, and it supplements (does not
 replace) the main PCM signed-swap and mono-fold-down checks.
 
+A fully or nearly silent stereo channel can also produce globally plausible
+relative band-energy ratios when the other channel remains audible. If
+either baseline or candidate has one channel below -55 dBFS RMS while the
+other is above -35 dBFS RMS, the supplemental check emits the neutral
+`stereo_channel_near_silence_inspect` warning, even when both A/B files
+have the same defect. The report does not reveal which channel or which
+source caused the warning. This is a technical listening prompt, not a
+claim that all intentional single-channel mixes are invalid.
+
 These filters are deliberately cheap, have gradual/overlapping responses,
 and are sensitive to DC, onsets and very short excerpts. The numbers are
 **not** disjoint frequency-band percentages, calibrated spectrum, true peak,
@@ -126,7 +135,7 @@ full-comparison early-baseline/candidate mutation and symlink-substitution
 rejection, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
 shifts, stereo temporal gain invariance, matched-RMS midrange depletion,
 midrange time reordering, stereo channel-frequency swaps with
-globally identical energies, stereo gain invariance, silent spans, strict warning exit
+globally identical energies, stereo gain invariance, single-channel silence from either side,\nstrict CLI failure on a shared channel dropout, silent spans, strict warning exit
 and CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
