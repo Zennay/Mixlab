@@ -338,3 +338,31 @@ the masked equal-whole-RMS/different-temporal-energy failure, uniform
 fully silent candidate, anonymized output and existing field
 compatibility. Even a passing technical gate does not override
 M1 rights, licensed-audio, DJ or >=3-human-blind-listener requirements.
+
+
+## Hidden stereo channel-level confounds in blind listening
+
+Equal whole-file **and** equal short-window combined RMS can still hide a
+substantial change in stereo balance (for example, a strongly attenuated
+right channel counterbalanced by a louder left channel). This matters for
+headphone listening comparisons even when the overall power is unchanged.
+
+The ML-07 scanner now derives a `stereo_channel_level_confound_risk`
+boolean from already-present **per-channel whole-file RMS dBFS**. A difference
+of at least **9 dB** in an audible channel, or changing a channel from
+digital silence to audible (> -55 dBFS), triggers the neutral
+`stereo_channel_level_mismatch_inspect_not_lufs` warning. Mono remains
+unaffected and two silent channels do not fabricate a stereo imbalance.
+A detected difference makes
+`rms_and_window_level_preflight_pass=False`, while preserving the
+old backwards-compatible whole-RMS-only `level_comparable_for_blind_ab`
+meaning. This is a channel-level **technical listening confound**,
+not integrated LUFS, a phase/pan quality score, or a demand that two
+artistic mixes must have identical channel balance.
+
+The independent `tests/test_stereo_level_confound.py` exercises
+energy-balanced yet strong left/right level changes, both directions,
+digital channel silence, modest adjustment, mono and fully silent
+clips. No second audio read, private channel envelope, absolute
+filename or new music asset is produced. Music preference still needs
+licensed audio and human blind-review evidence.
