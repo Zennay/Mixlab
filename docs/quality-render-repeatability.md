@@ -47,6 +47,43 @@ or that a blind A/B test is valid. The caller must independently bind input reci
 source fingerprints, renderer build/SHA and sample-rate contract, preferably using
 the existing immutable receipts.
 
+## Optional private renderer-receipt binding
+
+The basic CLI intentionally confirms PCM identity **only**. For programmatic
+quality pipelines holding the private return dictionaries from
+mixlab.dsp.render / mixlab.engine.render, the standalone validator can
+additionally verify that the declared output hash belongs to each actual
+output WAV and that both receipts claim the same render contract:
+
+    from mixlab.quality.repeatability import verify_repeatability
+    verdict = verify_repeatability(
+        first_wav, second_wav,
+        receipts=(first_private_renderer_receipt, second_private_renderer_receipt),
+    )
+    assert verdict["repeatable_pcm"] and verdict["render_receipts_consistent"]
+
+This mode checks each complete WAV's SHA-256 against its own private
+output_sha256 receipt on the already opened, read-only descriptor. It also
+requires identical recipe, engine version, ordered **declared** source SHA-256
+values, sample rate, channels, frame count, duration, gain, start-frame
+offsets, alignment and tempo declarations. Renderer block_frames and
+output_path are intentionally excluded: different chunk sizes and private
+output filenames must not change the intended render. A malformed, oversized,
+non-finite, contradictory or mismatched receipt fails closed with the same
+redacted rejection as an invalid WAV. No receipt fields, filenames, hashes or
+source audio appear in the result. With receipts absent, the report retains
+the original pure-PCM schema and makes **no** receipt-consistency claim.
+
+**Trust boundary:** self-reported input fingerprints and recipes are
+cross-compared **between** the receipts, not authenticated against original
+source files, filesystem identities, licenses or a trusted external signature.
+A forged pair of consistent receipts can still lie about the inputs. The
+optional API is therefore a quality-evidence **consistency check**, not
+authenticated provenance, a chain-of-custody certificate or blind preference
+proof. Private receipts should never be logged or put into public CI artifacts.
+The CLI deliberately accepts no receipt JSON path to avoid unexpectedly
+uploading/rendering path-bearing sensitive metadata.
+
 ## Evidence and release
 
 The dedicated hosted workflow runs Python compilation, a deterministic synthetic
