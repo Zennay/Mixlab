@@ -85,10 +85,11 @@ def assess(
                     "stereo_channel_silence_risk",
                     "partial_stereo_channel_loss_risk",
                     "stereo_channel_onset_skew_risk",
+                    "playback_boundary_pop_risk",
                 )):
             # The canonical reader already identifies missing PCM spans,
-            # stereo-channel dropouts, clicks, flat tops, DC headroom and
-            # stereo imbalance or skew.
+            # stereo-channel dropouts, clicks and abrupt playback edges,
+            # flat tops, DC headroom and stereo imbalance or skew.
             # A clean *mono fold-down* is not enough to admit a damaged
             # A/B source, including a defective crossfade baseline.
             # Emit only the category; not sample positions, audio or IDs.
