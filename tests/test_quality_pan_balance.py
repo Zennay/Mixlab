@@ -129,6 +129,57 @@ class PanBalanceTests(unittest.TestCase):
         self.assertIsNone(
             report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
 
+    def test_rms_matched_pulses_still_abstain_despite_equal_whole_file_energy(self):
+        # 20ms at PCM amplitude 14142 followed by 230ms silence yields
+        # approximately the SAME whole-clip RMS as constant amplitude 4000.
+        # The pan gate must not mistake that RMS equivalence for 1s of
+        # uninterrupted audible material.
+        wav(self.a, left=4000, right=4000)
+        high = 14142
+        pulse = (struct.pack("<hh", high, high) * 160 +
+                 struct.pack("<hh", 0, 0) * 1840)
+        with wave.open(str(self.b), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(pulse * 4)
+        whole_rms = high * (160 / 2000) ** 0.5
+        self.assertAlmostEqual(whole_rms, 4000, delta=2)
+        result = pan_balance.inspect(self.a, self.b)
+        self.assertIsNone(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "insufficient_active_audio")
+        self.assertLess(result["longest_continuous_active_ms"], 1000)
+
+    def test_partial_50ms_gaps_break_activity_at_fractional_sample_rate(self):
+        # At 11025Hz the five 50ms boundaries per 250ms are not identical
+        # integer widths. Ensure absolute rational boundaries still catch
+        # repeated genuine 50ms gaps rather than marking four 250ms blocks
+        # continuously active.
+        rate = 11025
+        wav(self.a, frames=rate, rate=rate)
+        chunks = []
+        for quarter in range(4):
+            start = (quarter * rate + 2) // 4
+            stop = ((quarter + 1) * rate + 2) // 4
+            size = stop - start
+            # One quiet (50ms) interval in the interior of every quarter.
+            quiet_start = ((quarter * 250 + 100) * rate + 500) // 1000
+            quiet_stop = ((quarter * 250 + 150) * rate + 500) // 1000
+            chunks.append(struct.pack("<hh", 8000, 2000) * (quiet_start - start))
+            chunks.append(struct.pack("<hh", 0, 0) * (quiet_stop - quiet_start))
+            chunks.append(struct.pack("<hh", 8000, 2000) * (stop - quiet_stop))
+            self.assertEqual((quiet_start - start) + (quiet_stop - quiet_start) +
+                             (stop - quiet_stop), size)
+        with wave.open(str(self.b), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(rate)
+            out.writeframes(b"".join(chunks))
+        report = pan_balance.inspect(self.a, self.b)
+        self.assertIsNone(report["stereo_pan_confound_review"])
+        self.assertEqual(report["evidence_status"], "insufficient_active_audio")
+        self.assertEqual(report["format"]["frames"], rate)
+
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
             with self.subTest(key=key):
