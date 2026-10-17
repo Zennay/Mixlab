@@ -201,7 +201,7 @@ def _admit_batch(sources: list[str | os.PathLike[str]]) -> list[dict]:
                 raise ValueError("Batch input outside per-file byte bounds")
             key = (actual.st_dev, actual.st_ino)
             if key in seen:
-                raise ValueError("Batch WAVs must have distinct identities")
+                raise ValueError("A/B sources must be distinct regular files")
             seen.add(key)
             with os.fdopen(fd, "rb", closefd=True) as handle:
                 fd = None
@@ -215,7 +215,7 @@ def _admit_batch(sources: list[str | os.PathLike[str]]) -> list[dict]:
                     if shape is None:
                         shape = current_shape
                     elif shape != current_shape:
-                        raise ValueError("Batch PCM shapes must match")
+                        raise ValueError("private PCM16 sources do not have identical shape")
                     total_bytes += actual.st_size
                     total_frames += frames
                     if total_bytes > MAX_BATCH_BYTES or total_frames > MAX_BATCH_FRAMES:
