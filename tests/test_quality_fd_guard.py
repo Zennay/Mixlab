@@ -137,6 +137,63 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.source.write_bytes(truncated)
         self.assert_rejected(self.source)
 
+    def test_format_header_alignment_and_byte_rate_must_match_pcm_shape(self):
+        # Standard 44-byte WAV: fmt fields start at byte 20; byte-rate at
+        # 28 and block-align at 32. A waveform decoder may ignore these
+        # fields while a different playback engine honors them.
+        original = self.source.read_bytes()
+        mutations = (
+            (28, struct.pack("<I", 12345), "byte-rate"),
+            (32, struct.pack("<H", 4), "block-align"),
+            (32, struct.pack("<H", 0), "zero-block-align"),
+            (34, struct.pack("<H", 24), "bits-per-sample"),
+            (20, struct.pack("<H", 3), "float-format-tag"),
+        )
+        for offset, payload, label in mutations:
+            with self.subTest(label=label):
+                modified = bytearray(original)
+                modified[offset:offset + len(payload)] = payload
+                self.source.write_bytes(modified)
+                with patch("mixlab.quality.fd_guard.wave.open",
+                           side_effect=AssertionError("must fail before wave.open")) as parser:
+                    self.assert_rejected(self.source)
+                    parser.assert_not_called()
+        self.source.write_bytes(original)
+        self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+
+    def test_duplicate_fmt_chunk_rejected_before_wave_parser(self):
+        original = self.source.read_bytes()
+        fmt = original[12:36]
+        mutated = bytearray(original[:36] + fmt + original[36:])
+        mutated[4:8] = struct.pack("<I", len(mutated) - 8)
+        self.source.write_bytes(mutated)
+        with patch("mixlab.quality.fd_guard.wave.open",
+                   side_effect=AssertionError("duplicate fmt must be rejected")) as parser:
+            self.assert_rejected(self.source)
+            parser.assert_not_called()
+
+    def test_data_before_fmt_rejected_before_wave_parser(self):
+        original = self.source.read_bytes()
+        reversed_chunks = bytearray(original[:12] + original[36:] + original[12:36])
+        self.source.write_bytes(reversed_chunks)
+        with patch("mixlab.quality.fd_guard.wave.open",
+                   side_effect=AssertionError("missing fmt before data")) as parser:
+            self.assert_rejected(self.source)
+            parser.assert_not_called()
+
+    def test_ab_group_bad_fmt_candidate_is_rejected_before_any_pcm_read(self):
+        candidate = self.root / "PRIVATE_bad_format.wav"
+        make_wav(candidate)
+        with open(candidate, "r+b") as file:
+            file.seek(28)
+            file.write(struct.pack("<I", 1))
+        with patch.object(wave.Wave_read, "readframes",
+                          side_effect=AssertionError("read PCM before group header admission")) as decoder:
+            with self.assertRaisesRegex(ValueError, "details withheld") as error:
+                validate_private_ab_group([self.source, candidate])
+            decoder.assert_not_called()
+        self.assertNotIn(str(self.root), str(error.exception))
+
     def test_truncated_claimed_pcm_payload_rejected(self):
         with open(self.source, "r+b") as file:
             file.truncate(44 + 20)
