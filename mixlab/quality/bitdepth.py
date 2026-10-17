@@ -43,15 +43,17 @@ def _walk(path):
         raise ValueError("invalid path size")
     cursor = Path(absolute.anchor)
     components = absolute.parts[1:]
+    ancestor_ids = []
     for index, part in enumerate(components):
         cursor = cursor / part
         info = os.lstat(cursor)
         if index < len(components) - 1:
             if not stat.S_ISDIR(info.st_mode):
                 raise ValueError("non-directory source parent")
+            ancestor_ids.append((info.st_dev, info.st_ino))
         elif not stat.S_ISREG(info.st_mode):
             raise ValueError("non-regular source")
-    return absolute, os.lstat(absolute)
+    return absolute, os.lstat(absolute), tuple(ancestor_ids)
 
 
 def _open_nofollow_components(absolute):
@@ -77,7 +79,7 @@ def _open_nofollow_components(absolute):
 
 
 def _open_source(path, stack):
-    absolute, initial = _walk(path)
+    absolute, initial, ancestor_ids = _walk(path)
     fd = _open_nofollow_components(absolute)
     try:
         handle = os.fdopen(fd, "rb", buffering=0)
@@ -98,6 +100,7 @@ def _open_source(path, stack):
             or not 1 <= reader.getnframes() <= MAX_FRAMES):
         raise ValueError("unsupported source format")
     return {"path": absolute, "handle": handle, "info": info,
+            "ancestor_ids": ancestor_ids,
             "reader": reader, "shape": (reader.getnchannels(),
                                          reader.getframerate(), reader.getnframes())}
 
@@ -325,9 +328,10 @@ def inspect_ab(baseline, candidates):
             results = [_scan(source) for source in sources]
             # Check every earlier source *after* scanning the last member.
             for source in sources:
-                _, path_info = _walk(source["path"])
+                _, path_info, current_ancestors = _walk(source["path"])
                 descriptor_info = os.fstat(source["handle"].fileno())
-                if (_identity(path_info) != _identity(source["info"])
+                if (current_ancestors != source["ancestor_ids"]
+                        or _identity(path_info) != _identity(source["info"])
                         or _identity(descriptor_info) != _identity(source["info"])):
                     raise ValueError("source changed during read")
         comparisons = []
