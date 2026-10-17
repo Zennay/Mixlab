@@ -51,7 +51,10 @@ exit 2 without echoing their raw values.
   The comparison reconstructs a throwaway one-trial public template using
   a constant fake pack ID; it never reads any actual private WAV, answer key,
   source path or reviewer entry. Script injection, modified rating selection,
-  CSS-hidden controls and additional script/style tags fail closed.
+  CSS-hidden controls and additional script/style tags fail closed. The trusted
+  stylesheet must appear before the form and the trusted script after the
+  form's submit control and closing tag: content-equal but browser-breaking
+  script relocation is invalid.
 - HTML comments (which could disclose the private A/B assignment),
   processing instructions and altered/multiple doctype declarations are
   refused. No private metadata is returned.
