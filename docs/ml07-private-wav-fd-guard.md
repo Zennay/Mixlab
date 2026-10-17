@@ -84,7 +84,7 @@ python3 -m mixlab.quality.fd_guard --ab-group /private/baseline.wav /private/can
 The optional group mode accepts **one baseline and 1..7 candidates**, and
 keeps all 2..8 regular descriptors open concurrently until they have passed
 file-identity checks. It verifies every admitted header before decoding
-**any** source, enforces an aggregate **8,000,000-frame** scan budget and
+**any** source, enforces an aggregate **8,000,000-frame** hard ceiling and
 identical sample rate, channel count and frame count **and compatible
 speaker positions** (legacy mono = center, legacy stereo = L/R; an explicit
 Extensible mask must match), then streams all PCM
@@ -101,6 +101,26 @@ Distinct inodes may still contain exactly the same PCM: use the separate
 owned ML-07 exact-PCM reuse screen (#68), not this reader, to investigate that
 bias. Identical global shape does **not** prove matched LUFS, equivalent
 musical context or unbiased human review.
+
+### Conservative per-run CPU admission
+
+When a host cannot safely afford the 8M-frame maximum, lower the budget
+before admitting the A/B cohort:
+
+```sh
+python3 -m mixlab.quality.fd_guard --ab-group --max-group-frames 400000 \
+  /private/baseline.wav /private/candidate.wav
+```
+
+The CLI accepts integer budgets **1–8,000,000 only**; Python callers can
+pass `max_total_frames` to `validate_private_ab_group`, with the exact same
+range. Aggregate duration is `frame_count * total_sources`, and all source
+headers are examined **before any PCM is decoded**. A budget exceeded or an
+invalid value returns the same redacted source rejection and does not leak
+audio, names or memory addresses. This option can only tighten, never increase,
+the fixed quality-validation ceiling. It does **not** authorise scheduling a
+new MixLab worker or render on an overloaded VPS: obey zCloud admission and
+the project release gate separately.
 
 All source files remain private; do not run this workflow against public
 music or log operator-provided paths. Avoid additional VPS work while
