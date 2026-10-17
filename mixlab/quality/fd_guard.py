@@ -246,7 +246,8 @@ def _consume_pcm16(reader, *, block_frames=4096):
         remaining -= count
 
 
-def validate_private_ab_group(paths, *, require_neutral_container=False):
+def validate_private_ab_group(paths, *, require_neutral_container=False,
+                              max_total_frames=MAX_GROUP_FRAMES):
     """Strict offline A/B input-group integrity preflight.
 
     Open every participant once, check *all* headers and aggregate limits
@@ -255,6 +256,11 @@ def validate_private_ab_group(paths, *, require_neutral_container=False):
     This does not screen audible duplicates or rate musical quality.
     """
     if type(paths) not in (tuple, list) or not 2 <= len(paths) <= MAX_GROUP_SOURCES:
+        raise ValueError(_ERROR)
+    # Callers on a resource-constrained host can lower, never increase, the
+    # hard aggregate budget. The check happens before any PCM is decoded.
+    if (type(max_total_frames) is not int or
+            not 1 <= max_total_frames <= MAX_GROUP_FRAMES):
         raise ValueError(_ERROR)
     with ExitStack() as stack:
         identities = set()
@@ -268,7 +274,7 @@ def validate_private_ab_group(paths, *, require_neutral_container=False):
         for reader in readers[1:]:
             if (reader.getframerate(), reader.getnchannels(), reader.getnframes()) != header:
                 raise ValueError(_ERROR)
-        if header[2] * len(readers) > MAX_GROUP_FRAMES:
+        if header[2] * len(readers) > max_total_frames:
             raise ValueError(_ERROR)
         # Two files can have identical PCM16 shape but advertise different
         # speaker positions. Keep the masks internal and fail the blind A/B
@@ -301,14 +307,19 @@ def main(argv=None):
     parser.add_argument("--ab-group", action="store_true", help="Preflight baseline plus 1..7 A/B candidates")
     parser.add_argument("--require-neutral-container", action="store_true",
                         help="Reject metadata, extra chunks and bytes outside canonical PCM WAV")
+    parser.add_argument("--max-group-frames", type=int, default=MAX_GROUP_FRAMES,
+                        help="Lower A/B aggregate decode budget (1..8000000 frames)")
     arguments = parser.parse_args(argv)
     if bool(arguments.candidates) != arguments.ab_group:
         parser.error("Mode mismatch")
+    if not arguments.ab_group and arguments.max_group_frames != MAX_GROUP_FRAMES:
+        parser.error("Group budget is for --ab-group only")
     try:
         if arguments.ab_group:
             report = validate_private_ab_group(
                 [arguments.source, *arguments.candidates],
-                require_neutral_container=arguments.require_neutral_container
+                require_neutral_container=arguments.require_neutral_container,
+                max_total_frames=arguments.max_group_frames
             )
         else:
             report = validate_private_pcm16(
