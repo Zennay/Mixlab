@@ -43,6 +43,14 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 left, right = w, v
             elif mode == "loud-normal":
                 left = right = v * 2
+            elif mode == "window-level-shift":
+                # 400ms 12dB attenuation, compensated later to match
+                # whole-clip RMS. Canonical short-window QA must HOLD.
+                scale = 0.25 if i < 3200 else math.sqrt(11800 / 8800)
+                left = right = round(v * scale)
+            elif mode == "onset-100ms-late":
+                # Timing confound under canonical 75ms prominent-onset limit.
+                left = right = (0 if i < rate // 10 else v)
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -211,6 +219,30 @@ class RelativeMonoTests(unittest.TestCase):
         result = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(result["candidates"][0]["status"],
                          "insufficient_stereo_evidence")
+
+    def test_global_rms_match_does_not_hide_persistent_local_level_confound(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="window-level-shift")
+        from mixlab.quality import compare_wavs
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
+        self.assertTrue(report["candidates"][0]["short_window_level_mismatch_risk"])
+        screened = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(screened["candidates"][0]["status"],
+                         "ab_timing_or_dynamics_confound")
+        self.assertFalse(screened["milestone_pass"])
+
+    def test_equal_duration_audio_with_prominent_onset_100ms_late_is_hold(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="onset-100ms-late")
+        from mixlab.quality import compare_wavs
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
+        self.assertTrue(report["candidates"][0]["prominent_onset_mismatch_risk"])
+        screened = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(screened["candidates"][0]["status"],
+                         "ab_timing_or_dynamics_confound")
+        self.assertFalse(screened["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
