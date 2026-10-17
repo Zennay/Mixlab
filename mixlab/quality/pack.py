@@ -127,9 +127,20 @@ class _ReviewPageLinks(HTMLParser):
         self.unsafe_external_resource = True
 
     def handle_data(self, data):
-        # External style sheets can also be introduced without a <link>.
-        # This static check is not a substitute for a full JS/CSP audit.
-        if self._within_style and ("@import" in data.lower() or "url(" in data.lower()):
+        # CSS allows escaped identifier letters: u\72l(...) and
+        # @\69mport can load an external resource while bypassing a
+        # literal "url(" / "@import" substring check. CSS comments can
+        # split tokens or carry hidden review hints. A generated MixLab
+        # stylesheet needs neither escapes nor comment syntax, so reject
+        # these ambiguous constructs rather than trying to emulate CSS.
+        # This remains a static check, not a full CSS/JS/CSP audit.
+        if self._within_style and (
+            "@import" in data.lower()
+            or "url(" in data.lower()
+            or "\\" in data
+            or "/*" in data
+            or "*/" in data
+        ):
             self.unsafe_external_resource = True
 
 

@@ -537,3 +537,23 @@ the rest of an arbitrary listener page's text, CSS or inline JavaScript
 is safe. Frozen studies should also require the exact official generated
 HTML, public receipt binding, source-rights audit, and human browser
 review before collecting preferences.
+
+
+### CSS escape bypasses of public review resource restrictions
+
+The static public HTML preflight already refuses inline CSS containing
+ordinary \`url(\` or \`@import\` resource references. CSS syntax also permits
+hex-escaped identifier letters, e.g. \`u\72l(...)\` or
+\`@\69mport "remote.css"\`, that bypass a simple substring check.
+Rather than attempt a homegrown full CSS parser, the public review
+scanner now **fails closed on any CSS backslash escape** inside
+\`<style>\` and on \`/* ... */\` comment delimiters, which can split
+tokens or carry hidden A/B role hints. Benign custom CSS containing
+escapes or comments must be simplified or validated via the exact
+official generated listening page. The canonical generator's CSS is
+unaffected.
+
+The control is intentionally **not** a complete CSS/HTML/JavaScript
+security audit; browser render inspection, strict
+\`--require-generated-html\`, permission-cleared tracks and independent
+review are still required for a frozen human study.

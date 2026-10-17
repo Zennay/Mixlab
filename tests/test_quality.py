@@ -1000,6 +1000,39 @@ class QualityTests(unittest.TestCase):
         page.write_text(clean)
         self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_review_page_rejects_escaped_css_resource_urls_and_comments(self):
+        review = self.root / "css-escape-review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(v * .9) for v in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        page.write_text(clean + "<style>body{font:14px system-ui;background:#111}</style>")
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        unsafe = (
+            r'<style>body{background:u\72l(https://collector.invalid/pixel)}</style>',
+            r'<style>@\69mport "https://collector.invalid/remote.css";</style>',
+            r'<style>body{background:u\000072l(https://collector.invalid/x)}</style>',
+            '<style>/* trial-001: baseline=A */body{font:14px system-ui}</style>',
+            '<style>@/*hidden*/import "https://collector.invalid/s.css";</style>',
+        )
+        for markup in unsafe:
+            with self.subTest(markup=markup[:70]):
+                page.write_text(clean + markup)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+                process = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, process.returncode)
+                self.assertFalse(process.stdout)
+                self.assertNotIn(str(self.root), process.stderr)
+                self.assertNotIn("collector.invalid", process.stderr)
+                self.assertNotIn("baseline=A", process.stderr)
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_public_review_page_rejects_external_and_event_resources(self):
         review = self.root / "review"
         review.mkdir()
