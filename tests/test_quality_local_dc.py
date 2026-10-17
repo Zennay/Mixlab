@@ -54,6 +54,59 @@ class LocalDCQualityTests(unittest.TestCase):
              offsets=[[offset] * int(rate * duration)])
         return path
 
+    def test_riff_unclaimed_trailing_data_rejected_before_decode(self):
+        _wav(self.base)
+        _wav(self.alt)
+        with self.alt.open("ab") as f:
+            f.write(b"PRIVATE-GARBAGE")
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM already decoded")):
+            with self.assertRaisesRegex(ValueError, "RIFF size"):
+                local_dc.inspect(self.base, self.alt)
+            with self.assertRaisesRegex(ValueError, "RIFF size"):
+                local_dc.inspect_batch(self.base, [self.alt])
+
+    def test_forged_short_and_long_riff_size_rejected_before_decode(self):
+        _wav(self.base)
+        for adjustment in (-4, 4):
+            _wav(self.alt)
+            payload = bytearray(self.alt.read_bytes())
+            original_length = struct.unpack_from("<I", payload, 4)[0]
+            struct.pack_into("<I", payload, 4, original_length + adjustment)
+            self.alt.write_bytes(payload)
+            with mock.patch.object(local_dc, "_scan_private_pcm",
+                                   side_effect=AssertionError("PCM already decoded")):
+                with self.assertRaisesRegex(ValueError, "RIFF size"):
+                    local_dc.inspect(self.base, self.alt)
+                with self.assertRaisesRegex(ValueError, "RIFF size"):
+                    local_dc.inspect_batch(self.base, [self.alt])
+
+    def test_valid_extra_non_audio_riff_chunk_is_still_allowed(self):
+        _wav(self.base)
+        _wav(self.alt)
+        # Non-audio chunk is part of the container when RIFF.size includes
+        # its bytes, rather than being an unclaimed trailing suffix.
+        with self.alt.open("ab") as f:
+            f.write(b"JUNK" + struct.pack("<I", 4) + b"ABCD")
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<I", content, 4, len(content) - 8)
+        self.alt.write_bytes(content)
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_failed_riff_admission_emits_no_private_path_from_cli(self):
+        _wav(self.base)
+        _wav(self.alt)
+        with self.alt.open("ab") as f:
+            f.write(b"PRIVATE-GARBAGE")
+        for extra in ([], ["--batch"]):
+            cmd = [sys.executable, "-m", "mixlab.quality.local_dc",
+                   str(self.base), str(self.alt), *extra]
+            done = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+            self.assertEqual(done.returncode, 3)
+            self.assertEqual(done.stdout, "")
+            self.assertNotIn(str(self.tmp.name), done.stderr)
+
     def test_single_alias_rejected_before_any_pcm_decode(self):
         _wav(self.base)
         with mock.patch.object(local_dc, "_scan_private_pcm",
