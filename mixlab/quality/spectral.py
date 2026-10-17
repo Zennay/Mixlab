@@ -20,6 +20,9 @@ from . import ACTIVE_CHANNEL_RMS, MAX_SOURCE_BYTES, MAX_SOURCE_FRAMES, SILENT_WI
 LOW_PASS_HZ = 180
 HIGH_PASS_HZ = 2500
 DEFAULT_THRESHOLD_DB = 6.0
+# A clean spectral ratio must not silently imply fair A/B loudness:
+# detect an independently obvious full-file RMS mismatch first.
+RMS_LEVEL_CONFOUND_DB = 1.5
 MIN_RESOLVABLE_RATIO = 1e-4
 READ_FRAMES = 4096
 MAX_CANDIDATES = 8
@@ -217,6 +220,15 @@ def compare_spectral_balance(
             warnings.append("stereo_channel_near_silence_inspect")
         seen_sources.add(current["_source_key"])
         deltas = {}
+        # The ratios below intentionally normalize out overall gain.
+        # Report an independent sample-RMS confound, *not* perceptual LUFS.
+        if reference["_rms"] >= SILENT_WINDOW_RMS and current["_rms"] >= SILENT_WINDOW_RMS:
+            level_delta = 20 * math.log10(current["_rms"] / reference["_rms"])
+            deltas["rms_delta_db_vs_baseline"] = round(level_delta, 3)
+            if abs(level_delta) > RMS_LEVEL_CONFOUND_DB:
+                warnings.append("rms_level_mismatch_inspect_not_lufs")
+        else:
+            deltas["rms_delta_db_vs_baseline"] = None
         if reference["_rms"] < SILENT_WINDOW_RMS or current["_rms"] < SILENT_WINDOW_RMS:
             warnings.append("insufficient_audible_energy_for_spectral_comparison")
         else:
