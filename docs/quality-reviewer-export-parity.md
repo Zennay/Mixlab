@@ -8,6 +8,18 @@ Command: python -m mixlab.quality.reviewer_export_parity /private/pack/review/in
 
 The validator is bounded (1 MiB), nofollow, read-only and path-redacted. It never returns audio, raw HTML, reviewer identities, source names, hashes or trial IDs.
 
+A previously accepted false-green has now been fixed: a page with the correct
+reviewer pattern could also contain an injected “choose A” heading, a modified
+ratings-export JavaScript handler, switched A/B audio links or forged trial IDs.
+The standalone parity check now regenerates the official review HTML from the
+*neutral trial IDs and public pack ID only*, inserts the one approved reviewer
+pattern if the generator does not yet emit it, and demands **exact full-text
+equality**. This checks the entire static generated template including script
+and CSS, without accessing the private answer key. It does not authenticate
+the renderer, receipt or any WAV; the composed pack quality gate remains
+mandatory. No arbitrary markup, extra scripts or unknown controls are allowed.
+A shipped generator revision must match itself exactly and be re-reviewed.
+
 - Exit 0: static field contract matches browser-safe HTML5 reviewer pattern, required input and maxlength=40, with no obvious native-validation bypass.
 - Exit 3: HOLD, including current official generated HTML because its reviewer input is too permissive.
 - Exit 2: invalid arguments or unreadable/unsafe input, with redacted diagnostics.
