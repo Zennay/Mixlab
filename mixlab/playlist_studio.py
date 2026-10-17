@@ -20,6 +20,7 @@ from .project_wizard import (
 from .session import _private_project_dir, make_session
 from .set_composer import create_composer
 from .idea_board import prepare_board
+from .cue_suggest import suggest as suggest_cues
 
 MAX_PLAYLIST_TRACKS = 11
 MAX_SPEC_BYTES = 1024 * 1024
@@ -156,12 +157,28 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
                                  beats=beats, partition=partition)
+    idea_beats = None
     if ideas:
         with manifest.open("r", encoding="utf-8") as reader:
             manual_sources = json.load(reader)
         if not all(isinstance(x, dict) and "first_downbeat_seconds" in x
                    for x in manual_sources.get("tracks", [])):
             raise ValueError("--ideas requires a verified first downbeat on every chosen track")
+        # A resumed playlist might use a different beat count from the CLI
+        # default. Bind the RMS windows to the actual immutable pair specs,
+        # never to an unrelated default.
+        declared_pairs = manual_sources.get("pairs")
+        if not isinstance(declared_pairs, list) or not declared_pairs:
+            raise ValueError("No manually registered pairs for transition ideas")
+        durations = {item.get("beats", 8) for item in declared_pairs
+                     if isinstance(item, dict) and type(item.get("beats", 8)) is int}
+        if len(durations) != 1 or len(declared_pairs) != sum(
+                isinstance(item, dict) and type(item.get("beats", 8)) is int
+                for item in declared_pairs):
+            raise ValueError("--ideas needs one shared manually approved beat length per playlist")
+        idea_beats = next(iter(durations))
+        if not 1 <= idea_beats <= 64:
+            raise ValueError("Idea duration must be in the canonical 1..64-beat range")
     if manifest_only:
         write("Manifest saved. Render later with the same command and --resume.")
         return {"ready": True, "stage": "manual-playlist-manifest",
@@ -170,8 +187,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 "music_preference_proven": False}
     # Existing session admission and hash policies remain authoritative. It
     # also cleans up its own fresh output folder on decoding/render errors.
-    studio = make_session(manifest, destination, suggestions=ideas,
-                          timeout_seconds=timeout_seconds)
+    studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
     normalized = destination / "sources" / "source_manifest.json"
     warnings = []
     editor = None
@@ -190,8 +206,12 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         warnings.append("Optional Set Composer unavailable: " + str(exc))
     if ideas:
         try:
+            # Generate the same manually gridded number of beats as the actual
+            # approved transition recipes, including --resume sessions.
+            ideas_path = destination / "cue-suggestions.private.json"
+            suggest_cues(normalized, ideas_path, beats=idea_beats)
             idea_page = prepare_board(
-                normalized, destination / "cue-suggestions.private.json",
+                normalized, ideas_path,
                 destination / "sources" / "transition-ideas.html")
         except (ValueError, OSError, TypeError, KeyError) as exc:
             warnings.append("Optional cue idea board unavailable: " + str(exc))
