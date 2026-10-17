@@ -73,6 +73,30 @@ class PrivateFdGuardTests(unittest.TestCase):
             self.assertEqual(200, reader.getnframes())
             self.assertEqual(400, len(reader.readframes(200)))
 
+    def test_metadata_before_data_with_valid_payload_is_admitted(self):
+        # A WAVE container need not have the canonical 44-byte layout.
+        # An odd-size JUNK chunk requires the RIFF padding byte.
+        make_wav(self.source, channels=2)
+        original = self.source.read_bytes()
+        chunk = b"JUNK" + struct.pack("<I", 127) + b"z" * 127 + b"\x00"
+        mixed = bytearray(original[:36] + chunk + original[36:])
+        mixed[4:8] = struct.pack("<I", len(mixed) - 8)
+        self.source.write_bytes(mixed)
+        with admitted_pcm16(self.source) as reader:
+            self.assertEqual(200, reader.getnframes())
+            self.assertEqual(800, len(reader.readframes(200)))
+
+    def test_padded_metadata_cannot_hide_truncated_declared_pcm(self):
+        # Real PCM begins after JUNK: total file length still exceeds
+        # (44 + declared payload), fooling a fixed-44-byte size gate.
+        original = self.source.read_bytes()
+        chunk = b"JUNK" + struct.pack("<I", 128) + b"z" * 128
+        truncated = bytearray(original[:36] + chunk + original[36:-100])
+        truncated[4:8] = struct.pack("<I", len(truncated) - 8)
+        self.assertGreaterEqual(len(truncated), 44 + 200 * 2)
+        self.source.write_bytes(truncated)
+        self.assert_rejected(self.source)
+
     def test_truncated_claimed_pcm_payload_rejected(self):
         with open(self.source, "r+b") as file:
             file.truncate(44 + 20)
