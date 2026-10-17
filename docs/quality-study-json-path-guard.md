@@ -38,7 +38,7 @@ pilot's release, independently validate rights or count human preferences.
 It is not a cryptographic authentication of the original source recording
 and is not a substitute for the composed PR #84 gate.
 
-The public Python entry point also **captures each supplied PathLike once** before validation. Otherwise a custom `__fspath__()` could provide a benign source during the nofollow check and another source when the shared validator opens the file. PathLike exceptions and NUL-containing pathnames return the same sanitized refusal. A further regression exercises `linked-parent/../study.json`: the symlink must be rejected **before** the lexical `..` traversal can normalize it away.
+The public Python entry point also **captures each supplied PathLike once** before validation. Otherwise a custom `__fspath__()` could provide a benign source during the nofollow check and another source when the shared validator opens the file. PathLike exceptions and NUL-containing pathnames return the same sanitized refusal. A further regression exercises `linked-parent/../study.json`: the symlink must be rejected **before** the lexical `..` traversal can normalize it away. Relative paths are also bound to one absolute, *lexical* starting path (without resolving symlinks), so a concurrent working-directory switch between the real pack scan and final identity recheck cannot silently redirect input validation.
 
 The existing `load_bounded_json` remains usable in its owner's context;
 its owner should adopt the same full-path descriptor admission when that
