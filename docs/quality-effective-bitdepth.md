@@ -56,12 +56,22 @@ exercise synthetic fixtures only, with fixed immutable PR SHA and process
 resource limits. Hosted green checks **do not** validate real DJ preference,
 stem separation, audible artifacts, M1 production or VPS deployment.
 
+## Deterministic maximum-bound evidence
+
+`tests/test_quality_bitdepth_stress.py` separately constructs original PCM16
+fixtures and actually scans 4 distinct 48-kHz stereo files of 2M frames each
+(**8M input frames total**) to prove read-path and output within the cap.
+The companion tests reject 8×1,000,001-frame matching sources **before a single
+PCM read** and reject an over-32MiB sparse input. Both Python 3.13/3.14 use
+the exact immutable checkout with a 192MiB virtual memory cap and RSS logging.
+The stress test is GitHub-hosted only: no production VPS load or imported music.
+
 ## Release boundary
 
 Additive, independent paths only: `mixlab/quality/bitdepth.py`,
-`tests/test_quality_bitdepth.py`, this document and
-`.github/workflows/ml07-bitdepth.yml`. Does not touch ML-03 analysis,
-ML-04 renderer, ML-05 blind-study pack, existing ML-07 modules, shared
-entrypoints, zCloud or SQLite. **Keep draft** pending independent code review,
-coordinated integration, a permissions-cleared private music set and >=3
-blinded reviewers. No autonomous activation on the swap-exhausted VPS.
+`tests/test_quality_bitdepth.py`, `tests/test_quality_bitdepth_stress.py`,
+this document and `.github/workflows/ml07-bitdepth.yml`. Does not touch
+ML-03 analysis, ML-04 renderer, ML-05 blind-study pack, existing ML-07 modules,
+shared entrypoints, zCloud or SQLite. **Keep draft** pending independent code
+review, coordinated integration, a permissions-cleared private music set and
+>=3 blinded reviewers. No autonomous activation on the swap-exhausted VPS.
