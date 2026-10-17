@@ -28,6 +28,7 @@ MAX_BATCH_CANDIDATES = 8
 MAX_BATCH_FRAMES = 8_000_000
 MAX_BATCH_BYTES = 128 * 1024 * 1024
 MAX_RIFF_CHUNKS = 1024  # bound header work on hostile metadata-only WAVs
+PCM_SUBFORMAT_GUID = bytes.fromhex("0100000000001000800000aa00389b71")
 
 
 def _identity(st: os.stat_result) -> tuple[int, ...]:
@@ -93,8 +94,34 @@ def _validate_riff_envelope(handle, physical_bytes: int) -> int:
                         block_align != channels * 2 or
                         byte_rate != rate * block_align):
                     raise ValueError("Inconsistent private PCM16 format header")
-                # Keep container subtype validation with wave.open; recent
-                # Python versions can also accept PCM WAVE_FORMAT_EXTENSIBLE.
+                if fmt_tag == 1:  # WAVE_FORMAT_PCM
+                    # Ordinary PCM needs only the 16-byte standard header.
+                    # Some writers append a legal zero-length WAVEFORMATEX
+                    # cbSize; reject undeclared extensions/ambiguous padding.
+                    if size == 18:
+                        if struct.unpack("<H", handle.read(2))[0] != 0:
+                            raise ValueError("Invalid PCM16 format extension")
+                    elif size != 16:
+                        raise ValueError("Invalid PCM16 format extension")
+                elif fmt_tag == 0xFFFE:  # WAVE_FORMAT_EXTENSIBLE
+                    # wave.open() accepts the PCM subtype on newer Python,
+                    # but does not reliably enforce valid precision and the
+                    # channel mask. Restrict this preflight to unambiguous,
+                    # fully occupied 16-bit containers.
+                    if size != 40:
+                        raise ValueError("Invalid extensible PCM16 header size")
+                    extra = handle.read(24)
+                    if len(extra) != 24:
+                        raise ValueError("Truncated extensible PCM16 header")
+                    extra_length, valid_bits, mask = struct.unpack("<HHI", extra[:8])
+                    subformat = extra[8:]
+                    valid_masks = (0, 1, 4) if channels == 1 else (0, 3)
+                    if (extra_length != 22 or valid_bits != 16 or
+                            subformat != PCM_SUBFORMAT_GUID or
+                            mask not in valid_masks):
+                        raise ValueError("Inconsistent extensible PCM16 header")
+                else:
+                    raise ValueError("Unsupported PCM16 format tag")
                 fmt_seen = True
             elif tag == b"data":
                 if data_seen or not fmt_seen:
