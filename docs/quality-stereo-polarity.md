@@ -165,11 +165,13 @@ same-inode mutation by size, device/inode, mtime or ctime changes. Failed
 opens use a generic path-free message. A renamed/replaced **pathname**
 does not silently switch the audio stream to the replacement inode.
 
-`tests/test_private_source_fd.py` adds eight synthetic checks for correct
+`tests/test_private_source_fd.py` adds nine synthetic checks for correct
 ordinary WAV and compare behavior, the actual decoder descriptor, pathname
 swap between header validation and PCM decoding, same-inode change
 rejection, symlink/FIFO/directory denial, sparse oversize admission,
-redacted missing-path errors and invalid-header exception privacy.
+redacted missing-path errors, invalid-header exception privacy, and an
+instrumented 9003-frame stereo fixture verifying every scanner read remains
+at most 4096 frames (4096 + 4096 + 811 frames per input).
 
 This reduces ordinary local TOCTOU/path-swap exposure but does **not**
 provide atomic snapshots against a malicious process mutating sample bytes
