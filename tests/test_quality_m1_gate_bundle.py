@@ -618,17 +618,20 @@ class RealPCMEndToEndTests(unittest.TestCase):
         receipt = json.loads(receipt_path.read_text())
         src = answer_key[0]
         dst = src if same_pair_only else answer_key[1]
-        # Duplicate only the baseline across independent pairs, while
-        # preserving a legal candidate vs baseline difference per trial.
+        # Either duplicate the baseline in *another* frozen pair or turn
+        # the candidate into an exact no-op in its *own* pair. Only the
+        # former is false cross-pair independence; the latter belongs to
+        # the ordinary same-trial PCM confound gate.
         src_label = "A" if src["A"] == "baseline" else "B"
-        dst_label = "A" if dst["A"] == "baseline" else "B"
+        dst_label = ("B" if src_label == "A" else "A") if same_pair_only else (
+            "A" if dst["A"] == "baseline" else "B")
         source = self.fixture.pack / "review" / f"{src['trial']}-{src_label}.wav"
         target = self.fixture.pack / "review" / f"{dst['trial']}-{dst_label}.wav"
-        if not same_pair_only:
-            target.write_bytes(source.read_bytes())
-            render = next(row for row in evidence["renders"]
-                          if row["pair"] == dst["pair"] and row["family"] == "baseline")
-            render["output_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        target.write_bytes(source.read_bytes())
+        render = next(row for row in evidence["renders"]
+                      if row["pair"] == dst["pair"]
+                      and row["family"] == dst[dst_label])
+        render["output_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
 
         identity = {
             "manifest": evidence["manifest_sha256"], "answers": answer_key,
@@ -659,13 +662,15 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertNotIn(str(self.fixture.root), json.dumps(report))
         self.assertNotIn(self.fixture.pinned, json.dumps(report))
 
-    def test_unchanged_distinct_real_wavs_do_not_invent_cross_pair_reuse(self):
+    def test_identical_candidate_and_baseline_same_pair_does_not_invent_cross_pair_reuse(self):
         self._duplicate_real_wavs_across_frozen_pairs(same_pair_only=True)
         self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
         report = self.bundle()
         self.assertFalse(report["cross_pair_duplicate_render_review"])
         self.assertNotIn("identical-render-across-frozen-pairs",
                          report["review_reasons"])
+        self.assertIn("audio-confounds", report["review_reasons"])
+        self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
 
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
