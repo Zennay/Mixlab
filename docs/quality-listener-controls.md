@@ -44,7 +44,17 @@ exit 2 without echoing their raw values.
 - Form actions, unexpected fieldset/form metadata and remote script sources
   are not accepted; the actual official JavaScript still needs independent
   inspection or strict generated-template comparison.
-- The ratings status announcer is present. No private metadata is returned.
+- The ratings status announcer and the exact labelled button text are present;
+  each fieldset has one correct, visible `legend` matching its trial ID.
+- The embedded script and stylesheet must each occur **exactly once** and
+  match the trusted `mixlab.cli.write_review` generator byte-for-byte.
+  The comparison reconstructs a throwaway one-trial public template using
+  a constant fake pack ID; it never reads any actual private WAV, answer key,
+  source path or reviewer entry. Script injection, modified rating selection,
+  CSS-hidden controls and additional script/style tags fail closed.
+- HTML comments (which could disclose the private A/B assignment),
+  processing instructions and altered/multiple doctype declarations are
+  refused. No private metadata is returned.
 - Ancestor and final path symlinks, FIFOs/nonregular files, oversized input,
   decode failures and local source replacement/mutation during the scan
   cause refusal. HTML is limited to 1 MiB.
@@ -52,7 +62,10 @@ exit 2 without echoing their raw values.
 The preflight deliberately checks the **current official generated markup
 contract**. It is not a permissive general-purpose custom page checker.
 A future UX change must update the checker and review the semantic
-accessibility and listener implications together.
+accessibility and listener implications together. This includes legitimate
+changes to the official JavaScript or stylesheet: they are frozen deliberately
+until a focused human review can establish whether the change affects
+blindness, answer integrity, browser navigation or keyboard behavior.
 
 ## Mandatory separate gates
 
@@ -60,9 +73,11 @@ Also run
 `python3 -m mixlab.quality.pack /private/pack/review --require-generated-html --require-receipt --fail-on-warnings`
 and the frozen-study check for actual controlled experiments. The pack
 check validates real WAV inventory/bytes and exact official generated HTML.
-The static preflight here does **not** inspect the waveform, JavaScript
-behaviour, browser focus/keyboard/screen-reader interactions, or alternative
-media. An independent browser/DJ review and at least three blinded listeners
+The static preflight here compares trusted JavaScript/CSS **text** for
+unexpected modifications but does **not execute** JavaScript or inspect the
+waveform, browser focus/keyboard/screen-reader interactions, or alternative
+media. The official generator itself is not treated as audited or immutable:
+a malicious change to both generator and checker can evade the equality gate. An independent browser/DJ review and at least three blinded listeners
 are still necessary for M1 milestone claims.
 
 Automated regressions use only synthetic HTML generated via
