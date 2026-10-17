@@ -370,6 +370,53 @@ class ResolutionTests(unittest.TestCase):
                 matched = bitdepth.inspect_ab(self.base, [self.good])
                 self.assertIs(matched["candidates"][0]["coarse_resolution_review"], False)
 
+    def test_half_window_time_division_does_not_count_as_simultaneous_pcm(self):
+        # Each WAV is active for exactly HALF of each 100ms window, so
+        # per-window occupancy and even matching time-window index sets pass.
+        # Yet A plays in frames 0..399 and B in 400..799 within EVERY window.
+        # There is not a single frame of simultaneous audible A/B evidence.
+        frames = 16000
+        base = array.array("h")
+        base.frombytes(samples(frames=frames))
+        cand = array.array("h", base)
+        for frame in range(frames):
+            for channel in range(2):
+                index = 2 * frame + channel
+                if frame % 800 < 400:
+                    cand[index] = 0
+                else:
+                    base[index] = 0
+        if sys.byteorder != "little":
+            base.byteswap()
+            cand.byteswap()
+        wav(self.base, base.tobytes())
+        wav(self.good, cand.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual([None, None], result["candidates"][0]["per_channel_review"])
+        self.assertIsNone(result["candidates"][0]["coarse_resolution_review"])
+
+    def test_half_window_time_division_cannot_falsely_flag_coarse_damage(self):
+        frames = 16000
+        base = array.array("h")
+        base.frombytes(samples(frames=frames))
+        cand = array.array("h")
+        cand.frombytes(samples(frames=frames, collapse=True))
+        for frame in range(frames):
+            for channel in range(2):
+                index = 2 * frame + channel
+                if frame % 800 < 400:
+                    cand[index] = 0
+                else:
+                    base[index] = 0
+        if sys.byteorder != "little":
+            base.byteswap()
+            cand.byteswap()
+        wav(self.base, base.tobytes())
+        wav(self.bad, cand.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([None, None], result["candidates"][0]["per_channel_review"])
+        self.assertIsNone(result["candidates"][0]["coarse_resolution_review"])
+
     def test_low_energy_abstains_without_claiming_a_clean_pair(self):
         wav(self.good, samples(quiet=True))
         data = bitdepth.inspect_ab(self.base, [self.good])
