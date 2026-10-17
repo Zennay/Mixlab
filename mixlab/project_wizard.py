@@ -133,16 +133,22 @@ def create_manifest(source_directory, output_manifest, *,
     for index, name in enumerate(choices, 1):
         write(f"Song {index}/{len(choices)}: {name}")
         bpm = _ask(read, write, "Verified BPM (30..300): ", _float_between(30, 300))
+        first_downbeat = _ask(read, write,
+                              "Verified first downbeat in seconds (blank to skip): ",
+                              lambda value: None if not value else _float_between(0, 900)(value))
         rights = _ask(read, write,
                       "Rights (synthetic / licensed / user-permitted / public-domain): ",
                       _rights)
         provenance = _ask(read, write, "Source provenance (required): ", _nonblank)
         source = _regular_source(source_root, name)
         sha, _ = _fingerprint(source)
-        tracks.append({"id": f"track-{index:03d}", "path": name,
-                       "sha256": sha, "bpm": bpm, "rights": rights,
-                       "provenance": provenance, "partition": partition,
-                       "recording_id": f"recording-{index:03d}"})
+        track = {"id": f"track-{index:03d}", "path": name,
+                 "sha256": sha, "bpm": bpm, "rights": rights,
+                 "provenance": provenance, "partition": partition,
+                 "recording_id": f"recording-{index:03d}"}
+        if first_downbeat is not None:
+            track["first_downbeat_seconds"] = first_downbeat
+        tracks.append(track)
     write("Select A and B from this verified local track set:")
     for index, track in enumerate(tracks, 1):
         write(f"{index}. {choices[index - 1]} | {track['bpm']} BPM | {track['id']}")
