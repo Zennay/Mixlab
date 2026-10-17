@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from mixlab.cli import fixture
-from mixlab.ingest import validate_library
+from mixlab.ingest import inspect_wav_and_digest, validate_library
 
 
 class IngestPreflightTypesTests(unittest.TestCase):
@@ -100,11 +100,18 @@ class IngestPreflightTypesTests(unittest.TestCase):
         manifest["pairs"][0]["bpm"] = 121
         self._assert_rejected_without_audio(manifest, "equal source tempos")
 
-    def test_declared_pair_partition_conflict_preflights_without_pcm(self):
+    def test_pair_partition_failure_does_not_mask_pcm_leak_detection(self):
         manifest = json.loads(json.dumps(self.original))
         manifest["tracks"][0]["partition"] = "development"
         manifest["tracks"][1]["partition"] = "evaluation"
-        self._assert_rejected_without_audio(manifest, "crosses dataset partitions")
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        # Audio identity checks must run before the weaker pair partition
+        # check; equal PCM would instead raise "Recording leaks".
+        with mock.patch("mixlab.ingest.inspect_wav_and_digest",
+                        wraps=inspect_wav_and_digest) as audio:
+            with self.assertRaisesRegex(ValueError, "crosses dataset partitions"):
+                validate_library(self.manifest)
+            self.assertEqual(audio.call_count, 2)
 
     def test_valid_pair_preflight_preserves_fixture(self):
         manifest, tracks = validate_library(self.manifest)
