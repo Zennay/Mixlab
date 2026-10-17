@@ -503,15 +503,16 @@ def compare_spectral_balance(
         # ratio is still just -3dB. Two or more strongly cancelling audible
         # time-spans warrant inspection even when no whole-file gate fires.
         if reference["channels"] == 2:
-            local_cancellation_spans = sum(
-                ((a is not None and a <= 10 ** (MONO_FOLD_LOSS_DB / 20)) or
-                 (b is not None and b <= 10 ** (MONO_FOLD_LOSS_DB / 20)))
-                for a, b in zip(reference["_fold_spans"], current["_fold_spans"])
-            )
-            deltas["stereo_temporal_mono_fold_cancellation_risk"] = (
-                local_cancellation_spans >= 2
-            )
-            if local_cancellation_spans >= 2:
+            per_source_cancellation = [
+                sum(
+                    ratio is not None and ratio <= 10 ** (MONO_FOLD_LOSS_DB / 20)
+                    for ratio in source["_fold_spans"]
+                )
+                for source in (reference, current)
+            ]
+            persistent_cancellation = max(per_source_cancellation) >= 2
+            deltas["stereo_temporal_mono_fold_cancellation_risk"] = persistent_cancellation
+            if persistent_cancellation:
                 warnings.append("stereo_temporal_mono_fold_cancellation_inspect")
         # A channel can disappear in several spans yet have acceptable
         # whole-file RMS if its signal returns later. Do not expose which
@@ -522,12 +523,13 @@ def compare_spectral_balance(
                     min(span_levels) < SILENT_WINDOW_RMS
                     and max(span_levels) > ACTIVE_CHANNEL_RMS
                 )
-            dropout_spans = sum(
-                local_channel_dropout(a) or local_channel_dropout(b)
-                for a, b in zip(reference["_channel_spans"], current["_channel_spans"])
-            )
-            deltas["stereo_temporal_channel_dropout_risk"] = dropout_spans >= 2
-            if dropout_spans >= 2:
+            per_source_dropouts = [
+                sum(local_channel_dropout(span) for span in source["_channel_spans"])
+                for source in (reference, current)
+            ]
+            persistent_dropout = max(per_source_dropouts) >= 2
+            deltas["stereo_temporal_channel_dropout_risk"] = persistent_dropout
+            if persistent_dropout:
                 warnings.append("stereo_temporal_channel_dropout_inspect")
 
         # Stereo content can migrate L/R *temporally* while both the
