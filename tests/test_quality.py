@@ -403,7 +403,7 @@ class QualityTests(unittest.TestCase):
         wav(review / "trial-001-B.wav", self.samples)
         other = self.samples.copy()
         other[140] += 1
-        wav(review / "trial-002-A.wav", self.samples)
+        wav(review / "trial-002-A.wav", [int(x * .98) for x in self.samples])
         wav(review / "trial-002-B.wav", other)
         (review / "index.html").write_text(neutral_review_page(["trial-001", "trial-002"]))
         report = inspect_review_pack(review)
@@ -429,6 +429,52 @@ class QualityTests(unittest.TestCase):
         self.assertNotIn(str(self.root), strict.stdout + strict.stderr)
         (review / "trial-001-B.wav").unlink()
         self.assertEqual(3, subprocess.run(args, capture_output=True, text=True).returncode)
+
+    def test_repeat_pcm_between_trials_unblinds_recognizable_reference(self):
+        review = self.root / "review"
+        review.mkdir()
+        same_audio = self.samples.copy()
+        different_a = [int(x * .85) for x in self.samples]
+        different_b = [int(x * 1.05) for x in self.samples]
+        wav(review / "trial-001-A.wav", same_audio)
+        wav(review / "trial-001-B.wav", different_a)
+        wav(review / "trial-002-A.wav", different_b)
+        wav(review / "trial-002-B.wav", same_audio)
+        # Change the container without changing PCM to prove audio-only
+        # fingerprinting; a file hash would miss this repeat.
+        with (review / "trial-002-B.wav").open("ab") as f:
+            f.write(b"unrelated-non-audio-container-trailer")
+        report = inspect_review_pack(review)
+        self.assertEqual(2, report["trial_count"])
+        self.assertEqual(1, report["cross_trial_repeated_variant_count"])
+        self.assertEqual("trial-001/A", report["trials"][1]["cross_trial_repeated_pcm_of"]["B"])
+        self.assertEqual({}, report["trials"][0]["cross_trial_repeated_pcm_of"])
+        self.assertIn("repeated_pcm_across_trials_inspect_blinding",
+                      report["trials"][1]["B"]["warnings"])
+        self.assertFalse(report["trials"][0]["technical_warnings_present"])
+        self.assertTrue(report["trials"][1]["technical_warnings_present"])
+        self.assertEqual(1, report["warning_trial_count"])
+        serialized = json.dumps(report)
+        self.assertNotIn("sha256", serialized)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("non-audio-container-trailer", serialized)
+        strict = subprocess.run([sys.executable, "-m", "mixlab.quality.pack", str(review),
+                                 "--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(2, strict.returncode)
+        self.assertEqual(report, json.loads(strict.stdout))
+
+    def test_cross_trial_fingerprint_distinguishes_playback_sample_rate(self):
+        review = self.root / "review"
+        review.mkdir()
+        # Raw PCM can be identical but sound different when replayed at
+        # different rates; format is part of the private fingerprint.
+        for number, rate in ((1, 8000), (2, 16000)):
+            wav(review / f"trial-00{number}-A.wav", self.samples, rate=rate)
+            wav(review / f"trial-00{number}-B.wav",
+                [int(x * .9) for x in self.samples], rate=rate)
+        report = inspect_review_pack(review)
+        self.assertEqual(0, report["cross_trial_repeated_variant_count"])
+        self.assertEqual({}, report["trials"][1]["cross_trial_repeated_pcm_of"])
 
     def test_review_pack_rejects_untrusted_incomplete_or_oversized_inventories(self):
         review = self.root / "review"
@@ -528,6 +574,15 @@ class QualityTests(unittest.TestCase):
         report = inspect_review_pack(output / "review")
         self.assertEqual(3, report["trial_count"])
         self.assertTrue(report["review_page_audio_links_verified"])
+        # The official synthetic benchmark reuses the *same* baseline
+        # waveform across its three trials. The review pack now warns that
+        # listeners can recognize this recurring reference and infer roles.
+        self.assertGreaterEqual(report["cross_trial_repeated_variant_count"], 2)
+        self.assertTrue(any(
+            "repeated_pcm_across_trials_inspect_blinding" in (
+                row["A"]["warnings"] + row["B"]["warnings"]
+            ) for row in report["trials"][1:]
+        ))
         self.assertEqual(["trial-001", "trial-002", "trial-003"],
                          [trial["trial_id"] for trial in report["trials"]])
         self.assertFalse(report["answer_key_opened"])
