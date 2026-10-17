@@ -60,6 +60,22 @@ class LocalDCQualityTests(unittest.TestCase):
         struct.pack_into("<I", original, 4, len(original) - 8)
         path.write_bytes(original)
 
+    def _make_extensible(self, path: Path, *, channels=1, mask=None) -> None:
+        """Build real PCM16 WAVE_FORMAT_EXTENSIBLE bytes from valid PCM WAV."""
+        _wav(path, channels=channels)
+        data = bytearray(path.read_bytes())
+        if mask is None:
+            mask = 4 if channels == 1 else 3
+        self.assertEqual(data[12:16], b"fmt ")
+        self.assertEqual(struct.unpack_from("<I", data, 16)[0], 16)
+        pcm_guid = bytes.fromhex("0100000000001000800000aa00389b71")
+        extension = struct.pack("<HHI", 22, 16, mask) + pcm_guid
+        struct.pack_into("<I", data, 16, 40)
+        struct.pack_into("<H", data, 20, 0xFFFE)
+        data[36:36] = extension
+        struct.pack_into("<I", data, 4, len(data) - 8)
+        path.write_bytes(data)
+
     def _assert_riff_rejected_before_pcm(self):
         # Both admissions must reject before opening the PCM stream.
         with mock.patch.object(local_dc, "_scan_private_pcm",
@@ -68,6 +84,111 @@ class LocalDCQualityTests(unittest.TestCase):
                 local_dc.inspect(self.base, self.alt)
             with self.assertRaises(ValueError):
                 local_dc.inspect_batch(self.base, [self.alt])
+
+    def test_valid_extensible_pcm16_header_admitted_without_audio_decode(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        with self.alt.open("rb") as src:
+            self.assertEqual(local_dc._validate_riff_envelope(
+                src, self.alt.stat().st_size), RATE * DURATION * 2)
+        # Python wave gained WAVE_FORMAT_EXTENSIBLE PCM support in 3.12.
+        if sys.version_info >= (3, 12):
+            self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+            self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_valid_stereo_extensible_pcm16_header_admitted(self):
+        _wav(self.base, channels=2)
+        self._make_extensible(self.alt, channels=2)
+        with self.alt.open("rb") as src:
+            self.assertEqual(local_dc._validate_riff_envelope(
+                src, self.alt.stat().st_size), RATE * DURATION * 4)
+        if sys.version_info >= (3, 12):
+            self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+
+    def test_extensible_pcm16_low_validbits_rejected_before_decode(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", content, 38, 12)  # valid bits per sample
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_pcm16_non_pcm_subtype_rejected_before_decode(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        content[44] = 3  # IEEE_FLOAT data-1 of the subtype GUID
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_pcm16_incorrect_channel_mask_rejected(self):
+        _wav(self.base, channels=2)
+        self._make_extensible(self.alt, channels=2, mask=4)  # one speaker, 2 channels
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_pcm16_reserved_channel_mask_rejected(self):
+        _wav(self.base)
+        self._make_extensible(self.alt, mask=0x40000000)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_pcm16_wrong_cbsize_rejected_before_decode(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", content, 36, 21)
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_pcm16_short_fmt_header_rejected_before_decode(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<I", content, 16, 38)
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_float_format_tag_with_pcm_width_rejected_before_decode(self):
+        _wav(self.base)
+        _wav(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", content, 20, 3)  # WAVE_FORMAT_IEEE_FLOAT
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_legacy_pcm16_with_zero_cbsize_is_allowed(self):
+        _wav(self.base)
+        _wav(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<I", content, 16, 18)  # fmt length
+        content[36:36] = struct.pack("<H", 0)
+        struct.pack_into("<I", content, 4, len(content) - 8)
+        self.alt.write_bytes(content)
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_legacy_pcm16_nonzero_cbsize_rejected_before_decode(self):
+        _wav(self.base)
+        _wav(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<I", content, 16, 18)
+        content[36:36] = struct.pack("<H", 9)
+        struct.pack_into("<I", content, 4, len(content) - 8)
+        self.alt.write_bytes(content)
+        self._assert_riff_rejected_before_pcm()
+
+    def test_extensible_invalid_metadata_cli_never_echoes_path(self):
+        _wav(self.base)
+        self._make_extensible(self.alt)
+        content = bytearray(self.alt.read_bytes())
+        struct.pack_into("<H", content, 38, 12)
+        self.alt.write_bytes(content)
+        for suffix in ([], ["--batch"]):
+            command = [sys.executable, "-m", "mixlab.quality.local_dc",
+                       str(self.base), str(self.alt), *suffix]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 3)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn(str(self.tmp.name), result.stderr)
 
     def test_corrupt_fmt_average_bytes_per_second_rejected_pre_pcm(self):
         _wav(self.base)
