@@ -518,3 +518,22 @@ A creative channel swap can be intentional, but repeatedly exposing an
 identifiable audio excerpt across trials may compromise the listener's
 blind assignment. This check supplies technical synthetic evidence only,
 not real-listener validation.
+
+
+### Public listening pages must not hide answer keys in opaque markup
+
+The default static public-review HTML parser now rejects **all HTML
+comments**, processing instructions, CDATA/unknown marked declarations,
+and noncanonical document declarations. These constructs can carry hidden
+A/B assignments, source track names, external document-system identifiers
+or other unreviewed metadata while the page still contains the right
+`trial-###-A/B.wav` links. The only accepted declaration is the normal
+`<!doctype html>` (case insensitive); the official MixLab generated
+listening form remains compatible and contains no such comments.
+
+Rejected payload text is never quoted back by the sanitized CLI.
+This is a **fail-closed public artifact hygiene check**, not a claim that
+the rest of an arbitrary listener page's text, CSS or inline JavaScript
+is safe. Frozen studies should also require the exact official generated
+HTML, public receipt binding, source-rights audit, and human browser
+review before collecting preferences.

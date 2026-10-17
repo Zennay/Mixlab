@@ -104,6 +104,28 @@ class _ReviewPageLinks(HTMLParser):
         if tag == "style":
             self._within_style = False
 
+    def handle_comment(self, data):
+        # Public comments are not visible to listeners, but are readable in
+        # source and can accidentally disclose the A/B answer key or tracks.
+        # A frozen official listening form has no HTML comments.
+        self.unsafe_external_resource = True
+
+    def handle_pi(self, data):
+        # Refuse browser-dependent/bogus processing instructions in a
+        # purportedly neutral offline review page.
+        self.unsafe_external_resource = True
+
+    def handle_decl(self, decl):
+        # The official template uses <!doctype html>; unexpected public
+        # document declarations offer another opaque disclosure channel.
+        if decl.strip().lower() != "doctype html":
+            self.unsafe_external_resource = True
+
+    def unknown_decl(self, data):
+        # HTMLParser exposes CDATA and other marked sections here. Do not
+        # silently treat their embedded text as an audited listener UI.
+        self.unsafe_external_resource = True
+
     def handle_data(self, data):
         # External style sheets can also be introduced without a <link>.
         # This static check is not a substitute for a full JS/CSP audit.

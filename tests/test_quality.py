@@ -961,6 +961,45 @@ class QualityTests(unittest.TestCase):
         page.unlink()
         self.assertFalse(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_public_review_html_rejects_opaque_markup_and_hidden_comments(self):
+        review = self.root / "opaque-review-markup"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x * .9) for x in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        # Official-style doctype is allowed, including case changes.
+        for valid in (clean, "<!doctype html>" + clean,
+                      "<!DOCTYPE HTML>" + clean):
+            page.write_text(valid)
+            self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        malicious = (
+            "<!-- trial-001: A is baseline -->" + clean,
+            clean + "<!-- private source: /music/secret.wav -->",
+            clean.replace("trial-001-A.wav",
+                          "trial-001-A.wav<!-- candidate is B -->"),
+            "<?hidden answer=A?>" + clean,
+            '<!DOCTYPE html SYSTEM "https://collector.invalid/external.dtd">' + clean,
+            "<![CDATA[trial-001=A]]>" + clean,
+        )
+        for payload in malicious:
+            with self.subTest(payload=payload[:80]):
+                page.write_text(payload)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+                cli = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, cli.returncode)
+                self.assertFalse(cli.stdout)
+                self.assertNotIn(str(self.root), cli.stderr)
+                self.assertNotIn("secret", cli.stderr)
+                self.assertNotIn("candidate is B", cli.stderr)
+                self.assertNotIn("collector.invalid", cli.stderr)
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_public_review_page_rejects_external_and_event_resources(self):
         review = self.root / "review"
         review.mkdir()
