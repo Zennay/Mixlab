@@ -368,6 +368,40 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertEqual(_verified_study(self.study, ident)["max_track_uses"], 2)
 
 
+    def test_forged_effective_render_bpm_refused_before_private_pcm(self):
+        from unittest import mock
+        self.edit("private/evidence.json", lambda doc:
+                  doc["renders"][0]["recipe"].__setitem__("bpm", 91.0))
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=AssertionError("private WAV opened")) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_not_called()
+
+    def test_forged_original_source_hash_refused_before_private_pcm(self):
+        from unittest import mock
+        self.edit("private/evidence.json", lambda doc:
+                  doc["renders"][0]["source_hashes"].__setitem__(0, "0" * 64))
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=AssertionError("private WAV opened")) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_not_called()
+
+    def test_post_pcm_metadata_drift_refused_before_report(self):
+        from unittest import mock
+        from mixlab.evaluation import verify_pack as original
+        def drift(root):
+            receipt, evidence, trials = original(root)
+            evidence["renders"][0]["recipe"]["bpm"] = 91.0
+            return receipt, evidence, trials
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=drift) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_called_once()
+
+
 
 if __name__ == "__main__":
     unittest.main()
