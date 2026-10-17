@@ -53,7 +53,12 @@ class _ReviewPageLinks(HTMLParser):
         self._within_style = False
 
     def handle_starttag(self, tag, attrs):
+        # HTMLParser preserves duplicate names in attrs, but dict() keeps
+        # only the LAST value while browsers normally honor the FIRST.
+        # Reject any ambiguity before trusting src/data-trial/pack-id.
         attributes = dict(attrs)
+        if len(attributes) != len(attrs):
+            self.unsafe_external_resource = True
         # HTMLParser lowercases element/attribute names. Do not whitelist
         # unknown resource-bearing tags or event-handler attributes.
         if (tag in _EMBED_ELEMENTS
