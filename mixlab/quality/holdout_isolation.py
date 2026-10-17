@@ -120,7 +120,7 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     combinations, and genuine stereo-channel projections; these are
     deterministic PCM operations, not music matching.
 
-    At most 3 anchored windows per source and at most 50 total sources;
+    At most 5 anchored windows per source and at most 50 total sources;
     all source reads are streamed through the validated single-FD PCM reader.
     This is NOT a robust musical fingerprint or a remaster detector.
     """
@@ -134,7 +134,9 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
             width = min(4096, rate // 5, frames)
             if width < 256:
                 _refuse()
-            starts = {0, (frames - width) // 2, frames - width}
+            # Five evenly-spaced deterministic windows. A reused excerpt solely
+            # near 25% or 75% of two long files evaded three-point sampling.
+            starts = {(frames - width) * quarter // 4 for quarter in range(5)}
             for start in sorted(starts):
                 pcm = b"".join(samples.tobytes() for samples in pcm_blocks(
                     track["resolved_path"], start=start, frames=width))
