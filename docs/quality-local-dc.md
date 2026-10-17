@@ -32,7 +32,16 @@ container length must match the declared RIFF size exactly. A bounded
 alignment padding, unique ordered `fmt `/`data` chunks, PCM payload length
 against complete decoded frames, and the first **16 bytes of the `fmt ` header**:
 only 1–2 channels, 16-bit samples, 8–96 kHz, `block_align = channels × 2`
-and `byte_rate = sample_rate × block_align` are admitted. This closes a
+and `byte_rate = sample_rate × block_align` are admitted. The format tag
+must be standard PCM (16-byte `fmt` or 18-byte `fmt` with zero extension)
+or **WAVE_FORMAT_EXTENSIBLE** with exactly 22 bytes of extension, **16 valid
+bits in each 16-bit sample**, the PCM subtype GUID and a conservative,
+noncontradictory mono/stereo channel mask. This prevents a PCM16 reader
+from silently assuming unused low bits or a mismapped stereo layout.
+Canonical mono/stereo layouts (or an unspecified zero channel mask) are
+admitted. Older Python versions lacking the standard library's
+WAVE_FORMAT_EXTENSIBLE support can still reject otherwise valid extended
+headers; Python 3.14 is exercised separately on GitHub-hosted CI. This closes a
 metadata inconsistency that a WAV reader may otherwise ignore, without
 reading PCM before admission. Forged outer or inner chunk lengths, duplicate
 `fmt `/`data`, trailing orphan bytes, sub-frame PCM and oversized chunk graphs
