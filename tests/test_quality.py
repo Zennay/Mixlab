@@ -479,6 +479,47 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(0, report["cross_trial_repeated_variant_count"])
         self.assertFalse(report["trials"][1]["trial_warnings"])
 
+    def test_review_pack_detects_mutated_audio_page_and_receipt_during_scan(self):
+        from mixlab.cli import write_review
+        pack = self.root / "pack"
+        review = pack / "review"
+        review.mkdir(parents=True)
+        first, second = review / "trial-001-A.wav", review / "trial-001-B.wav"
+        wav(first, self.samples)
+        wav(second, [int(x / 2) for x in self.samples])
+        page = review / "index.html"
+        receipt = pack / "receipt.json"
+        write_review(page, ["trial-001"], "a" * 64)
+        receipt.write_text(json.dumps({"schema_version": 1, "pack_id": "a" * 64,
+                                       "trial_count": 1}))
+        arguments = {"require_generated_html": True, "require_receipt": True}
+        self.assertTrue(inspect_review_pack(review, **arguments)[
+            "public_receipt_pack_id_verified"])
+        # Wrap the *actual* PCM scan and change a watched asset only after
+        # its metrics have been computed, as another process could do.
+        for modified in (first, page, receipt):
+            original_bytes = modified.read_bytes()
+
+            def modify_while_scanning(base, candidates, **kwargs):
+                result = compare_wavs(base, candidates, **kwargs)
+                if modified == first:
+                    replacement = self.root / "replacement.wav"
+                    replacement.write_bytes(modified.read_bytes())
+                    replacement.replace(modified)  # same bytes; different inode
+                else:
+                    with modified.open("ab") as output:
+                        output.write(b" ")  # no effect on WAV metadata
+                return result
+
+            with self.subTest(asset=modified.name), patch(
+                "mixlab.quality.pack.compare_wavs", side_effect=modify_while_scanning
+            ):
+                with self.assertRaisesRegex(ValueError, "changed during quality preflight"):
+                    inspect_review_pack(review, **arguments)
+            modified.write_bytes(original_bytes)
+        self.assertTrue(inspect_review_pack(review, **arguments)[
+            "public_receipt_pack_id_verified"])
+
     def test_review_pack_rejects_missing_trial_numbers_before_audio_or_receipt(self):
         review = self.root / "review"
         review.mkdir()

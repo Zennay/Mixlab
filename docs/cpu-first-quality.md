@@ -57,6 +57,17 @@ resource budgets protect a CPU-only shared worker and fail with sanitized
 exit 3 instead of starting an unbounded multipack analysis. A larger study
 should be split into independently reviewed, frozen packs rather than
 silently increasing production limits.
+
+The inspector also takes a **best-effort metadata snapshot** of the local
+review WAVs, verified `index.html` (if present), and the public receipt (if
+`--require-receipt` is used). After all audio checks it compares device,
+inode, size, nanosecond modification time and change time, rejecting files
+that were replaced or edited while the report was being computed. This
+prevents accepting internally inconsistent results during ordinary
+concurrent edits; it is *not* a cryptographic signature, immunity to
+malicious timestamp manipulation, or proof that files remain unchanged
+after preflight. Freeze and independently retain the original pack for
+a real listener study.
 Invalid packs error out with a
 path-free diagnostic (exit **3**). A and B are deliberately neutral: the
 tool never determines which is the baseline or accesses `private/answer-key.json`.

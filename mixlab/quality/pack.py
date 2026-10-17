@@ -190,6 +190,16 @@ def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
     return digest.digest()
 
 
+def _file_identity(path: Path) -> tuple[int, int, int, int, int]:
+    """Best-effort, non-cryptographic file identity across a scan.
+
+    lstat (rather than stat) detects substitution with symlinks. Deliberate
+    same-metadata tampering is outside this cooperative offline check.
+    """
+    info = path.lstat()
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
 def inspect_review_pack(
     review_directory: str | Path, *, window_ms: int = 100,
     loudness_tolerance_db: float = 1.5, require_generated_html: bool = False,
@@ -264,6 +274,15 @@ def inspect_review_pack(
     )
     if (require_generated_html or require_receipt) and not page_links_verified:
         raise ValueError("Official listener page missing from review pack")
+    # A benchmark must not be edited while its checks are being computed.
+    # Guard all examined WAVs, the public page and optional public receipt
+    # against ordinary in-place edits/replacements (not a cryptographic seal).
+    watched = [file for labels in groups.values() for file in labels.values()]
+    if page_links_verified:
+        watched.append(directory / "index.html")
+    if require_receipt:
+        watched.append(directory.parent / "receipt.json")
+    before_scan = {path: _file_identity(path) for path in watched}
 
     trials = []
     warning_trial_count = 0
@@ -321,6 +340,9 @@ def inspect_review_pack(
             "trial_warnings": trial_warnings,
             "technical_warnings_present": flagged,
         })
+    for path, original in before_scan.items():
+        if _file_identity(path) != original:
+            raise ValueError("Review pack files changed during quality preflight")
     return {
         "schema_version": 1,
         "purpose": "blind_review_technical_preflight_not_musical_quality",
