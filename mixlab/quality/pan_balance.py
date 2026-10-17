@@ -146,8 +146,16 @@ def inspect(baseline, candidate):
         }
 
 
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    """Never repeat a private WAV path from an invalid argv to stderr."""
+
+    def error(self, message):
+        print("Stereo pan preflight rejected private arguments", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Offline anonymous stereo pan A/B screen")
+    parser = _PrivateArgumentParser(description="Offline anonymous stereo pan A/B screen")
     parser.add_argument("baseline")
     parser.add_argument("candidate")
     args = parser.parse_args(argv)
