@@ -61,6 +61,15 @@ sources and unmatched trial IDs fail closed with a sanitized error (exit 3).
 The review page is capped at 1 MiB; its text is never returned in JSON.
 Audio-only review folders without an index can still be checked, but
 `review_page_audio_links_verified` is then `false`, not a quality guarantee.
+The static review-page check rejects external resource tags such as
+`iframe`, `img`, `link` and `script src`, remote navigation/form
+attributes, event-handler attributes and CSS `@import` / `url(...)`.
+An inadvertently modified listener page must not fetch third-party
+resources during offline review. This guards common static exfiltration
+paths but **does not prove arbitrary inline JavaScript safe**; the exact
+generated listener script still requires code review/CSP before public
+distribution. A clean technical check is not permission to publish
+third-party music.
 
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral

@@ -19,6 +19,17 @@ from . import compare_wavs
 _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
 MAX_REVIEW_HTML_BYTES = 1024 * 1024
+# Review pages are often passed to listeners as static files. Static
+# resource references other than the expected A/B audio can phone home,
+# reveal the listener identity or compromise offline study conditions.
+_EMBED_ELEMENTS = frozenset({
+    "iframe", "frame", "frameset", "object", "embed", "link", "base",
+    "img", "picture", "source", "track", "video", "svg", "math",
+})
+_RESOURCE_ATTRIBUTES = frozenset({
+    "href", "srcset", "action", "formaction", "poster", "background",
+    "cite", "manifest", "xlink:href", "data",
+})
 
 
 class _ReviewPageLinks(HTMLParser):
@@ -30,9 +41,22 @@ class _ReviewPageLinks(HTMLParser):
         self.trials = []
         self.audio_links = []
         self.invalid_nesting = False
+        self.unsafe_external_resource = False
+        self._within_style = False
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
+        # HTMLParser lowercases element/attribute names. Do not whitelist
+        # unknown resource-bearing tags or event-handler attributes.
+        if (tag in _EMBED_ELEMENTS
+                or any(k.startswith("on") or k in _RESOURCE_ATTRIBUTES
+                       or k == "style" for k in attributes)
+                or (tag == "script" and (attributes or "src" in attributes))
+                or (tag == "meta" and (attributes.get("http-equiv") or "").lower() == "refresh")
+                or (tag != "audio" and "src" in attributes)):
+            self.unsafe_external_resource = True
+        if tag == "style":
+            self._within_style = True
         if tag == "fieldset":
             if self.current_trial is not None:
                 self.invalid_nesting = True
@@ -44,6 +68,14 @@ class _ReviewPageLinks(HTMLParser):
     def handle_endtag(self, tag):
         if tag == "fieldset":
             self.current_trial = None
+        if tag == "style":
+            self._within_style = False
+
+    def handle_data(self, data):
+        # External style sheets can also be introduced without a <link>.
+        # This static check is not a substitute for a full JS/CSP audit.
+        if self._within_style and ("@import" in data.lower() or "url(" in data.lower()):
+            self.unsafe_external_resource = True
 
 
 def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path]]) -> bool:
@@ -63,7 +95,8 @@ def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path
     expected_trials = sorted(groups)
     expected_links = [(trial, f"{trial}-{label}.wav")
                       for trial in expected_trials for label in ("A", "B")]
-    if (checker.invalid_nesting or checker.trials != expected_trials
+    if (checker.unsafe_external_resource or checker.invalid_nesting
+            or checker.trials != expected_trials
             or checker.audio_links != expected_links):
         raise ValueError("Review page audio links do not match the trial WAV inventory")
     return True
