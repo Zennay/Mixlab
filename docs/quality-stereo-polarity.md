@@ -477,3 +477,48 @@ mono inputs and output anonymity. The CI companion-discovery contract
 requires the module. This is a technical level preflight only:
 integrated LUFS, format playback, artistic panning, and listener
 preference demand separate independent real-audio review.
+
+
+## Whole-file and temporal DC-offset A/B continuity screening
+
+A transition can have **matching total RMS** yet change its waveform's
+direct-current centre level when switching between two candidates.
+Even if each recording's DC offset is below the existing standalone
+3%-full-scale warning threshold, **opposing signed offsets** of +2.1%
+and -2.1% produce a relative step above 4% FS. This is a potential
+playback/crossfade click or lost headroom, not a musical quality claim.
+
+The preflight now compares the existing `dc_per_channel` aggregate PCM
+means for every channel and emits only
+`ab_max_channel_dc_offset_delta_fs` (maximum anonymous, normalized
+signed-mean difference) and `ab_dc_offset_mismatch_risk`. Differences
+**strictly greater than 3% of full scale** produce neutral
+`ab_channel_dc_offset_mismatch_inspect_for_clicks`; the conservative
+`rms_and_window_level_preflight_pass` stays false. Existing standalone
+`dc_offset_risk` behavior and RMS-only legacy flags are unchanged.
+
+A whole-file mean of zero is not enough: +1050 PCM samples of bias
+during the first half and -1050 during the second half may cancel in
+the global mean, despite strong **local** DC changes. The scanner now
+records only a private *per-channel mean per bounded RMS window*
+alongside already-collected window RMS values in its existing streaming
+pass. Aligned audible windows with >3%-FS *relative* mean difference
+count as discrepant; at least **3** audible windows and mismatch in at
+least **25%** of them produce
+`ab_temporal_dc_offset_mismatch_inspect_for_clicks` and
+`ab_dc_window_mismatch_risk`. Only the aggregate anonymous
+`ab_dc_window_mismatch_fraction` is returned (or null if no audible
+window exists). Neither timing coordinates nor per-window DC means,
+samples, track names or audio keys are exported or saved.
+
+Two new wholly synthetic suites, `tests/test_dc_pair_shift.py` and
+`tests/test_dc_window_shift.py`, cover opposing low individual offsets,
+stereo one-channel variation, no-op/subthreshold differences, a masked
+zero-global-mean half-window shift, 2/10 vs 3/10 transient tolerance,
+stereo, silent/mono and minimum-window evidence. Both files are required
+by the companion CI discovery contract. The 4096-frame read bound and
+batch-wide resource admission remain unchanged.
+
+These checks diagnose **signal continuity risk** only. They are not
+LUFS, a mixing aesthetic score, or a replacement for licensed music,
+human blind A/B tests or an independent M1 quality audit.
