@@ -343,6 +343,33 @@ class StreamingChunkInvariants(unittest.TestCase):
                               report["candidates"][1]["warnings"])
                 self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_short_valid_pcm_window_fenceposts_have_finite_public_metrics(self):
+        # Legitimate one-frame files have no full RMS window. Zero-duration
+        # and missing data must be rejected, but 1, 2, 159/160 or 4095/4096
+        # frames cannot spuriously divide by zero or export NaN/Infinity.
+        for channels in (1, 2):
+            for rate in (8000, 96000):
+                for period_ms in (20, 1000):
+                    window_frames = max(1, round(rate * period_ms / 1000))
+                    for frames in (1, 2, 159, 160, 4095, 4096, 4097):
+                        with self.subTest(channels=channels, rate=rate,
+                                          period=period_ms, frames=frames):
+                            path = self.root / (
+                                f"short-{channels}-{rate}-{period_ms}-{frames}.wav")
+                            sample = tuple([500] * channels)
+                            _write(path, channels, [sample] * frames,
+                                   sample_rate=rate)
+                            report = scan_wav(path, window_ms=period_ms)
+                            self.assertEqual(report["frames"], frames)
+                            self.assertEqual(report["window_count"],
+                                             (frames - 1) // window_frames + 1)
+                            self.assertFalse(report["short_interior_pcm_dropout_risk"])
+                            self.assertFalse(report["short_interior_stereo_channel_dropout_risk"])
+                            self.assertEqual(report["channels"], channels)
+                            # Numeric public reports are strict JSON: NaN/Inf
+                            # must never leak from the finite one-frame edge.
+                            json.dumps(report, allow_nan=False)
+
     def test_real_two_million_frame_stereo_rate_ceiling_streams_under_ci_cap(self):
         # This is the actual upper accepted production-format frame count,
         # not a mocked MAX_SOURCE_FRAMES or a giant in-memory fixture.
