@@ -136,6 +136,81 @@ class RepeatabilityTests(unittest.TestCase):
         self.assertTrue(baseline.exists())
         self.assertFalse(verify_repeatability(baseline, other)["repeatable_pcm"])
 
+    def test_streaming_dsp_render_block_partition_invariance_all_families(self):
+        # The current streaming renderer, not the legacy in-memory engine.
+        # Exercise many PCM read partitions, including non-divisors of 4,000
+        # frames, and compare every rendered frame through the privacy gate.
+        import math
+        from mixlab.dsp import render as streaming_render
+        from mixlab.models import FAMILY_NAMES, Recipe
+
+        source_a = self.root / "dsp-input-a.wav"
+        source_b = self.root / "dsp-input-b.wav"
+        left = [int(3900 * math.sin(i * .137)) for i in range(8000)]
+        right = [int(2500 * math.cos(i * .109)) for i in range(8000)]
+        make_wav(source_a, [v for i in range(8000)
+                            for v in (left[i], right[i])], channels=2)
+        make_wav(source_b, [v for i in range(8000)
+                            for v in (right[i], -left[i])], channels=2)
+        blocks = (7, 31, 257, 4096, 8192)
+        self.assertGreaterEqual(len(FAMILY_NAMES), 3)
+        for family in FAMILY_NAMES:
+            with self.subTest(family=family):
+                reference = None
+                reference_digest = None
+                for block in blocks:
+                    destination = self.root / f"stream-{family}-{block}.wav"
+                    receipt = streaming_render(source_a, source_b, destination,
+                                               Recipe(family=family, beats=1),
+                                               block_frames=block)
+                    self.assertEqual(block, receipt["block_frames"])
+                    self.assertEqual(4000, receipt["frames"])
+                    self.assertEqual("reject_before_publication", receipt["clipping_policy"])
+                    if reference is None:
+                        reference = destination
+                        reference_digest = receipt["output_sha256"]
+                    else:
+                        self.assertTrue(
+                            verify_repeatability(reference, destination)["repeatable_pcm"],
+                            f"Streaming renderer block-size regression: {family}/{block}",
+                        )
+                        self.assertEqual(reference_digest, receipt["output_sha256"])
+
+    def test_streaming_dsp_separate_process_same_recipe_is_identical(self):
+        # Separate Python processes cannot accidentally share mutable module
+        # state. Receipts never leave this private fixture directory.
+        import math
+        from mixlab.models import FAMILY_NAMES
+
+        source_a = self.root / "isolate-input-a.wav"
+        source_b = self.root / "isolate-input-b.wav"
+        make_wav(source_a, [int(3300 * math.sin(i * .16)) for i in range(8000)])
+        make_wav(source_b, [int(2900 * math.cos(i * .09)) for i in range(8000)])
+        code = (
+            "import sys; from mixlab.dsp import render; "
+            "from mixlab.models import Recipe; "
+            "render(sys.argv[1], sys.argv[2], sys.argv[3], "
+            "Recipe(family=sys.argv[4], beats=1), block_frames=int(sys.argv[5]))"
+        )
+        project_root = Path(__file__).resolve().parents[1]
+        for family in FAMILY_NAMES:
+            with self.subTest(family=family):
+                one = self.root / f"process-{family}-one.wav"
+                two = self.root / f"process-{family}-two.wav"
+                for path, block in ((one, 31), (two, 4096)):
+                    result = subprocess.run(
+                        [sys.executable, "-c", code, str(source_a), str(source_b),
+                         str(path), family, str(block)],
+                        cwd=project_root, capture_output=True, text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(0, result.returncode,
+                                     "Streaming renderer child failed")
+                    self.assertEqual("", result.stdout)
+                self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
+                self.assertNotIn(str(self.root),
+                                 json.dumps(verify_repeatability(one, two)))
+
     def test_full_two_million_frame_stereo_capacity_and_last_frame_integrity(self):
         # Exercise the actual 2M-frame/source ceiling, not only 8k-frame
         # fixtures. Generate two separate regular WAVs with bounded writes.
