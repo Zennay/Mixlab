@@ -15,7 +15,7 @@ level tilt. This optional preflight flags it for *human review*.
 python3 -m mixlab.quality.pan_balance /private/baseline.wav /private/candidate.wav
 ```
 
-Output is one path-free JSON object. Exit 0: technical result (flag may be true).
+Output is one path-free JSON object. Exit 0: technical result. The\n`stereo_pan_confound_review` field is explicitly tri-state: `true` when a\npersistent >=6dB shift is found, `false` only when at least one continuous\nsecond of active stereo audio was available without that defect, and `null`\nwhen there is insufficient active evidence to conclude either way. Also\ninspect `evidence_status` (`review_pan_balance`,\n`no_sustained_pan_bias_detected`, `insufficient_active_audio`).
 Exit 2: invalid, changed or unavailable input; stderr is generic. Run this
 locally against rights-permitted audio, not on publicly uploaded recordings.
 
@@ -39,7 +39,7 @@ locally against rights-permitted audio, not on publicly uploaded recordings.
   corresponding baseline ratio. Flag review when the **absolute tilt delta
   >=6 dB** persists at least 1,000 ms continuously. Return only aggregate
   active-window count, maximum delta, longest streak and Boolean flag; no
-  raw PCM, file hashes, audio paths or window coordinates leave the process.
+  raw PCM, file hashes, audio paths or window coordinates leave the process.\n  Discontinuous or under-one-second audible segments cannot be labelled a\n  clean pass; the tool abstains (`null`) in those cases.
 - A changed pan balance is not a broken render: creative panning, unequal
   instruments, and transitions can produce legitimate flags. This is not
   a stereo width metric, ITU true peak, LUFS, beat/key measurement, A/B
