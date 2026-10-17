@@ -88,6 +88,9 @@ def _scan_spectral_private(
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
                 span_cross_energy = [0.0] * SPECTRAL_SPANS
+                # Detect left/right dropouts *within* a track despite equal
+                # whole-file channel RMS. Eight by two private RMS accumulators.
+                span_channel_energy = [[0.0] * channels for _ in range(SPECTRAL_SPANS)]
                 remaining = frames
                 while remaining:
                     count = min(READ_FRAMES, remaining)
@@ -123,6 +126,7 @@ def _scan_spectral_private(
                             stereo_cross_energy += (samples[index - 1] / 32768) * value
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
+                        span_channel_energy[span][channel] += sample_energy
                         span_energy[span][1] += low_sample_energy
                         span_energy[span][2] += mid_sample_energy
                         span_energy[span][3] += high_sample_energy
@@ -176,6 +180,13 @@ def _scan_spectral_private(
                 math.sqrt(total / frames),
             )
             for total, low, mid, high in channel_energy
+        ],
+        "_channel_spans": [
+            tuple(
+                math.sqrt(channel_total / count) if count else 0.0
+                for channel_total in channel_totals
+            )
+            for channel_totals, (_, _, _, _, count) in zip(span_channel_energy, span_energy)
         ],
         "_fold_spans": [
             (
@@ -363,6 +374,23 @@ def compare_spectral_balance(
             )
             if local_cancellation_spans >= 2:
                 warnings.append("stereo_temporal_mono_fold_cancellation_inspect")
+        # A channel can disappear in several spans yet have acceptable
+        # whole-file RMS if its signal returns later. Do not expose which
+        # source/channel/time segments were affected.
+        if reference["channels"] == 2:
+            def local_channel_dropout(span_levels: tuple[float, float]) -> bool:
+                return (
+                    min(span_levels) < SILENT_WINDOW_RMS
+                    and max(span_levels) > ACTIVE_CHANNEL_RMS
+                )
+            dropout_spans = sum(
+                local_channel_dropout(a) or local_channel_dropout(b)
+                for a, b in zip(reference["_channel_spans"], current["_channel_spans"])
+            )
+            deltas["stereo_temporal_channel_dropout_risk"] = dropout_spans >= 2
+            if dropout_spans >= 2:
+                warnings.append("stereo_temporal_channel_dropout_inspect")
+
         # Whole-stereo ratios mask shifts in frequency placement between L/R.
         # Compare *each* channel at matched playback positions, but expose
         # just coarse boolean flags, not channel identity or private energies.
