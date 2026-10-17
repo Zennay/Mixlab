@@ -35,11 +35,16 @@ locally against rights-permitted audio, not on publicly uploaded recordings.
   mismatch in rate or frame count are deliberately unsupported here; a
   separate main scanner has broader format coverage.
 - 8–96 kHz, 1–2,000,000 frames, <=32 MiB each, two unique regular files.
-  One descriptor per source, last-component no-follow/nonblocking admission,
-  and pre/post descriptor+path stat identity checks. Parent directory symlink
-  traversal is **not** protected by this independent tool; use a trusted
-  private directory. This is not a filesystem-snapshot or adversarial-FS
-  proof; it does not authenticate source rights.
+  Two source descriptors, Linux `O_DIRECTORY|O_NOFOLLOW` dirfd traversal
+  of **every** parent component and no-follow/nonblocking final-source open,
+  with post-scan complete-path re-open and descriptor/path identity checks.
+  Lexical `..` is deliberately not normalized before component validation:
+  `symlink/../source.wav` must still be rejected. Paths exceeding 64
+  components or 4096 filesystem bytes fail before opening even the root.
+  Intermediate dirfds are closed on success and every error.
+  This does not provide a filesystem snapshot, cryptographically authenticate
+  source provenance, or guarantee protection from an adversary with arbitrary
+  access to the process's file descriptors; it does not verify music rights.
 - Read at most 4,096 stereo frames per input block. Compute independent
   left/right energy for each aligned 250 ms window. Ignore windows unless
   **both channels in both samples** exceed -45 dBFS RMS; otherwise abstain.
@@ -68,3 +73,19 @@ utilized, no new process is launched there.
 
 Original M1 release obligations remain: rights-safe real music/stems, measured
 beat/downbeat/phrase/key, a preregistered blind study and independent listeners.
+
+## Ancestor-symlink regression evidence
+
+The original admission checked `lstat()` on the final filename and
+`O_NOFOLLOW` only at the basename. A symlinked parent was traversed and
+real PCM decoded, including a lexical `shortcut/../track.wav` bypass.
+A rename of the source directory followed by substituting a symlink to
+the *same* inode also passed the old after-scan pathname check.
+
+The independently committed regression tests were RED on the old code at
+[hosted run 39032711669](https://github.com/Zennay/Mixlab/actions/runs/39032711669):
+3 symlink-related assertion failures, two path-bound exceptions.
+The fix uses root-to-leaf no-follow descriptor traversal both before reading
+PCM and again after reading, and validates path components before opening any
+directory. Always bind final release evidence to the latest code SHA instead
+of using the RED or an earlier hosted-green commit.
