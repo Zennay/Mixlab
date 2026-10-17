@@ -116,6 +116,29 @@ Stereo swaps may be creative or intentional; the output is an inspect
 warning, not an acoustic quality verdict, and it supplements (does not
 replace) the main PCM signed-swap and mono-fold-down checks.
 
+A separate **stereo L/R level-balance** check finds a perceptually
+important A/B confound that band-normalized spectral measurements
+cannot see: the quiet and loud channels can exchange their relative
+levels even while whole-stereo RMS, mono-folding RMS and each channel's
+low/mid/high energy ratios remain *identical*. The scanner compares
+private `20log10(RMS(L)/RMS(R))` values between A and B and emits
+`stereo_channel_level_balance_shift_inspect` at a >=6dB change.
+Its output is only a `stereo_channel_level_balance_shift_risk`
+boolean, or `null` if any required channel is inaudible; neither
+direction nor absolute source-channel levels are published.
+
+The **eight-span temporal level-balance** check similarly compares the
+relative L/R RMS ratios in each mutually audible span. A >=9dB change
+in >=2 and >=25% of >=3 comparable spans emits
+`stereo_temporal_level_balance_shift_inspect`; only an anonymous
+`stereo_temporal_level_balance_mismatch_fraction` is published,
+or `null` for insufficient comparable channel energy. This catches
+panning movements exchanged between A and B even when each channel's
+whole-track RMS is *unchanged*. Both comparisons are invariant under
+uniform gain changes and are independent of the separate RMS, mono-fold,
+band-content and channel-silence screens. Deliberate panning remains
+a creative choice, not a proven fault.
+
 A **temporal stereo channel-dropout** screen adds eight private L/R energy
 accumulators (at most 16 additional floating-point sums). It detects when
 one channel is nearly silent (<-55 dBFS RMS) and the other remains active
