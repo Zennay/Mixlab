@@ -43,7 +43,7 @@ the checker; inspect/measure them with authorized music and blinded humans.
   sources, 0 for normal completed screening. A warning is not release approval.
 
 No third-party packages, models, cloud music services, VPS process or live
-worker are required. Synthetic tests are in `tests/test_quality_alignment.py`.
+worker are required. Synthetic tests are in `tests/test_quality_alignment.py`. They exercise the actual 2,000,000-frame WAV admission boundary (constant PCM), reverse-direction stereo shifts, pair isolation, truncation and file-type denial. Dedicated exact-PR-SHA hosted CI prints elapsed seconds and peak-process RSS from `/usr/bin/time`. This measurement is a synthetic QA upper-size sample, not a measured VPS or real-track render budget.
 This isolated contribution does not change existing ML-07 core, spectral,
 dynamics, HTML review pack, ingest, CLI or DSP owner files. **M1 remains open**
 until licensed source, original MIR/stems work and ≥3 blinded listeners supply
