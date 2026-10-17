@@ -161,6 +161,37 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.source.write_bytes(original)
         self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
 
+    def test_wav_extensible_pcm16_remains_supported(self):
+        # Modern DAWs write WAVE_FORMAT_EXTENSIBLE (40-byte fmt) even
+        # for ordinary 16-bit PCM. Keep its coherent container admissible.
+        make_wav(self.source, channels=2, rate=48000, frames=300)
+        original = self.source.read_bytes()
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        extended = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                               48000 * 4, 4, 16, 22, 16, 3) + subtype
+        self.assertEqual(40, len(extended))
+        fmt = b"fmt " + struct.pack("<I", 40) + extended
+        result = bytearray(original[:12] + fmt + original[36:])
+        result[4:8] = struct.pack("<I", len(result) - 8)
+        self.source.write_bytes(result)
+        report = validate_private_pcm16(self.source)
+        self.assertEqual((2, 48000, 300),
+                         (report["channels"], report["sample_rate"], report["frames"]))
+
+    def test_wav_extensible_bad_avg_byte_rate_rejected(self):
+        make_wav(self.source, channels=2, rate=48000)
+        original = self.source.read_bytes()
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        extended = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                               123, 4, 16, 22, 16, 3) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + extended
+        result = bytearray(original[:12] + fmt + original[36:])
+        result[4:8] = struct.pack("<I", len(result) - 8)
+        self.source.write_bytes(result)
+        self.assert_rejected(self.source)
+
     def test_duplicate_fmt_chunk_rejected_before_wave_parser(self):
         original = self.source.read_bytes()
         fmt = original[12:36]
