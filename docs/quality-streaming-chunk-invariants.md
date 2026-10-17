@@ -45,6 +45,10 @@ Blind preference and lawful real-media access are still missing.
   even when the internal diagnostic reader can decode that PCM unchanged.
   A patched comparator would raise if ever invoked: the guard must refuse
   extra public RIFF chunks during header admission, before a PCM scan.
+- Prove public WAV admission rejects **LIST, bext, iXML and JUNK**
+  chunks *before or after* audio, including valid private diagnostic
+  WAVs, and refuses unaccounted trailer bytes. The comparator is mocked
+  to fail if invoked before container admission finishes.
 - Check simultaneous **multi-candidate** stereo L/R swaps, signed polarity
   inversion and PCM-identical audio with changed RIFF container at frame
   4095 or 4096. The comparator must preserve reuse warnings without
