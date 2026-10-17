@@ -105,6 +105,20 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
                 self.assertEqual(load_bounded_json(self.source),
                                  json.loads(payload))
 
+    def test_nonzero_decimal_exponent_cannot_silently_underflow(self):
+        for payload in ("1e-9999", "-1e-9999", '{"n":2.5e-9999}',
+                        "[0, -7E-8888]"):
+            with self.subTest(underflow=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "underflows"):
+                    load_bounded_json(self.source)
+        for payload in ("0e-9999", "-0.0e-9999", "5e-324",
+                        '{"n":2e-300}'):
+            with self.subTest(valid=payload):
+                self.source.write_text(payload, encoding="utf-8")
+                self.assertEqual(load_bounded_json(self.source),
+                                 json.loads(payload))
+
     def test_reject_deep_parser_recursion_as_validation_error(self):
         self.source.write_text("[" * 1500 + "0" + "]" * 1500,
                                encoding="utf-8")
