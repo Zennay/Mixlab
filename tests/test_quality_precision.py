@@ -81,6 +81,32 @@ class PrecisionTest(unittest.TestCase):
         wav(self.b, coarse=(0,), coarse_step=16, coarse_offset=5)
         self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
 
+    def test_relative_12_bit_baseline_to_10_bit_candidate_loss(self):
+        wav(self.a, coarse=(0,), coarse_step=16, coarse_offset=3)
+        wav(self.b, coarse=(0,), coarse_step=64, coarse_offset=7)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_relative_11_bit_baseline_to_9_bit_candidate_loss(self):
+        wav(self.a, coarse=(0,), coarse_step=32, coarse_offset=3)
+        wav(self.b, coarse=(0,), coarse_step=128, coarse_offset=7)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_one_step_loss_from_already_coarse_baseline_is_not_overflagged(self):
+        wav(self.a, coarse=(0,), coarse_step=16, coarse_offset=3)
+        wav(self.b, coarse=(0,), coarse_step=32, coarse_offset=7)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_relative_precision_loss_from_coarse_baseline_in_one_stereo_channel(self):
+        wav(self.a, channels=2, coarse=(1,), coarse_step=16, coarse_offset=3)
+        wav(self.b, channels=2, coarse=(1,), coarse_step=64, coarse_offset=7)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_adjacent_two_phase_loss_from_quantized_baseline(self):
+        wav(self.a, coarse=(0,), coarse_step=16, coarse_offset=3)
+        wav(self.b, coarse=(0,), coarse_step=64,
+            coarse_offset=7, coarse_jitter=1)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
     def test_eight_sample_step_is_below_conservative_detection_resolution(self):
         wav(self.a)
         wav(self.b, coarse=(0,), coarse_step=8, coarse_offset=3)
