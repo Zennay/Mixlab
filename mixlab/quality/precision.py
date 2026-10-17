@@ -30,6 +30,7 @@ MIN_REGION_DISTINCT = 16
 MIN_PERSISTENT_REGIONS = 2
 MAX_CANDIDATES = 8
 MAX_BATCH_FRAMES = 8_000_000
+MAX_BATCH_BYTES = 128 * 1024 * 1024
 
 
 def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
@@ -193,7 +194,7 @@ def _preadmit_wav(path: str | Path) -> dict:
         if _identity(before) != _identity(after):
             raise ValueError("WAV changed during admission")
     return {"rate": rate, "channels": channels, "frames": frames,
-            "identity": _identity(after)}
+            "identity": _identity(after), "bytes": after.st_size}
 
 
 def compare_precision_batch(baseline: str | Path,
@@ -212,6 +213,10 @@ def compare_precision_batch(baseline: str | Path,
     receipts = [_preadmit_wav(p) for p in paths]
     if sum(x["frames"] for x in receipts) > MAX_BATCH_FRAMES:
         raise ValueError("aggregate PCM frame budget exceeded")
+    # Frame caps alone do not stop oversized RIFF ancillary chunks in many
+    # small clips. Bound the sum of admitted physical file sizes too.
+    if sum(x["bytes"] for x in receipts) > MAX_BATCH_BYTES:
+        raise ValueError("aggregate WAV byte budget exceeded")
     if any(any(x[k] != receipts[0][k] for k in ("rate", "channels", "frames"))
            for x in receipts[1:]):
         raise ValueError("incomparable WAV format/duration")
