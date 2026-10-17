@@ -18,7 +18,7 @@ _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _REFUSAL = "private study or review pack invalid (details withheld)"
 
 
-def inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
+def _inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
     """Check the exact generated A/B form, PCM and independent frozen study.
 
     Raises ValueError for malformed/unbound inputs; returns HOLD for any
@@ -81,6 +81,15 @@ def inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
         "release_authorized": False,
         "milestone_pass": False,
     }
+
+
+def inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
+    """Public path-safe API: no source path escapes through error messages."""
+    try:
+        return _inspect_pilot_preflight(pack_root, study_path,
+                                        externally_pinned_study_id)
+    except (OSError, ValueError, KeyError, TypeError, IndexError, OverflowError):
+        raise ValueError(_REFUSAL) from None
 
 
 class _PrivateParser(argparse.ArgumentParser):
