@@ -239,5 +239,34 @@ class FrozenStudyBindingTests(unittest.TestCase):
 
 
 
+    def test_wrong_public_study_id_refused_before_private_pcm_scan(self):
+        from unittest import mock
+        self.edit("receipt.json", lambda doc: doc.__setitem__("study_id", "f" * 64))
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=AssertionError("private PCM scanned")) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_not_called()
+
+    def test_wrong_private_study_id_refused_before_private_pcm_scan(self):
+        from unittest import mock
+        self.edit("private/evidence.json",
+                  lambda doc: doc.__setitem__("study_id", "f" * 64))
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        side_effect=AssertionError("private PCM scanned")) as scanner:
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                self.check()
+            scanner.assert_not_called()
+
+    def test_correct_study_id_reaches_one_real_pcm_verification(self):
+        from unittest import mock
+        from mixlab.evaluation import verify_pack as original
+        with mock.patch("mixlab.quality.study_binding.verify_pack",
+                        wraps=original) as scanner:
+            self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
+            scanner.assert_called_once()
+
+
+
 if __name__ == "__main__":
     unittest.main()
