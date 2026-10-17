@@ -20,11 +20,14 @@ DEFAULT_CREST_TOLERANCE_DB = 6.0
 
 def _crest_factor_db(metrics: dict) -> float | None:
     """Return sample-peak-minus-RMS in dB; silence has no crest factor."""
-    peak = metrics["peak"]
-    rms = metrics["rms"]
-    if peak <= 0 or rms <= 0:
+    # Use the scanner's dBFS fields: linear peaks are rounded to six
+    # decimals for presentation, which biases one-LSB quiet PCM (~0.14 dB)
+    # even when every sample has exactly the same magnitude.
+    peak_dbfs = metrics["peak_dbfs"]
+    rms_dbfs = metrics["rms_dbfs"]
+    if peak_dbfs is None or rms_dbfs is None:
         return None
-    return round(20.0 * math.log10(peak / rms), 3)
+    return round(peak_dbfs - rms_dbfs, 3)
 
 
 def compare_crest_factors(
