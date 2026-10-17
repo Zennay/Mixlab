@@ -82,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     options = parser.parse_args(argv)
     try:
         result = inspect(options.baseline, options.candidate)
-    except (OSError, ValueError, TypeError, KeyError, RuntimeError, EOFError):
+    except Exception:
+        # Fail closed on decoder errors too (e.g. wave.Error/struct.error).
         # Untrusted local filenames can appear in underlying OS errors.
         print(json.dumps({"status": "invalid_private_pcm", "milestone_pass": False}))
         return 2
