@@ -33,6 +33,23 @@ source's *unfiltered* RMS. A/B reports compute
 `20 log10(candidate_proxy_ratio / baseline_proxy_ratio)`. Ratios are
 gain-normalized, but **not** loudness-matched or perceptual loudness.
 
+An additional **eight-span temporal proxy** checks whether the same
+low/high content occurred at the same *time* in both variants. The source
+is divided into eight deterministic equal-duration bins, with a fixed eight
+aggregate-energy buffers regardless of excerpt length. For each bin the
+same RMS-normalized low/high proxies are compared in A/B order; any span
+below -55 dBFS or with unresolved proxy energy is skipped. If at least
+three bins are comparable and at least two bins (and at least 25% of
+comparable bins) differ by >=9 dB, the corresponding
+`low_temporal_spectral_shift_inspect` or
+`high_temporal_spectral_shift_inspect` warning is produced. JSON exports
+only the aggregate mismatch fraction (or `null` if no bins compare);
+the eight source-specific ratios, exact span energies, times, waveforms
+and candidate filenames remain private. A one-span change can still
+warrant human inspection; this deliberately conservative persistence
+gate is not a claim of perfect artifact detection. Eight large bins
+are not a time-frequency spectrogram.
+
 These filters are deliberately cheap, have gradual/overlapping responses,
 and are sensitive to DC, onsets and very short excerpts. The numbers are
 **not** disjoint frequency-band percentages, calibrated spectrum, true peak,
@@ -50,7 +67,7 @@ downmixing; a separate stereo/mono check is still required.
 
 The JSON has only a synthetic candidate-01 numbering, generic warning
 codes, format/duration facts, rounded global RMS and two energy ratios
-per source, aggregate A/B deltas, and the explicit human-preference gate.
+per source, aggregate A/B deltas, eight-span mismatch *fractions*\n(not envelopes), and the explicit human-preference gate.
 It never outputs source paths, song metadata, candidate identity, PCM
 samples, window envelopes or hashes. Invalid CLI arguments are redacted
 even when a user supplies a sensitive malformed option value. The
@@ -64,7 +81,7 @@ and prints no JSON. Argument errors fail **2** with no JSON.
 signals for RMS-matched bass/high-content shift, gain-only invariance,
 stereo, multiple anonymized candidates, silent comparisons, sample-format
 mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
-non-mutation, strict warning exit and CLI canary privacy. It is discovered
+non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
 
