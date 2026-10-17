@@ -507,6 +507,41 @@ class ResolutionTests(unittest.TestCase):
         self.assertTrue(any(p == "three" and dir_fd is not None and flags & os.O_NOFOLLOW and flags & os.O_DIRECTORY
                             for p, flags, dir_fd in seen))
 
+    def test_parent_directory_replaced_with_same_inode_hardlink_is_rejected(self):
+        # A different parent can expose the *same file inode* via hardlink.
+        # Final basename fstat/lstat checks alone still look unchanged, so
+        # identity of every ancestor directory is part of the admission gate.
+        permitted = self.root / "permitted-parent"
+        replacement = self.root / "replacement-parent"
+        displaced = self.root / "permitted-parent-displaced"
+        permitted.mkdir()
+        replacement.mkdir()
+        original = permitted / "private.wav"
+        substitute = replacement / "private.wav"
+        wav(original, samples())
+        os.link(original, substitute)
+        old_scan = bitdepth._scan
+        moved = False
+
+        def swap_parent_after_pcm_read(source):
+            nonlocal moved
+            result = old_scan(source)
+            if not moved:
+                permitted.rename(displaced)
+                replacement.rename(permitted)
+                moved = True
+            return result
+
+        try:
+            with patch.object(bitdepth, "_scan", side_effect=swap_parent_after_pcm_read):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    bitdepth.inspect_ab(original, [self.good])
+        finally:
+            if moved:
+                permitted.rename(replacement)
+                displaced.rename(permitted)
+        self.assertTrue(moved, "The parent replacement must actually occur")
+
     def test_non_regular_and_missing_sources_do_not_leak_path(self):
         for path in [self.root / "not-found-private.wav", self.root]:
             with self.assertRaises(ValueError) as ctx:
