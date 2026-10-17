@@ -72,6 +72,9 @@ def scan_spectral_proxy(
                 # a cheap midrange proxy, not an isolated spectral band.
                 mid_state = [0.0] * channels
                 total_energy = low_energy = mid_energy = high_energy = 0.0
+                # Channel-local aggregates catch A/B left/right spectral
+                # migrations hidden by an identical total stereo spectrum.
+                channel_energy = [[0.0, 0.0, 0.0, 0.0] for _ in range(channels)]
                 # Constant memory (eight aggregate bins), never samples or
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
@@ -101,6 +104,10 @@ def scan_spectral_proxy(
                         low_energy += low_sample_energy
                         mid_energy += mid_sample_energy
                         high_energy += high_sample_energy
+                        channel_energy[channel][0] += sample_energy
+                        channel_energy[channel][1] += low_sample_energy
+                        channel_energy[channel][2] += mid_sample_energy
+                        channel_energy[channel][3] += high_sample_energy
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
                         span_energy[span][1] += low_sample_energy
@@ -129,6 +136,15 @@ def scan_spectral_proxy(
         "midpass_180_2500_ratio": math.sqrt(mid_energy / total_energy) if total_energy else None,
         "highpass_2500_ratio": math.sqrt(high_energy / total_energy) if total_energy else None,
         "_rms": rms,
+        "_channels": [
+            (
+                math.sqrt(low / total) if total else None,
+                math.sqrt(mid / total) if total else None,
+                math.sqrt(high / total) if total else None,
+                math.sqrt(total / frames),
+            )
+            for total, low, mid, high in channel_energy
+        ],
         "_spans": [
             (
                 math.sqrt(low / total) if total else None,
@@ -209,6 +225,23 @@ def compare_spectral_balance(
             if (eligible >= TEMPORAL_PROXY_MIN_SPANS and differing >= 2
                     and differing / eligible >= TEMPORAL_PROXY_MIN_FRACTION):
                 warnings.append(name + "_temporal_spectral_shift_inspect")
+        # Whole-stereo ratios mask shifts in frequency placement between L/R.
+        # Compare *each* channel at matched playback positions, but expose
+        # just coarse boolean flags, not channel identity or private energies.
+        if reference["channels"] == 2:
+            for name, slot in (("low", 0), ("mid", 1), ("high", 2)):
+                mismatched = False
+                for ref_ch, cur_ch in zip(reference["_channels"], current["_channels"]):
+                    if min(ref_ch[3], cur_ch[3]) < SILENT_WINDOW_RMS:
+                        continue
+                    a, b = ref_ch[slot], cur_ch[slot]
+                    if a is None or b is None or min(a, b) < MIN_RESOLVABLE_RATIO:
+                        continue
+                    if abs(20 * math.log10(b / a)) >= threshold_db:
+                        mismatched = True
+                deltas["stereo_channel_" + name + "_spectral_shift_risk"] = mismatched
+                if mismatched:
+                    warnings.append("stereo_channel_" + name + "_spectral_shift_inspect")
         rows.append({
             "id": f"candidate-{index:02d}",
             "metrics": _public_metrics(current),
