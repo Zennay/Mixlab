@@ -165,7 +165,7 @@ def inspect_review_pack(
         # trials can reveal its identity through recognition. This is an
         # inspect-for-blinding warning, not a claim that the answers leaked.
         # A/B-neutral references are safe; fingerprints never leave memory.
-        earlier_audio = {}
+        repeated_from_other_trial = False
         for label in ("A", "B"):
             digest = _private_audio_fingerprint(labels[label], (
                 result["baseline"] if label == "A" else candidate["metrics"]
@@ -175,12 +175,15 @@ def inspect_review_pack(
                 # Duplicate A/B within the same trial is already reported by
                 # compare_wavs; only repetition in *different* trials counts.
                 if not previous.startswith(trial_id + "/"):
-                    warnings[label].append("repeated_pcm_across_trials_inspect_blinding")
-                    earlier_audio[label] = previous
+                    # Never expose *which side* repeats: a QA report could
+                    # otherwise defeat the very A/B blinding it audits.
+                    repeated_from_other_trial = True
                     cross_trial_repeated_variant_count += 1
             else:
                 seen_audio[digest] = f"{trial_id}/{label}"
-        flagged = bool(warnings["A"] or warnings["B"])
+        trial_warnings = (["repeated_pcm_across_trials_inspect_blinding"]
+                          if repeated_from_other_trial else [])
+        flagged = bool(warnings["A"] or warnings["B"] or trial_warnings)
         warning_trial_count += flagged
         trials.append({
             "trial_id": trial_id,
@@ -190,7 +193,7 @@ def inspect_review_pack(
             "short_window_level_mismatch_fraction": candidate["short_window_level_mismatch_fraction"],
             "short_window_level_mismatch_risk": candidate["short_window_level_mismatch_risk"],
             "identical_pcm": candidate["duplicate_pcm_of"] == "baseline",
-            "cross_trial_repeated_pcm_of": earlier_audio,
+            "trial_warnings": trial_warnings,
             "technical_warnings_present": flagged,
         })
     return {
