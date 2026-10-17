@@ -180,3 +180,32 @@ the quality command exits, guarantee support for hostile filesystems, or
 supply a real-music listener test. Public listener packs retain stricter
 container and symlink requirements. Integration with PR #56's separate
 CLI-argument hardening remains an owner-reviewed release task.
+
+## Multi-input source-coherence guard for complete A/B comparisons
+
+Single-FD source checking only protects a file **during its own scan**.
+A multi-candidate report previously could still compare an earlier
+baseline/candidate against later variants after that earlier file had been
+modified or replaced: its scan ended successfully before the mutation.
+
+`compare_wavs` now snapshots the neutral `lstat` identity of **all**
+input paths before any audio processing, retains those values only in
+private process memory, and rechecks the whole inventory before returning
+anonymous metrics. Device/inode/size/mtime/ctime and regular-file status
+are checked without reopening or rescanning PCM. If a baseline or candidate
+changes between individual checks, the entire comparison fails closed
+with a generic, path-free error; missing/symlink-replaced inputs are also
+rejected. The already-existing per-file descriptor guard continues
+to protect each individual WAV read.
+
+Four additional synthetic regressions in `tests/test_private_source_fd.py`
+check an in-place baseline rewrite immediately after baseline scanning,
+candidate rewrite after its scan, same-PCM path replacement on a new inode,
+and a clean multi-candidate report free of source metadata. These are
+cooperative best-effort checks against **observable** local modifications,
+not an atomic transactional filesystem snapshot; changes made after the
+final check or adversarial same-metadata rewrites remain outside scope.
+
+No shareable manifests, answer keys, source paths or fingerprints are added
+to result JSON. The added metadata checks read no PCM, leaving the
+4096-frame streaming input guarantee unchanged.
