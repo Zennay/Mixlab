@@ -256,6 +256,40 @@ class RelativeMonoTests(unittest.TestCase):
                 self.assertEqual(proc.stderr, "")
                 self.assertEqual(json.loads(proc.stdout)["status"], "invalid_private_pcm")
 
+    def test_missing_cli_operands_fail_closed_without_path_disclosure(self):
+        secret = str(self.root / "private-review-source.wav")
+        for args in (
+            ["--baseline", secret],
+            ["--baseline", secret, "--candidate"],
+            ["--candidate", secret],
+        ):
+            with self.subTest(arguments=args):
+                proc = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.relative_mono", *args],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(proc.returncode, 2)
+                self.assertEqual(proc.stderr, "")
+                self.assertNotIn(secret, proc.stdout + proc.stderr)
+                self.assertFalse(json.loads(proc.stdout)["milestone_pass"])
+
+    def test_mixed_cli_batch_with_loud_candidate_must_hold(self):
+        _wave(self.base, mode="normal")
+        clean = self.root / "clean.wav"
+        loud = self.root / "too-loud.wav"
+        _wave(clean, mode="normal")
+        _wave(loud, mode="loud-normal")
+        result = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.relative_mono",
+             "--baseline", str(self.base),
+             "--candidate", str(clean), "--candidate", str(loud)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+        self.assertEqual([x["status"] for x in json.loads(result.stdout)["candidates"]],
+                         ["no_new_sustained_mono_cancellation_detected", "rms_level_confound"])
+
     def test_malformed_wav_decoder_error_is_redacted(self):
         _wave(self.candidate, mode="normal")
         self.base.write_bytes(b"not-a-wave" + str(self.root).encode())
