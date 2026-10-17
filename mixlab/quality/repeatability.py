@@ -75,7 +75,85 @@ def _unchanged(path: Path, handle: object, original: os.stat_result) -> bool:
     )
 
 
-def verify_repeatability(first: str | os.PathLike[str], second: str | os.PathLike[str]) -> dict:
+def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tuple[str, str]:
+    """Validate a private renderer receipt without ever serializing it publicly.
+
+    The receipt is an *untrusted statement*, not a signature: source hashes
+    and recipe are compared with the other receipt, while output_sha256 is
+    independently recomputed from its actual open WAV descriptor.
+    """
+    if not isinstance(receipt, dict):
+        raise RepeatabilityError(_ERROR)
+    try:
+        # Prevent deeply nested or huge metadata from unexpectedly consuming
+        # CPU. This is a private API, not an unbounded JSON file loader.
+        raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if len(raw) > 16384:
+            raise RepeatabilityError(_ERROR)
+        channels, width, rate, frames = shape
+        if (receipt.get("schema_version") != 1
+                or not isinstance(receipt.get("engine_version"), str)
+                or not receipt["engine_version"]
+                or receipt.get("channels") != channels
+                or receipt.get("sample_rate") != rate
+                or receipt.get("frames") != frames
+                or width != 2):
+            raise RepeatabilityError(_ERROR)
+        recipe = receipt.get("recipe")
+        origins = receipt.get("sources")
+        positions = receipt.get("start_frames")
+        if (not isinstance(recipe, dict) or not recipe
+                or not isinstance(positions, dict)
+                or not {"a", "b"} <= positions.keys()
+                or not isinstance(origins, list) or len(origins) != 2):
+            raise RepeatabilityError(_ERROR)
+        source_hashes = [item.get("sha256") if isinstance(item, dict) else None
+                         for item in origins]
+        output_hash = receipt.get("output_sha256")
+        if not all(
+            isinstance(h, str) and len(h) == 64
+            and all(c in "0123456789abcdef" for c in h)
+            for h in (*source_hashes, output_hash)
+        ):
+            raise RepeatabilityError(_ERROR)
+        # Bind the semantic render contract; intentionally exclude the
+        # output pathname, the output hash and block_frames. Block sizes may
+        # differ while the intended recipe and output PCM remain identical.
+        keys = ("schema_version", "engine_version", "recipe", "sample_rate",
+                "channels", "frames", "duration_seconds", "gain_linear",
+                "start_frames", "alignment_source", "tempo_source")
+        if any(key not in receipt for key in keys):
+            raise RepeatabilityError(_ERROR)
+        semantic = {key: receipt[key] for key in keys}
+        semantic["ordered_source_sha256"] = source_hashes
+        fingerprint = json.dumps(semantic, sort_keys=True, separators=(",", ":"),
+                                 allow_nan=False)
+        return fingerprint, output_hash
+    except (TypeError, ValueError, KeyError, RecursionError):
+        raise RepeatabilityError(_ERROR) from None
+
+
+def _digest_open_file(handle: object, size: int) -> str:
+    # Use the same admitted descriptor, not a second pathname open. Recheck
+    # all file identities once both entire containers have been scanned.
+    handle.seek(0)
+    digest = hashlib.sha256()
+    remaining = size
+    while remaining:
+        data = handle.read(min(65536, remaining))
+        if not data:
+            raise RepeatabilityError(_ERROR)
+        remaining -= len(data)
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def verify_repeatability(
+    first: str | os.PathLike[str],
+    second: str | os.PathLike[str],
+    *,
+    receipts: tuple[dict, dict] | None = None,
+) -> dict:
     """Compare all declared PCM bytes from two distinct, privately held WAVs.
 
     Raises only sanitized RepeatabilityError for refused inputs. A mismatch in
@@ -93,6 +171,18 @@ def verify_repeatability(first: str | os.PathLike[str], second: str | os.PathLik
             right_format = (right.getnchannels(), right.getsampwidth(), right.getframerate(), right.getnframes())
             if left_format != right_format:
                 raise RepeatabilityError(_ERROR)
+            receipt_contracts = None
+            if receipts is not None:
+                if not isinstance(receipts, (tuple, list)) or len(receipts) != 2:
+                    raise RepeatabilityError(_ERROR)
+                receipt_contracts = tuple(
+                    _receipt_contract(receipt, shape)
+                    for receipt, shape in zip(receipts, (left_format, right_format))
+                )
+                if not hmac.compare_digest(
+                    receipt_contracts[0][0], receipt_contracts[1][0]
+                ):
+                    raise RepeatabilityError(_ERROR)
             channels, width, _, frames = left_format
             expected_frame_bytes = channels * width
             digests = (hashlib.sha256(), hashlib.sha256())
@@ -103,10 +193,21 @@ def verify_repeatability(first: str | os.PathLike[str], second: str | os.PathLik
                     if len(pcm) != frames_now * expected_frame_bytes:
                         raise RepeatabilityError(_ERROR)
                     digest.update(pcm)
+            if receipt_contracts is not None:
+                # Each complete WAV must match its own private renderer
+                # output_sha256. Same PCM with altered container metadata
+                # must not pass when receipts are explicitly supplied.
+                for (_, handle, info), (_, expected_hash) in zip(
+                    sources, receipt_contracts
+                ):
+                    if not hmac.compare_digest(
+                        _digest_open_file(handle, info.st_size), expected_hash
+                    ):
+                        raise RepeatabilityError(_ERROR)
             if not all(_unchanged(p, h, s) for p, (_, h, s) in zip(paths, sources)):
                 raise RepeatabilityError(_ERROR)
             equal = hmac.compare_digest(digests[0].digest(), digests[1].digest())
-        return {
+        report = {
             "schema_version": 1,
             "repeatable_pcm": equal,
             "independent_sources_verified": True,
@@ -114,6 +215,9 @@ def verify_repeatability(first: str | os.PathLike[str], second: str | os.PathLik
             "technical_review_required": not equal,
             "human_preference_test_required": True,
         }
+        if receipt_contracts is not None:
+            report["render_receipts_consistent"] = True
+        return report
     except (OSError, EOFError, ValueError, wave.Error, OverflowError, TypeError):
         raise RepeatabilityError(_ERROR) from None
 
