@@ -93,6 +93,35 @@ python3 -m mixlab.quality.precision BASELINE.wav CANDIDATE.wav --fail-on-warning
 - Exit **0** means only that this heuristic did not flag its scoped issue; it is not M1 acceptance or a human-quality judgment.
 
 All valid modes print the same anonymous JSON; failure messages from argparse never echo private argument values or paths. Strict mode is opt-in, so existing report-only workflows keep their exit semantics.
+## Multiple candidates against a single frozen baseline
+
+Batch mode performs the same technical precision preflight on up to **eight**
+distinct candidates without re-reading the baseline for every pair:
+
+```sh
+python3 -m mixlab.quality.precision BASELINE.wav CANDIDATE-1.wav CANDIDATE-2.wav --batch --fail-on-warnings --require-conclusive
+```
+
+Strict admission occurs **before PCM scanning**: each input must be a bounded
+regular read-only PCM16 mono/stereo 8–96 kHz WAV of at most 32 MiB and
+2 million frames, all with identical channel layout, sampling rate and
+frame count. Total declared frames across baseline and candidates may not
+exceed **8 million**. Duplicate baseline/candidate aliases, including
+hardlinks, are refused. All files are scanned at most once and the baseline
+is reused only as private compact histogram data. Each source's device,
+inode, size, modification time and change time are revalidated after the
+whole batch: even an edit to a candidate already checked rejects the
+entire batch, never returns partial published results.
+
+Batch JSON contains only ordered neutral IDs `candidate-001` through
+`candidate-008`, and each candidate's `candidate_precision_loss_inspect`
+boolean/null and warning tokens. No music filenames, paths, trial answer
+mapping, hashes, PCM, timings, window positions or source metrics are
+exported. It is an **explicit** `--batch` mode; legacy one-candidate
+invocations preserve the original output schema. In batch mode, the
+optional strict flags return exit 2 if **any** candidate warns or is
+inconclusive; exit 3 means malformed or oversized input or budget violation.
+These are inspect-only gates, never independent musical preference proof.
 ## CI resource proof and adversarial regressions
 
 The PR-only GitHub-hosted workflow checks exact immutable source SHA,
