@@ -111,8 +111,9 @@ def _pcm_channel_views(raw: bytes, channels: int) -> tuple:
 def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     """Bounded exact audible excerpt reuse screen, no fingerprints disclosed.
 
-    Four shared seconds are not required: a 200-ms sufficiently audible run
-    that is byte-for-byte reused is enough to hold for provenance review.
+    Four shared seconds are not required: an audible window of at most
+    min(4096 frames, ~200ms) that is byte-for-byte reused prompts review.
+    For high-rate PCM the fixed 4096-frame cap covers less than 200ms.
     This catches clips cut from a longer source with different container and
     full-file PCM digests, *provided their sample rate/channels still match*.
     Anchors also cover exact polarity inversion, L/R swap, and 2x gain
