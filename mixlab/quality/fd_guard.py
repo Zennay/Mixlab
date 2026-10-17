@@ -99,6 +99,11 @@ def admitted_pcm16(path, *, seen_inodes=None, require_neutral_container=False):
         name = os.fspath(path)
         if not isinstance(name, (str, bytes)):
             raise TypeError
+        # os.open raises its own unsanitized ValueError for embedded NUL
+        # path arguments. Normalize that case before touching the filesystem.
+        nul = b"\x00" if isinstance(name, bytes) else "\x00"
+        if nul in name:
+            raise ValueError(_ERROR)
     except (TypeError, ValueError):
         raise ValueError(_ERROR) from None
 
