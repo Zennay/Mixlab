@@ -157,3 +157,19 @@ The wrapper now translates native filesystem failures into an anonymous
 `ValueError` without exposing the original OS error message. This is a
 privacy invariant for callers, not a claim that process-level exception
 introspection is equivalent to a sandbox.
+
+## Maximum group-capacity and fail-closed human-review regression
+
+A rights-free stress fixture creates four genuinely distinct 48kHz stereo
+PCM16 WAVs of **2,000,000 frames each**: one baseline and three candidates.
+This checks the actual complete-read **8,000,000 input-frame** group budget
+rather than merely simulating its metadata. The focused GitHub-hosted suite
+uses a 192 MiB address-space bound and reports maximum resident memory;
+runner measurements must be attributed to the exact source SHA.
+
+The strict group CLI is also verified against a mixed result containing one
+technically clean candidate and one with insufficient audible stereo in a
+channel. Even though no positive pan anomaly is established for the quiet
+clip, the mixed group returns exit 3 (not clean 0) in `--fail-on-review`
+mode. Normal diagnostic mode still emits a successful anonymous JSON report,
+not a musical-preference judgment.
