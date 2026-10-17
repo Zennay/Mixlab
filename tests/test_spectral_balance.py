@@ -569,6 +569,23 @@ class SpectralBalanceTests(unittest.TestCase):
             with self.subTest(block=block), patch.object(spectral, "READ_FRAMES", block):
                 self.assertEqual(reference, self.report())
 
+    def test_multi_candidate_stereo_dropout_warning_is_isolated_to_affected_candidate(self):
+        third = self.dir / "PRIVATE_DROP_CANDIDATE.wav"
+        make_stereo_window_dropout_wav(self.base, [0] * 8)
+        make_stereo_window_dropout_wav(self.other, [0] * 8)
+        make_stereo_window_dropout_wav(third, [1, 2, 1, 2, 0, 0, 0, 0], match_rms=True)
+        report = compare_spectral_balance(self.base, [self.other, third])
+        self.assertEqual(["candidate-01", "candidate-02"],
+                         [row["id"] for row in report["candidates"]])
+        self.assertEqual([], report["candidates"][0]["warnings"])
+        self.assertNotIn("stereo_temporal_channel_dropout_inspect",
+                         report["candidates"][0]["warnings"])
+        self.assertIn("stereo_temporal_channel_dropout_inspect",
+                      report["candidates"][1]["warnings"])
+        payload = json.dumps(report)
+        for source in (self.base, self.other, third):
+            self.assertNotIn(str(source), payload)
+
     def test_mono_files_never_claim_stereo_dropout_evidence(self):
         self.assertNotIn("stereo_temporal_channel_dropout_risk", self.report()["candidates"][0])
 
