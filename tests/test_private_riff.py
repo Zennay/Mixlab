@@ -162,7 +162,7 @@ class PrivateRiffQualityTests(unittest.TestCase):
     def test_private_metadata_after_audio_is_safe_and_ignored_for_pcm_identity(self):
         # A valid RIFF can include metadata chunks after PCM; do not falsely
         # reject local recordings or serialize source metadata in a report.
-        after = b"LIST" + (5).to_bytes(4, "little") + b"label" + b"\\x00"
+        after = b"LIST" + (5).to_bytes(4, "little") + b"label" + b"\x00"
         modified = self.original + after
         modified = patch_header(modified, 4, (len(modified) - 8).to_bytes(4, "little"))
         self.variant.write_bytes(modified)
