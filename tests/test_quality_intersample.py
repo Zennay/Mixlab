@@ -8,8 +8,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
 
+from mixlab.quality import intersample as intersample_module
 from mixlab.quality.intersample import compare_intersample, AudioInputError, _PHASES
 
 
@@ -375,6 +377,92 @@ class IntersampleTests(unittest.TestCase):
         self.assertGreater(row["adaptive_8x_refined_windows"], 0)
         self.assertFalse(row["intersample_over_risk"])
         self.assertTrue(row["edge_interpolation_ambiguity_risk"])
+
+    def test_same_size_baseline_path_swap_during_read_is_rejected(self):
+        # Descriptor content stays valid. Swapping the pathname after open
+        # used to produce a misleading SUCCESS despite changed provenance.
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        staged = self.root / "new-untrusted-baseline.wav"
+        write_wav(staged, [0] * 800)
+        real_scan = intersample_module._scan
+        calls = 0
+
+        def swap_after_first_scan(reader, channels, frames):
+            nonlocal calls
+            result = real_scan(reader, channels, frames)
+            calls += 1
+            if calls == 1:
+                os.replace(staged, self.a)
+            return result
+
+        with patch.object(intersample_module, "_scan", side_effect=swap_after_first_scan):
+            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+                compare_intersample(self.a, [self.b])
+
+    def test_candidate_path_swap_while_baseline_is_scanned_is_rejected(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        staged = self.root / "new-untrusted-candidate.wav"
+        write_wav(staged, [0] * 800)
+        real_scan = intersample_module._scan
+        called = False
+
+        def swap_candidate(reader, channels, frames):
+            nonlocal called
+            if not called:
+                called = True
+                os.replace(staged, self.b)
+            return real_scan(reader, channels, frames)
+
+        with patch.object(intersample_module, "_scan", side_effect=swap_candidate):
+            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+                compare_intersample(self.a, [self.b])
+
+    def test_unlinked_open_source_path_is_not_accepted(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        real_scan = intersample_module._scan
+        called = False
+
+        def unlink_after_open(reader, channels, frames):
+            nonlocal called
+            result = real_scan(reader, channels, frames)
+            if not called:
+                called = True
+                self.a.unlink()
+            return result
+
+        with patch.object(intersample_module, "_scan", side_effect=unlink_after_open):
+            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+                compare_intersample(self.a, [self.b])
+
+    def test_source_path_symlink_replacement_after_open_is_rejected(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        real_scan = intersample_module._scan
+        called = False
+
+        def switch_to_link(reader, channels, frames):
+            nonlocal called
+            result = real_scan(reader, channels, frames)
+            if not called:
+                called = True
+                self.a.unlink()
+                self.a.symlink_to(self.b)
+            return result
+
+        with patch.object(intersample_module, "_scan", side_effect=switch_to_link):
+            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+                compare_intersample(self.a, [self.b])
+
+    def test_unchanged_distinct_files_keep_anonymous_success(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        report = compare_intersample(self.a, [self.b])
+        self.assertEqual(800, report["frames_per_source"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertFalse(report["baseline"]["technical_review_required"])
 
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
