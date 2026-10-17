@@ -34,6 +34,12 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 left, right = v, -v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
+            elif mode == "even":
+                left = right = v if i % 2 == 0 else 0
+            elif mode == "odd-opposed":
+                left, right = (v, -v) if i % 2 else (0, 0)
+            elif mode == "sparse-opposed":
+                left, right = (v, -v) if i % 5 == 0 else (0, 0)
             else:
                 left = right = v
             buf.extend(struct.pack("<hh", left, right))
@@ -84,6 +90,25 @@ class RelativeMonoTests(unittest.TestCase):
                 _wave(self.candidate, mode=mode, frames=frames)
                 result = inspect(str(self.base), [str(self.candidate)])
                 self.assertEqual(result["candidates"][0]["status"], "insufficient_stereo_evidence")
+
+    def test_disjoint_sample_activity_must_abstain_not_claim_phase_harm(self):
+        # Both files have non-silent *100ms* windows and adequate whole-file
+        # RMS; no individual frame is jointly audible. Fraction-only checks
+        # incorrectly claim candidate-specific mono damage here.
+        _wave(self.base, mode="even")
+        _wave(self.candidate, mode="odd-opposed")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(
+            result["candidates"][0]["status"], "insufficient_stereo_evidence"
+        )
+
+    def test_sparse_candidate_common_time_abstains(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="sparse-opposed")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(
+            result["candidates"][0]["status"], "insufficient_stereo_evidence"
+        )
 
     def test_mismatched_frames_do_not_get_positive_claim(self):
         _wave(self.base, mode="normal")
