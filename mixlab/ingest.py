@@ -376,7 +376,13 @@ def validate_library(manifest_path):
         relative = Path(raw)
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("Source path must remain within the library directory; traversal rejected")
-        path = (source.parent / relative).resolve()
+        try:
+            path = (source.parent / relative).resolve()
+        except (OSError, RuntimeError) as exc:
+            # Python releases differ in whether cyclic symlinks raise
+            # RuntimeError or OSError. Neither may leak a private path or
+            # escape this untrusted manifest admission boundary.
+            raise ValueError("Source path could not be resolved safely") from exc
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")
         sha = track.get("sha256")
