@@ -1,0 +1,225 @@
+"""Synthetic, rights-free regression tests for independent ML-07 bitdepth screening."""
+import array
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+import wave
+
+from mixlab.quality import bitdepth
+
+
+def samples(frames=8000, *, collapse=False, channels=2, quiet=False, right_only=False):
+    values = array.array("h")
+    for i in range(frames):
+        # Non-periodic low bits; deliberately no recordings or copyrighted music.
+        high = (2600 + ((i * 1103 + (i // 7) * 719) % 17000)) * (-1 if i % 3 else 1)
+        for ch in range(channels):
+            number = (0 if quiet else high + ch * 19)
+            if collapse and (not right_only or ch == 1):
+                number = (number // 256) * 256
+            values.append(number)
+    if sys.byteorder != "little":
+        values.byteswap()
+    return values.tobytes()
+
+
+def wav(path, data, *, rate=8000, channels=2, width=2):
+    with wave.open(str(path), "wb") as writer:
+        writer.setnchannels(channels)
+        writer.setsampwidth(width)
+        writer.setframerate(rate)
+        writer.writeframes(data)
+
+
+class ResolutionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.base = self.root / "private-base.wav"
+        self.good = self.root / "private-good.wav"
+        self.bad = self.root / "private-bad.wav"
+        wav(self.base, samples())
+        wav(self.good, samples())
+        wav(self.bad, samples(collapse=True))
+
+    def test_clean_stereo_ab_is_conclusive_without_false_warning(self):
+        data = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertFalse(data["candidates"][0]["coarse_resolution_review"])
+        self.assertEqual([False, False], data["candidates"][0]["per_channel_review"])
+        self.assertEqual(2, data["channels"])
+        self.assertTrue(all(ch["evidenced"] for ch in data["baseline_channel_metrics"]))
+        self.assertNotIn(str(self.root), json.dumps(data))
+        self.assertNotIn("private", json.dumps(data))
+
+    def test_8bit_left_justified_candidate_is_flagged_both_channels(self):
+        data = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertIs(data["candidates"][0]["coarse_resolution_review"], True)
+        self.assertEqual([True, True], data["candidates"][0]["per_channel_review"])
+        self.assertEqual(1.0, data["candidates"][0]["candidate_channel_metrics"][0]["low_byte_zero_fraction"])
+
+    def test_single_channel_regression_detected(self):
+        wav(self.bad, samples(collapse=True, right_only=True))
+        result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
+        self.assertEqual([False, True], result["per_channel_review"])
+        self.assertTrue(result["coarse_resolution_review"])
+
+    def test_batch_earlier_good_never_covers_later_bad(self):
+        data = bitdepth.inspect_ab(self.base, [self.good, self.bad])
+        self.assertEqual([False, True], [r["coarse_resolution_review"] for r in data["candidates"]])
+
+    def test_mono_supported(self):
+        wav(self.base, samples(channels=1), channels=1)
+        wav(self.bad, samples(collapse=True, channels=1), channels=1)
+        data = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual(1, data["channels"])
+        self.assertEqual([True], data["candidates"][0]["per_channel_review"])
+
+    def test_low_energy_abstains_without_claiming_a_clean_pair(self):
+        wav(self.good, samples(quiet=True))
+        data = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertIsNone(data["candidates"][0]["coarse_resolution_review"])
+        self.assertEqual([None, None], data["candidates"][0]["per_channel_review"])
+
+    def test_short_excerpt_abstains(self):
+        wav(self.base, samples(frames=500))
+        wav(self.good, samples(frames=500))
+        self.assertIsNone(bitdepth.inspect_ab(self.base, [self.good])["candidates"][0]["coarse_resolution_review"])
+
+    def test_short_burst_does_not_satisfy_four_windows(self):
+        # Eligible-sample total is high but concentrated in 100ms, not sustained.
+        frame = samples(frames=800, channels=1)
+        wav(self.base, frame + b"\x00\x00" * 7200, channels=1)
+        wav(self.good, frame + b"\x00\x00" * 7200, channels=1)
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
+    def test_mismatched_duration_rate_channels_and_width_rejected(self):
+        for kwargs in ({"rate": 8001}, {"channels": 1}, {"width": 1}):
+            with self.subTest(kwargs=kwargs):
+                if "channels" in kwargs:
+                    data = samples(channels=1)
+                elif "width" in kwargs:
+                    data = b"\x01" * 16000
+                else:
+                    data = samples()
+                wav(self.good, data, **kwargs)
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    bitdepth.inspect_ab(self.base, [self.good])
+
+    def test_symlinks_and_symlinked_parent_fail_closed(self):
+        symlink = self.root / "private-link.wav"
+        symlink.symlink_to(self.base)
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            bitdepth.inspect_ab(symlink, [self.good])
+        parent = self.root / "private-dir-link"
+        parent.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            bitdepth.inspect_ab(parent / self.base.name, [self.good])
+
+    def test_same_inode_hardlink_and_repeated_path_rejected(self):
+        with self.assertRaises(ValueError):
+            bitdepth.inspect_ab(self.base, [self.base])
+        duplicate = self.root / "hardlink.wav"
+        os.link(self.base, duplicate)
+        with self.assertRaises(ValueError):
+            bitdepth.inspect_ab(self.base, [duplicate])
+
+    def test_non_regular_and_missing_sources_do_not_leak_path(self):
+        for path in [self.root / "not-found-private.wav", self.root]:
+            with self.assertRaises(ValueError) as ctx:
+                bitdepth.inspect_ab(self.base, [path])
+            self.assertNotIn(str(path), str(ctx.exception))
+            self.assertNotIn(str(self.root), str(ctx.exception))
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO required")
+    def test_fifo_never_blocks(self):
+        fifo = self.root / "never-open-private.fifo"
+        os.mkfifo(fifo)
+        with self.assertRaises(ValueError):
+            bitdepth.inspect_ab(self.base, [fifo])
+
+    def test_path_replacement_midscan_rejected_without_partial_report(self):
+        original = bitdepth._scan
+        called = 0
+        def replace_after_first_scan(source):
+            nonlocal called
+            result = original(source)
+            called += 1
+            if called == 1:
+                replacement = self.root / "other.wav"
+                wav(replacement, samples())
+                os.replace(replacement, self.good)
+            return result
+        with patch.object(bitdepth, "_scan", side_effect=replace_after_first_scan):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(self.base, [self.good])
+
+    def test_mutation_in_earlier_source_during_later_scan_rejected(self):
+        original = bitdepth._scan
+        called = 0
+        def mutate_earlier_source(source):
+            nonlocal called
+            result = original(source)
+            called += 1
+            if called == 2:
+                with open(self.base, "ab") as handle:
+                    handle.write(b"later mutation")
+            return result
+        with patch.object(bitdepth, "_scan", side_effect=mutate_earlier_source):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(self.base, [self.good])
+
+    def test_invalid_candidate_count_and_string_rejected(self):
+        for candidates in ([], str(self.good), [self.good] * 8):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(self.base, candidates)
+
+    def test_aggregate_admission_rejects_before_read(self):
+        with patch.object(bitdepth, "_scan", side_effect=AssertionError("PCM read started")):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(self.base, [self.good] * 7)
+        # Same inode is rejected even earlier: either way, no PCM is read.
+
+    def test_public_api_errors_and_result_never_leak_private_path(self):
+        with self.assertRaises(ValueError) as ctx:
+            bitdepth.inspect_ab(self.base, [self.root / "secret-not-found.wav"])
+        self.assertNotIn("secret", str(ctx.exception))
+        self.assertNotIn(str(self.root), str(ctx.exception))
+        self.assertNotIn(self.base.name, json.dumps(bitdepth.inspect_ab(self.base, [self.bad])))
+
+    def cli(self, *args):
+        return subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.bitdepth", *map(str, args)],
+            capture_output=True, text=True, timeout=15,
+        )
+
+    def test_cli_clean_suspect_and_invalid_exit_codes(self):
+        self.assertEqual(0, self.cli(self.base, self.good, "--strict").returncode)
+        suspect = self.cli(self.base, self.bad, "--strict")
+        self.assertEqual(3, suspect.returncode)
+        self.assertTrue(json.loads(suspect.stdout)["candidates"][0]["coarse_resolution_review"])
+        invalid = self.cli(self.base, self.root / "secret-does-not-exist.wav")
+        self.assertEqual(2, invalid.returncode)
+        self.assertNotIn("secret", invalid.stdout + invalid.stderr)
+        self.assertNotIn(str(self.root), invalid.stdout + invalid.stderr)
+
+    def test_cli_abstention_is_exit3_under_strict(self):
+        wav(self.good, samples(quiet=True))
+        run = self.cli(self.base, self.good, "--strict")
+        self.assertEqual(3, run.returncode)
+        self.assertIsNone(json.loads(run.stdout)["candidates"][0]["coarse_resolution_review"])
+
+    def test_cli_parser_redacts_unknown_option_and_private_value(self):
+        bad = self.cli(self.base, self.good, "--private-filename=secret")
+        self.assertEqual(2, bad.returncode)
+        self.assertNotIn("secret", bad.stdout + bad.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
