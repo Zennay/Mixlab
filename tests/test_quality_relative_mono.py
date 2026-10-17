@@ -369,6 +369,32 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertFalse(report["milestone_pass"])
         self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_baseline_dc_offset_requires_review_even_if_candidate_clean(self):
+        _wave(self.base, mode="dc-shift")
+        _wave(self.candidate, mode="alternate")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(canonical["baseline"]["dc_offset_risk"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
+
+    def test_one_silent_stereo_channel_never_gets_clean_result(self):
+        _wave(self.base, mode="normal")
+        with wave.open(str(self.candidate), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(b"".join(
+                struct.pack("<hh", round(8000 * math.sin(2 * math.pi * 200 * i / 8000)), 0)
+                for i in range(12000)
+            ))
+        from mixlab.quality import compare_wavs
+        m = compare_wavs(self.base, [self.candidate])["candidates"][0]["metrics"]
+        self.assertTrue(m["stereo_channel_silence_risk"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+
     def test_near_full_scale_peak_candidate_requires_integrity_review(self):
         _wave(self.base, mode="normal")
         _wave(self.candidate, mode="near-full-scale")
