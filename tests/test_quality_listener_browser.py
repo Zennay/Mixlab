@@ -138,6 +138,15 @@ _PLAYBACK_SCRIPT = r"""
     document.documentElement.dataset.mixlabPlaybackCheck = outcome;
   };
   if (!clip) { finish('fail'); return; }
+  const markStage = label => {
+    document.documentElement.dataset.mixlabPlaybackStage = label;
+  };
+  markStage('requested');
+  clip.addEventListener('loadedmetadata', () => markStage('metadata'), {once:true});
+  clip.addEventListener('playing', () => markStage('playing'), {once:true});
+  clip.addEventListener('timeupdate', () => {
+    if (clip.currentTime >= 0.2) markStage('time-advanced');
+  });
   let resolved = false;
   const done = success => {
     if (resolved) return;
@@ -146,13 +155,17 @@ _PLAYBACK_SCRIPT = r"""
     finish(success ? 'pass' : 'fail');
   };
   const timeout = setTimeout(() => done(false), 3500);
-  clip.addEventListener('error', () => done(false), {once: true});
+  clip.addEventListener('error', () => {
+    markStage('media-error');
+    done(false);
+  }, {once: true});
   clip.addEventListener('ended', () => done(
     clip.ended && clip.error === null && clip.currentTime >= 0.35
   ), {once: true});
   // This synthetic-only headless browser has an explicit autoplay policy,
   // never an external audio device or access to user media.
-  clip.play().catch(() => done(false));
+  clip.play().then(() => markStage('play-promise-resolved'))
+    .catch(() => { markStage('play-promise-rejected'); done(false); });
 })();
 """
 
@@ -447,8 +460,11 @@ class BrowserFormTests(unittest.TestCase):
         marker = re.search(r'<html\b[^>]*data-mixlab-playback-check="([^"]+)"',
                            done.stdout, flags=re.IGNORECASE)
         self.assertIsNotNone(marker, "browser did not report playback outcome")
+        stage = re.search(r'<html\b[^>]*data-mixlab-playback-stage="([^"]+)"',
+                          done.stdout, flags=re.IGNORECASE)
+        phase = stage.group(1) if stage else "no-stage"
         self.assertEqual(marker.group(1), "pass",
-                         "offline PCM did not genuinely play to completion")
+                         f"offline PCM did not play to completion (phase: {phase})")
 
 
 if __name__ == "__main__":
