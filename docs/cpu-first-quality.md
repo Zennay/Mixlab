@@ -433,3 +433,27 @@ this is a **review-for-independent-transition** warning, not proof of
 plagiarism, a listening preference or an overall DJ quality score.
 The extra scan uses bounded RAM, no model, no audio edits and no
 private-data uploads.
+
+
+### Across-trial stereo swaps are also repeated blind references
+
+The neutral listener pack validator compares *all* public A/B PCM variants
+across distinct trials to find a repeated baseline that reviewers can learn
+to recognise. This check now also treats an **exact left/right stereo
+channel swap** in a later trial as repeated playback material. Its private
+streaming fingerprints include sample rate, channel count and frame count;
+changing playback speed does not produce a false match. Ordinary mono files
+have no stereo-swap fingerprint. Reuse of A and B within the same trial
+remains covered by the separate within-trial comparison.
+
+The report adds only the existing aggregate
+`cross_trial_repeated_variant_count` and the neutral trial-level warning
+`repeated_pcm_across_trials_inspect_blinding`. It intentionally does **not**
+disclose which trial, A/B side, baseline role or earlier reference matched,
+nor any fingerprints or source paths. In strict mode this warning continues
+to block promotion until the blind study design is independently checked.
+
+A creative channel swap can be intentional, but repeatedly exposing an
+identifiable audio excerpt across trials may compromise the listener's
+blind assignment. This check supplies technical synthetic evidence only,
+not real-listener validation.
