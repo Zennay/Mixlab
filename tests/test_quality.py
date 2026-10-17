@@ -549,6 +549,75 @@ class QualityTests(unittest.TestCase):
         self.assertTrue(inspect_review_pack(review, **arguments)[
             "public_receipt_pack_id_verified"])
 
+    def test_review_pack_fails_if_public_inventory_grows_during_pcm_scan(self):
+        # A private answer key introduced *after* initial enumeration must
+        # never be accepted in a listener-facing review pack.
+        review = self.root / "growing-review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x / 2) for x in self.samples])
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+        for extra_name in ("answer-key.json", "trial-002-A.wav", "notes.txt"):
+            injected = review / extra_name
+
+            def add_after_pcm_read(base, candidates, **kwargs):
+                result = compare_wavs(base, candidates, **kwargs)
+                injected.write_bytes(b"private-data-must-never-be-exposed")
+                return result
+
+            with self.subTest(asset=extra_name), patch(
+                "mixlab.quality.pack.compare_wavs", side_effect=add_after_pcm_read
+            ):
+                with self.assertRaisesRegex(ValueError, "changed during quality preflight"):
+                    inspect_review_pack(review)
+            self.assertTrue(injected.exists())
+            injected.unlink()
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+
+    def test_review_pack_guards_public_page_and_receipt_during_initial_validation(self):
+        from mixlab.cli import write_review
+        from mixlab.quality import pack as pack_module
+        root = self.root / "early-mutating-pack"
+        review = root / "review"
+        review.mkdir(parents=True)
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x / 2) for x in self.samples])
+        page = review / "index.html"
+        receipt = root / "receipt.json"
+        write_review(page, ["trial-001"], "b" * 64)
+        receipt.write_text(json.dumps({"schema_version": 1, "pack_id": "b" * 64,
+                                       "trial_count": 1}))
+        opts = {"require_generated_html": False, "require_receipt": True}
+        self.assertTrue(inspect_review_pack(review, **opts)["public_receipt_pack_id_verified"])
+        original_receipt = receipt.read_bytes()
+        read_receipt = pack_module._read_public_receipt_id
+
+        def change_receipt_while_validating(*args):
+            result = read_receipt(*args)
+            # The JSON still validates; only the file's identity changes.
+            receipt.write_bytes(original_receipt + b" ")
+            return result
+
+        with patch("mixlab.quality.pack._read_public_receipt_id",
+                   side_effect=change_receipt_while_validating):
+            with self.assertRaisesRegex(ValueError, "changed during quality preflight"):
+                inspect_review_pack(review, **opts)
+        receipt.write_bytes(original_receipt)
+        original_page = page.read_bytes()
+        verify_page = pack_module._verify_public_review_page
+
+        def change_page_while_validating(*args, **kwargs):
+            result = verify_page(*args, **kwargs)
+            page.write_bytes(original_page + b"\n")
+            return result
+
+        with patch("mixlab.quality.pack._verify_public_review_page",
+                   side_effect=change_page_while_validating):
+            with self.assertRaisesRegex(ValueError, "changed during quality preflight"):
+                inspect_review_pack(review, **opts)
+        page.write_bytes(original_page)
+        self.assertTrue(inspect_review_pack(review, **opts)["review_page_audio_links_verified"])
+
     def test_review_pack_rejects_missing_trial_numbers_before_audio_or_receipt(self):
         review = self.root / "review"
         review.mkdir()

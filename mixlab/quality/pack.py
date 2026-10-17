@@ -254,6 +254,18 @@ def inspect_review_pack(
         raise ValueError("Review trial identifiers are not a contiguous sequence")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
+    # Freeze the public file inventory *before* reading headers, the page or
+    # the public receipt. A listener pack must not gain private files during
+    # the scan, even if all previously present audio remains byte-identical.
+    # This is a cooperative best-effort snapshot, not an atomic filesystem
+    # transaction or a cryptographic signature.
+    before_inventory = {entry.name: _file_identity(entry) for entry in directory.iterdir()}
+    before_directory = _file_identity(directory)
+    receipt_path = directory.parent / "receipt.json" if require_receipt else None
+    if receipt_path is not None and (receipt_path.is_symlink() or not receipt_path.is_file()):
+        raise ValueError("Official public pack receipt missing or linked")
+    before_receipt = _file_identity(receipt_path) if receipt_path is not None else None
+
     # Headers are cheap to read. Bound the total *declared* frame workload
     # before expensive sample-level diagnostics. scan_wav still independently
     # verifies every declared frame and rejects truncated input.
@@ -274,16 +286,6 @@ def inspect_review_pack(
     )
     if (require_generated_html or require_receipt) and not page_links_verified:
         raise ValueError("Official listener page missing from review pack")
-    # A benchmark must not be edited while its checks are being computed.
-    # Guard all examined WAVs, the public page and optional public receipt
-    # against ordinary in-place edits/replacements (not a cryptographic seal).
-    watched = [file for labels in groups.values() for file in labels.values()]
-    if page_links_verified:
-        watched.append(directory / "index.html")
-    if require_receipt:
-        watched.append(directory.parent / "receipt.json")
-    before_scan = {path: _file_identity(path) for path in watched}
-
     trials = []
     warning_trial_count = 0
     cross_trial_repeated_variant_count = 0
@@ -340,9 +342,15 @@ def inspect_review_pack(
             "trial_warnings": trial_warnings,
             "technical_warnings_present": flagged,
         })
-    for path, original in before_scan.items():
-        if _file_identity(path) != original:
-            raise ValueError("Review pack files changed during quality preflight")
+    # Comparing every filename AND identity catches an answer key, extra WAV,
+    # or other unexpected listener-visible asset inserted mid-scan. Snapshot
+    # the directory itself too so rename/replace operations cannot silently
+    # exchange the reviewed pack. Receipt checks are opt-in as before.
+    after_inventory = {entry.name: _file_identity(entry) for entry in directory.iterdir()}
+    if (after_inventory != before_inventory
+            or _file_identity(directory) != before_directory
+            or (receipt_path is not None and _file_identity(receipt_path) != before_receipt)):
+        raise ValueError("Review pack files changed during quality preflight")
     return {
         "schema_version": 1,
         "purpose": "blind_review_technical_preflight_not_musical_quality",
