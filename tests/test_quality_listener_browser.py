@@ -131,6 +131,32 @@ def _synthetic_pcm_wav(path: Path, *, sample_rate=8000, channels=2):
         wav.writeframes(pcm)
 
 
+_PLAYBACK_SCRIPT = r"""
+(() => {
+  const clip = document.querySelector('fieldset audio');
+  const finish = outcome => {
+    document.documentElement.dataset.mixlabPlaybackCheck = outcome;
+  };
+  if (!clip) { finish('fail'); return; }
+  let resolved = false;
+  const done = success => {
+    if (resolved) return;
+    resolved = true;
+    clearTimeout(timeout);
+    finish(success ? 'pass' : 'fail');
+  };
+  const timeout = setTimeout(() => done(false), 3500);
+  clip.addEventListener('error', () => done(false), {once: true});
+  clip.addEventListener('ended', () => done(
+    clip.ended && clip.error === null && clip.currentTime >= 0.35
+  ), {once: true});
+  // This synthetic-only headless browser has an explicit autoplay policy,
+  // never an external audio device or access to user media.
+  clip.play().catch(() => done(false));
+})();
+"""
+
+
 _INTEGRATED_SCRIPT = r"""
 (() => {
   const clips = [...document.querySelectorAll('fieldset audio')];
@@ -387,6 +413,42 @@ class BrowserFormTests(unittest.TestCase):
         self.assertEqual(second["render_count"], receipt["render_count"])
         _, _, second_trials = verify_pack(second_receipt.parent)
         self.assertEqual(second_trials, trials)
+
+    def test_browser_plays_original_offline_pcm_to_completion(self):
+        """Observe actual time progression/ended on a synthetic local WAV."""
+        wav = self.root / "trial-001-A.wav"
+        _synthetic_pcm_wav(wav)
+        page = self.root / "playback-review.html"
+        write_review(page, ["trial-001"], "a" * 64)
+        original = page.read_text(encoding="utf-8")
+        page.write_text(
+            original.replace("</html>",
+                             "<script>" + _PLAYBACK_SCRIPT + "</script></html>"),
+            encoding="utf-8"
+        )
+        command = [
+            _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+            "--disable-dev-shm-usage", "--disable-background-networking",
+            "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+            "--disable-sync", "--mute-audio",
+            "--autoplay-policy=no-user-gesture-required",
+            "--virtual-time-budget=5000",
+            "--user-data-dir=" + str(self.root / "playback-chrome-profile"),
+            "--dump-dom", page.as_uri(),
+        ]
+        env = dict(os.environ)
+        env["HOME"] = str(self.root)
+        try:
+            done = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=35, env=env)
+        except subprocess.TimeoutExpired:
+            self.fail("bounded synthetic browser playback timed out")
+        self.assertEqual(done.returncode, 0, "Chromium playback process failed")
+        marker = re.search(r'<html\\b[^>]*data-mixlab-playback-check="([^"]+)"',
+                           done.stdout, flags=re.IGNORECASE)
+        self.assertIsNotNone(marker, "browser did not report playback outcome")
+        self.assertEqual(marker.group(1), "pass",
+                         "offline PCM did not genuinely play to completion")
 
 
 if __name__ == "__main__":
