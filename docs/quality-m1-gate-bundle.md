@@ -48,6 +48,33 @@ and malicious byte swaps restored between checks are not prevented by these
 read-only guards. Source rights, independent human identity, perceptual
 loudness parity and blinded listener preference remain external release gates.
 
+## Listener uncertainty is not invalid data
+
+The position screen deliberately represents its A/B-dominance result as a
+**tri-state** field. At least **12 decisive A/B votes** are required before a
+position-dominance estimate is meaningful:
+
+- **12 or more decisive responses:** the position flag must be a real boolean
+  (`true` or `false`). Missing/unknown here means invalid evidence.
+- **0–11 decisive responses:** the position flag must be `null`; the technical
+  bundle returns `REVIEW_REQUIRED` (exit **3**), not corrupted-data exit 2.
+- Every trial can validly be marked `Tie` or `Both unusable`; these are
+  complete, admissible ratings but contain no decisive A/B preference.
+- The positional vote count must equal the independently re-aggregated
+  candidate+baseline count. A conflicting, boolean-spoofed or impossible count
+  is rejected, even if the individual component reports superficially pass.
+
+This matters for honest pilot reporting: uncertainty, ties and unlistenable
+pairs are **methodological holds**, not evidence that listeners failed to
+submit valid forms. A low-information technical hold cannot prove the
+candidate beats simple crossfade.
+
+New end-to-end synthetic-PCM regression cases exercise **3, 4 and 5
+reviewers** submitting valid all-Tie and all-Both-unusable ballots,
+mixed low-information ballots, exact **11/12** decisive threshold,
+a real CLI exit-3 outcome, contradictory post-validation vote counts
+and forged decisiveness statuses. No real human evidence is used.
+
 ## Deterministic QA without uploading private music
 
 ```bash
