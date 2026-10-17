@@ -67,7 +67,7 @@ def _capture_path(value):
     """
     try:
         raw = os.fspath(value)
-        if type(raw) is not str or "\\x00" in raw:
+        if type(raw) is not str or chr(0) in raw:
             raise ValueError(_ERROR)
         return Path(raw)
     except Exception:
