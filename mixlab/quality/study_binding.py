@@ -170,6 +170,18 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
             recipe = row.get("recipe")
             if not isinstance(recipe, dict) or recipe.get("family") != row["family"]:
                 _fail()
+            # The two declared source tempos matching is insufficient when
+            # recipe.bpm is independent metadata outside pack_id. A fabricated
+            # recipe at a different global tempo contradicts this no-stretch
+            # M1 study even if both source-bpm claims are intact.
+            actual_bpm = recipe.get("bpm")
+            if (type(actual_bpm) not in (int, float)
+                    or not math.isfinite(actual_bpm)
+                    or actual_bpm != frozen["a_bpm"]):
+                _fail()
+            beats = recipe.get("beats")
+            if type(beats) is not int or not 1 <= beats <= 64:
+                _fail()
             for field, expected in (("a_bpm", frozen["a_bpm"]),
                                     ("b_bpm", frozen["b_bpm"])):
                 number = recipe.get(field)
