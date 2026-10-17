@@ -303,8 +303,10 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         with wave.open(str(receiver), "rb") as reader:
             original = list(struct.iter_unpack(
                 "<hh", reader.readframes(reader.getnframes())))
-        edited = b"".join(struct.pack("<hh", donor_l, right)
-                          for (donor_l, _), (_, right) in zip(source, original))
+        # Preserve the stolen audible left while making the other channel
+        # unique: whole-WAV / complete PCM hashes must *not* catch this.
+        edited = b"".join(struct.pack("<hh", donor_l, (23 if i % 2 else -23))
+                          for i, ((donor_l, _), _) in enumerate(zip(source, original)))
         with wave.open(str(receiver), "wb") as writer:
             writer.setnchannels(2)
             writer.setsampwidth(2)
@@ -312,6 +314,8 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
             writer.writeframes(edited)
         self.dev["tracks"][0]["sha256"] = hashlib.sha256(
             receiver.read_bytes()).hexdigest()
+        self.assertNotEqual(self.dev["tracks"][0]["sha256"],
+                            self.eva["tracks"][0]["sha256"])
         self.rejected()
 
     def test_stereo_source_pair_accepts_independent_channels(self):
