@@ -121,6 +121,18 @@ joint replacement of both receipt and page: the receipt is not
 cryptographically signed. Preserve the original frozen pack and obtain
 independent evidence review before a human benchmark.
 
+The pack preflight snapshots the complete public review directory inventory
+(filename plus device/inode/size/mtime/ctime) and the directory identity
+**before** WAV header inspection, public receipt parsing or listener-page
+validation. Immediately before success it checks the complete inventory
+again, plus the directory identity and optional sibling receipt. A private
+answer key, extra WAV or other file inserted while PCM is streaming, or
+a page/receipt edited during initial validation, now fails closed even if
+all expected audio files still match. This is a best-effort filesystem
+race detector, **not** a cryptographic seal, atomic transaction, guarantee
+against transient add-and-remove races, or proof of safe public release.
+Keep a frozen immutable pack and perform an independent rights review.
+
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral
 `repeated_pcm_across_trials_inspect_blinding` **trial-level** warning
