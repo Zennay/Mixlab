@@ -337,7 +337,7 @@ def validate_library(manifest_path):
         if not isinstance(track.get("provenance"), str) or not track["provenance"].strip():
             raise ValueError("Provenance required")
         raw = track.get("path")
-        if not isinstance(raw, str) or not raw or "\\\\" in raw:
+        if not isinstance(raw, str) or not raw or "\\" in raw:
             raise ValueError("Path must be a relative POSIX path")
         relative = Path(raw)
         if relative.is_absolute() or ".." in relative.parts:
