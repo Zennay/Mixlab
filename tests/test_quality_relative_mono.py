@@ -28,11 +28,19 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
         out.setframerate(rate)
         buf = bytearray()
         for i in range(frames):
-            v = round(8000 * math.sin(2 * math.pi * 200 * i / rate))
+            tone_hz = 221 if mode in ("alternate", "alternate-opposed") else 200
+            v = round(8000 * math.sin(2 * math.pi * tone_hz * i / rate))
+            w = round(7000 * math.sin(2 * math.pi * 260 * i / rate))
             if mode == "silent":
                 left = right = 0
-            elif mode == "opposed":
+            elif mode in ("opposed", "alternate-opposed"):
                 left, right = v, -v
+            elif mode == "polarity":
+                left = right = -v
+            elif mode == "stereo":
+                left, right = v, w
+            elif mode == "stereo-swapped":
+                left, right = w, v
             elif mode == "loud-normal":
                 left = right = v * 2
             elif mode == "late-opposed":
@@ -59,13 +67,48 @@ class RelativeMonoTests(unittest.TestCase):
 
     def test_clean_stereo_passes_without_musical_claim(self):
         _wave(self.base, mode="normal")
-        # Different number of frames forbidden; use same duration.
-        _wave(self.candidate, mode="normal")
+        # Independently rendered, equal-level clean stereo signal.
+        _wave(self.candidate, mode="alternate")
         result = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(result["candidates"][0]["status"], "no_new_sustained_mono_cancellation_detected")
         self.assertFalse(result["milestone_pass"])
         self.assertNotIn(str(self.root), json.dumps(result))
         self.assertNotIn("source_sha", json.dumps(result))
+
+    def test_exact_duplicate_pcm_is_not_an_independent_blind_ab(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="normal")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "non_independent_ab_audio")
+        self.assertFalse(result["milestone_pass"])
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_duplicate_candidate_rejected_without_downgrading_first_independent(self):
+        _wave(self.base, mode="normal")
+        independent = self.root / "independent.wav"
+        copied = self.root / "same-as-independent.wav"
+        _wave(independent, mode="alternate")
+        _wave(copied, mode="alternate")
+        result = inspect(str(self.base), [str(independent), str(copied)])
+        self.assertEqual([row["status"] for row in result["candidates"]], [
+            "no_new_sustained_mono_cancellation_detected",
+            "non_independent_ab_audio",
+        ])
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_channel_swap_is_not_independent_transition(self):
+        _wave(self.base, mode="stereo")
+        _wave(self.candidate, mode="stereo-swapped")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "non_independent_ab_audio")
+        self.assertFalse(result["milestone_pass"])
+
+    def test_polarity_inverted_audio_is_not_independent_transition(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="polarity")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "non_independent_ab_audio")
+        self.assertFalse(result["milestone_pass"])
 
     def test_candidate_only_antiphase_detected(self):
         _wave(self.base, mode="normal")
@@ -106,7 +149,7 @@ class RelativeMonoTests(unittest.TestCase):
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
-        _wave(self.candidate, mode="opposed")
+        _wave(self.candidate, mode="alternate-opposed")
         result = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(result["candidates"][0]["status"], "baseline_already_has_mono_cancellation")
 
@@ -148,7 +191,7 @@ class RelativeMonoTests(unittest.TestCase):
         clean = self.root / "clean.wav"
         sparse = self.root / "sparse.wav"
         antiphase = self.root / "antiphase.wav"
-        _wave(clean, mode="normal")
+        _wave(clean, mode="alternate")
         _wave(sparse, mode="sparse-opposed")
         _wave(antiphase, mode="opposed")
         result = inspect(str(self.base), [str(clean), str(sparse), str(antiphase)])
@@ -298,7 +341,7 @@ class RelativeMonoTests(unittest.TestCase):
         _wave(self.base, mode="normal")
         clean = self.root / "clean.wav"
         loud = self.root / "too-loud.wav"
-        _wave(clean, mode="normal")
+        _wave(clean, mode="alternate")
         _wave(loud, mode="loud-normal")
         result = subprocess.run(
             [sys.executable, "-m", "mixlab.quality.relative_mono",
