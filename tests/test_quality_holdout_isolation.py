@@ -262,7 +262,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         raw = struct.pack("<hh", -32768, 16384)
         self.assertEqual(_pcm_exact_transform_variants(raw, 1), {raw})
         with self.assertRaises(ValueError):
-            _pcm_exact_transform_variants(b"\\x01", 1)
+            _pcm_exact_transform_variants(b"\x01", 1)
 
     def test_different_remaster_pcm_with_same_recording_identity_fails(self):
         self.dev["tracks"][0]["recording_id"] = self.eva["tracks"][0]["recording_id"]
