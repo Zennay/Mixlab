@@ -315,6 +315,45 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual([False, None], report["candidates"][0]["per_channel_review"])
         self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
 
+    def test_disjoint_later_candidate_makes_strict_batch_inconclusive(self):
+        # A first valid candidate cannot hide a later non-overlapping one.
+        chunk = samples(frames=8000)
+        silence = b"\x00\x00" * 2 * 8000
+        wav(self.base, chunk + silence)
+        wav(self.good, chunk + silence)
+        wav(self.bad, silence + chunk)
+        result = bitdepth.inspect_ab(self.base, [self.good, self.bad])
+        self.assertEqual([False, None], [
+            item["coarse_resolution_review"] for item in result["candidates"]])
+        cmd = self.cli(self.base, self.good, self.bad, "--strict")
+        self.assertEqual(3, cmd.returncode)
+        self.assertNotIn(str(self.root), cmd.stdout + cmd.stderr)
+
+    def test_partial_overlap_with_missing_audible_tail_stays_inconclusive(self):
+        # There are five perfectly aligned high-level 100ms windows, but
+        # five more are present only in the baseline. Whole-file metrics
+        # must not claim clean quality for a partially missing render.
+        rate = 96000
+        first = samples(frames=rate // 2, channels=1)
+        last = samples(frames=rate // 2, channels=1)
+        wav(self.base, first + last, rate=rate, channels=1)
+        wav(self.good, first + b"\x00\x00" * (rate // 2),
+            rate=rate, channels=1)
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertTrue(report["baseline_channel_metrics"][0]["evidenced"])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
+    def test_one_short_matched_window_does_not_fabricate_evidence(self):
+        # Both files have independent valid audio elsewhere but only three
+        # consecutive shared active windows. Never call them comparable.
+        segment = samples(frames=8000, channels=1)
+        silence = b"\x00\x00" * 8000
+        wav(self.base, segment + silence, channels=1)
+        shifted = b"\x00\x00" * (800 * 7) + segment + b"\x00\x00" * (800 * 3)
+        wav(self.good, shifted, channels=1)
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
     def test_low_energy_abstains_without_claiming_a_clean_pair(self):
         wav(self.good, samples(quiet=True))
         data = bitdepth.inspect_ab(self.base, [self.good])
