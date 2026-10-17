@@ -169,7 +169,13 @@ downmixing; a separate stereo/mono check is still required.
 
 The public Python function `scan_spectral_proxy(path)` returns **only**
 the seven explicitly allowed global metrics: rate, channels, frames,
-RMS dBFS and the three low/mid/high energy ratios. Private source inode
+RMS dBFS and the three low/mid/high energy ratios. This is enforced by a **closed seven-field allowlist** in
+`_public_metrics`, not an open-ended "anything without an underscore"
+rule; a future internally named `source_path`, `future_metadata` or
+`PCM_hash` cannot accidentally become part of the public report.
+A synthetic canary-injection regression specifically checks this.
+
+Private source inode
 and timestamp snapshots, per-channel energies, full precision RMS,
 and the eight time-span envelopes are held only inside the internal
 A/B implementation, not exported by the standalone scanner or JSON.
