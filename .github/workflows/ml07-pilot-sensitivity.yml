@@ -1,0 +1,56 @@
+name: MixLab ML-07 frozen pilot pair sensitivity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/pilot_sensitivity.py"
+      - "tests/test_quality_pilot_sensitivity.py"
+      - "docs/quality-pilot-sensitivity.md"
+      - ".github/workflows/ml07-pilot-sensitivity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml07-pilot-sensitivity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pilot-evidence:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Frozen pair sensitivity (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout immutable exact source without persistent credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify actual triggered SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Setup pinned Python matrix
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Execute pair-sign reference and real PCM aggregation tests under cap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/pilot_sensitivity.py tests/test_quality_pilot_sensitivity.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_pilot_sensitivity.py' -v
