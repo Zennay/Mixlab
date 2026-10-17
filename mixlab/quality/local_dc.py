@@ -133,7 +133,9 @@ def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str])
              for old, new in zip(ref["means"], alt["means"])],
             enough_windows=n >= MIN_SUSTAINED_WINDOWS,
         ))
-    _verify_pair_source(baseline, ref["_identity"])\n    _verify_pair_source(candidate, alt["_identity"])\n    all_states = baseline_states + excess_states
+    _verify_pair_source(baseline, ref["_identity"])
+    _verify_pair_source(candidate, alt["_identity"])
+    all_states = baseline_states + excess_states
     warning = True if True in all_states else (None if None in all_states else False)
     return {
         "check": "local-dc-bias-v1",
