@@ -81,12 +81,26 @@ def assess(
                     "isolated_sample_impulse_risk",
                     "severe_sample_discontinuity_risk",
                     "high_flat_top_plateau_risk",
+                    "dc_offset_risk",
+                    "stereo_channel_silence_risk",
+                    "partial_stereo_channel_loss_risk",
+                    "stereo_channel_onset_skew_risk",
                 )):
             # The canonical reader already identifies missing PCM spans,
-            # stereo-channel dropouts, sharp sample clicks, and flat tops.
+            # stereo-channel dropouts, clicks, flat tops, DC headroom and
+            # stereo imbalance or skew.
             # A clean *mono fold-down* is not enough to admit a damaged
             # A/B source, including a defective crossfade baseline.
             # Emit only the category; not sample positions, audio or IDs.
+            status = "ab_audio_integrity_confound"
+            delta = None
+        elif (
+                baseline.get("near_full_scale_fraction", 0) > 0
+                or candidate.get("near_full_scale_fraction", 0) > 0
+        ):
+            # Candidate or baseline reaching near 0 dBFS can conceal
+            # digital saturation or a gain confound. The canonical gate
+            # flags this separately; keep it explicit as human REVIEW.
             status = "ab_audio_integrity_confound"
             delta = None
         elif any(row.get(field) is True for field in (
