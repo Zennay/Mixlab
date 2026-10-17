@@ -27,7 +27,7 @@ within-clip partial timing displacement missed by whole-track cross-correlation
 without confusing a uniformly delayed whole recording with regional drift.
 The result is `regional_timing_shift_risk: true|false|null`. Sparse, uniformly
 delayed or heavily edited/uninformative material may return `null`; a boolean
-`false` is only emitted with two confidently aligned regions and none shifted.
+`false` is only emitted when **every** evaluated region is informative and confidently aligned at zero lag (not merely two clean regions). Two clean regions surrounded by silent, re-edited, uncorrelated or ambiguous source are **not** enough to call the entire pair clean; output `null` instead, with a generic inspect warning.
 The output **never** includes regional positions, lag directions or
 correlation statistics, and an inspect warning does not imply tempo drift.
 
