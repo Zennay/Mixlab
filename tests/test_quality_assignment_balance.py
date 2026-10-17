@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from mixlab.quality.assignment_balance import (
-    AssignmentBalanceError, audit_study_assignment, inspect_assignments,
+    AssignmentBalanceError, audit_study_assignment, inspect_assignments,\n    propose_private_balanced_sides,
 )
 
 
@@ -155,6 +155,45 @@ class AssignmentBiasTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout)["side_assignment_review_required"])
         self.assertNotIn(str(self.fixtures.root), result.stdout + result.stderr)
         self.assertNotIn("trial-001", result.stdout)
+
+    def test_private_balance_proposal_is_bounded_and_seeded(self):
+        for count in range(5, 11):
+            families = tuple(("bass_swap", "echo_exit", "hard_cut")[i % 3]
+                             for i in range(count))
+            for seed in (0, 1, 73):
+                with self.subTest(count=count, seed=seed):
+                    plan = propose_private_balanced_sides(families, seed)
+                    self.assertEqual(plan, propose_private_balanced_sides(list(families), seed))
+                    self.assertEqual(len(plan), count)
+                    self.assertTrue(set(plan) <= {"A", "B"})
+                    answers = [
+                        {"trial": f"trial-{i:03d}",
+                         "A": "baseline" if side == "A" else family,
+                         "B": family if side == "A" else "baseline"}
+                        for i, (family, side) in enumerate(zip(families, plan), 1)
+                    ]
+                    self.assertFalse(
+                        inspect_assignments(answers)["side_assignment_review_required"])
+
+    def test_private_proposal_can_repair_real_checksum_bound_skew(self):
+        self.assign(["A"] * 5)
+        self.assertTrue(self.audit()["side_assignment_review_required"])
+        families = ("bass_swap", "echo_exit", "hard_cut", "bass_swap", "echo_exit")
+        plan = propose_private_balanced_sides(families, 42)
+        self.assign(plan)
+        self.assertFalse(self.audit()["side_assignment_review_required"])
+
+    def test_invalid_private_proposal_is_rejected_before_unbounded_search(self):
+        families = ["bass_swap"] * 5
+        for candidate, seed in (
+            (families[:4], 0), (families * 3, 0), (families, -1),
+            (families, True), (families, 2 ** 63), (families, "SECRET"),
+            (["unknown"] * 5, 0), (["baseline"] * 5, 0),
+            (["bass_swap", {}, *families[2:]], 0),
+        ):
+            with self.subTest(size=len(candidate), seed_type=type(seed).__name__):
+                with self.assertRaises(AssignmentBalanceError):
+                    propose_private_balanced_sides(candidate, seed)
 
     def test_invalid_cli_private_path_is_redacted(self):
         secret = self.fixtures.root / "SECRET-MUSIC-PATH" / "study.json"
