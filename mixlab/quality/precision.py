@@ -133,6 +133,10 @@ def _evaluate_precision(a: dict, b: dict) -> dict:
     if any(a[key] != b[key] for key in ("rate", "channels", "frames")):
         raise ValueError("incomparable WAV format/duration")
     decisions = []
+    # Persistence is temporal, not per-channel: two *different* affected
+    # regions count even if the defect migrates between stereo channels.
+    # Two affected channels in the same single region count only once.
+    damaged_region_indices: set[int] = set()
     for ch in range(a["channels"]):
         an, bn = a["informative"][ch], b["informative"][ch]
         global_decision = None
@@ -149,6 +153,8 @@ def _evaluate_precision(a: dict, b: dict) -> dict:
             else:
                 regional.append(_precision_grid_loss(
                     a["region_grids"][region][ch], b["region_grids"][region][ch], ra, rb))
+        damaged_region_indices.update(
+            i for i, value in enumerate(regional) if value is True)
         # A single quantized block might be an artistic effect; require
         # persistence. Insufficient regional evidence is never a false-clean.
         if global_decision is True or regional.count(True) >= MIN_PERSISTENT_REGIONS:
@@ -157,7 +163,8 @@ def _evaluate_precision(a: dict, b: dict) -> dict:
             decisions.append(False)
         else:
             decisions.append(None)
-    outcome = (True if True in decisions else
+    outcome = (True if True in decisions
+               or len(damaged_region_indices) >= MIN_PERSISTENT_REGIONS else
                False if all(v is False for v in decisions) else None)
     return {"schema_version": 1, "status": "technical-inspection-only",
             "candidate_precision_loss_inspect": outcome,
