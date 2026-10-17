@@ -54,3 +54,50 @@ jobs:
           ulimit -v 196608
           python -m py_compile mixlab/quality/study_binding.py tests/test_quality_study_binding.py
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_study_binding.py' -v
+
+      - name: Checkout separately pinned ML-05 study producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: d6d573d234739a706d035dd0b8c704d2ea0c1958
+          path: upstream-pr71
+          persist-credentials: false
+      - name: Prove exact ML-05 producer and ML-07 private/public review compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-pr71 rev-parse HEAD)" = "d6d573d234739a706d035dd0b8c704d2ea0c1958"
+          cp mixlab/quality/study_binding.py upstream-pr71/mixlab/quality/study_binding.py
+          cd upstream-pr71
+          ulimit -v 196608
+          python -B - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+          from mixlab.quality.study_binding import verify_study_pack_binding
+          from mixlab.quality.pack import inspect_review_pack
+          from mixlab.evaluation import verify_pack
+
+          p = Path("tests/test_evaluation_study_pack.py")
+          spec = importlib.util.spec_from_file_location("ml05_real_producer_fixture", p)
+          test_module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(test_module)
+          fixture = test_module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              pack = fixture.pack
+              receipt = json.loads((pack / "receipt.json").read_text())
+              assert "study_id" not in receipt, "Private study ID leaked to public receipt"
+              report = verify_study_pack_binding(
+                  fixture.study, pack, fixture.study_doc["study_id"])
+              assert report["study_pack_metadata_consistent_with_pinned_id"] is True
+              assert report["milestone_pass"] is False
+              assert len(verify_pack(pack)[2]) == 5
+              result = inspect_review_pack(
+                  pack / "review", require_receipt=True, require_generated_html=True)
+              assert result["trial_count"] == 5
+              assert result["review_page_audio_links_verified"] is True
+              print("ML-05 producer + ML-07 private binding + strict public review: PASS (5 synthetic pairs)")
+          finally:
+              fixture.tearDownClass()
+          PY
