@@ -17,7 +17,9 @@ quality CLI's path-stat/open race until its integration owner adopts it.
 - The descriptor must identify a regular file of 44 bytes through 32 MiB.
   Symlink, FIFO, device, directory, missing and oversized inputs fail closed.
 - Python `wave` must recognize uncompressed PCM16, 1–2 channels, 8–96 kHz,
-  1–2,000,000 declared frames with sufficient file bytes.
+  1–2,000,000 declared frames with sufficient file bytes **after the actual
+  `data` offset**, even with legal `JUNK`/metadata chunks before the samples.
+  Assuming a fixed 44-byte header could wrongly admit truncated files.
 - Only the caller sees PCM frames, while the context is live. The helper does
   not retain or output PCM, source paths, digests or listener identities.
 - Successful exit compares device, inode, size, nanosecond mtime and ctime
@@ -35,11 +37,37 @@ of scope. A missing source cannot be treated as a silent track. A successful
 admission is not LUFS, musical quality, stem analysis, source-rights validation
 or evidence that a blind human review happened.
 
+## Immediately usable offline preflight
+
+The isolated module is directly runnable even though the existing MixLab
+quality CLI is intentionally unchanged:
+
+```sh
+python3 -m mixlab.quality.fd_guard /absolute/private/path.wav
+```
+
+This preflight validates admission, then **reads every declared PCM16 frame**
+in <=4,096-frame blocks from the same opened descriptor. It rejects truncated
+reads and file/path mutation; it never writes media. On success it returns only
+shape metadata (`sample_rate`, `channels`, `frames`) and the truth-valued
+`pcm16_payload_complete`; no path, PCM, hashes, source identity or rating.
+Run locally on permissioned/private files: even shape metadata can be sensitive
+and must not be published as listener evidence. Exit codes: 0 complete, 2
+invalid/redacted arguments, 3 invalid/redacted source. Never interpret the
+result as RIFF forensic inspection, licensed media, musical quality, loudness
+matching or an M1 acceptance signal.
+
+Callers can instead import `validate_private_pcm16` for a read-only
+bounded check without invoking another subprocess. Its block-frame
+parameter accepts integers 1..4096 only. It never automatically replaces
+the current shared scanner.
+
 ## Reproducible acceptance
 
 ```sh
 python3 -m compileall -q mixlab/quality/fd_guard.py tests/test_quality_fd_guard.py
 python3 -m unittest discover -s tests -p 'test_quality_fd_guard.py' -v
+python3 -m mixlab.quality.fd_guard /path/to/permitted-private.wav
 python3 -m unittest discover -s tests -p 'test_quality.py' -v
 ```
 
@@ -48,7 +76,8 @@ the command above is documented, not a claim of a completed VPS render.
 No private music in test fixtures, artifacts or public CI. The synthetic
 tests exercise FIFO nonblocking behavior, symlink rejection, 32-MiB admission,
 2-Mframe shape, mono/stereo, corrupt headers, same-inode modification, path
-replacement and retained-source immutability.
+replacement, pre-data RIFF metadata offsets, a full-frame standalone
+integrity probe, CLI path redaction and retained-source immutability.
 
 ## Integration handoff (not yet authorised)
 
