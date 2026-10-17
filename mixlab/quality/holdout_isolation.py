@@ -158,8 +158,10 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                         continue
                     for variant in _pcm_exact_transform_variants(
                             view_pcm, view_channels):
-                        by_format.setdefault((rate, view_channels), []).append(
-                            (group, tid, variant))
+                        # Collapse repeated source windows without losing
+                        # the provenance needed for independent-set checks.
+                        by_format.setdefault((rate, view_channels), {}).setdefault(
+                            variant, set()).add((group, tid))
 
     for group, tracks in groups:
         for tid, track in tracks.items():
@@ -171,10 +173,13 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                                      *([("left", 1), ("right", 1)]
                                        if channels == 2 else [])):
                 candidates = [
-                    anchor for anchor_group, anchor_id, anchor
-                    in by_format.get((rate, projection), ())
-                    if not (group == anchor_group and tid == anchor_id)
-                    and not (group == "dev" and anchor_group == "dev")
+                    anchor for anchor, origins
+                    in by_format.get((rate, projection), {}).items()
+                    if any(
+                        (anchor_group != group or anchor_id != tid)
+                        and not (group == "dev" and anchor_group == "dev")
+                        for anchor_group, anchor_id in origins
+                    )
                 ]
                 if candidates:
                     frame_bytes = 2 * projection
