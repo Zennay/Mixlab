@@ -158,7 +158,7 @@ document.getElementById("save").addEventListener("click",()=>{
   if (!checkRoute(route)){statusEl.textContent="Kies eerst een aansluitende route (1–10 overgangen).";return;}
   const value={schema_version:1,kind:"private-manual-set-composition",
     session_sha256:data.session_sha256,studio_sha256:data.studio_sha256,transitions:route};
-  const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)+"\n"],{type:"application/json"}));
+  const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)+"\\n"],{type:"application/json"}));
   const anchor=node("a");anchor.href=url;anchor.download="mixlab-set-plan.private.json";
   document.body.append(anchor);anchor.click();anchor.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
