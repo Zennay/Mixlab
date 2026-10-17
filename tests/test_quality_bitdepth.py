@@ -207,6 +207,24 @@ class ResolutionTests(unittest.TestCase):
         result = bitdepth.inspect_ab(self.base, [self.bad])
         self.assertEqual([False, False], result["candidates"][0]["per_channel_review"])
 
+    def test_locally_damaged_baseline_cannot_certify_a_matching_candidate(self):
+        # Whole-file baseline diversity can hide a persistent 400ms local
+        # loss of 8-bit precision. Equal candidates must NOT be certified.
+        values = array.array("h")
+        values.frombytes(samples())
+        for frame in range(2400, 5600):
+            for channel in (0, 1):
+                index = 2 * frame + channel
+                values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        wav(self.base, values.tobytes())
+        wav(self.good, values.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual([None, None], result["candidates"][0]["per_channel_review"])
+        self.assertIsNone(result["candidates"][0]["coarse_resolution_review"])
+        self.assertEqual(3, self.cli(self.base, self.good, "--strict").returncode)
+
     def test_four_window_local_damage_in_right_channel_only(self):
         values = array.array("h")
         values.frombytes(samples())
