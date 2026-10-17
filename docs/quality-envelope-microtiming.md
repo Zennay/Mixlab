@@ -19,6 +19,18 @@ Only high-confidence, substantially better non-zero correlations are warned:
 at least 30ms offset, best correlation ≥0.85 and improvement ≥0.20 over
 zero-lag correlation. Zero-lag correlation ≥0.85 gives a negative risk flag.
 An uninformative or unrelated envelope gives JSON `null`, **not false clean**.
+In addition, the **regional** screen divides sufficiently long recordings
+into up to eight private 0.5-second-or-longer regions, and asks whether at least
+two regions have a strongly improved ±30–200ms alignment while at least one
+independent region remains confidently aligned at zero lag. This catches
+within-clip partial timing displacement missed by whole-track cross-correlation
+without confusing a uniformly delayed whole recording with regional drift.
+The result is `regional_timing_shift_risk: true|false|null`. Sparse, uniformly
+delayed or heavily edited/uninformative material may return `null`; a boolean
+`false` is only emitted with two confidently aligned regions and none shifted.
+The output **never** includes regional positions, lag directions or
+correlation statistics, and an inspect warning does not imply tempo drift.
+
 This is deliberately NOT beat, downbeat, phrase, transient, pitch, LUFS or
 DJ-quality analysis. Tempo mismatch and creative edits are not resolved by
 the checker; inspect/measure them with authorized music and blinded humans.
@@ -43,7 +55,7 @@ the checker; inspect/measure them with authorized music and blinded humans.
   sources, 0 for normal completed screening. A warning is not release approval.
 
 No third-party packages, models, cloud music services, VPS process or live
-worker are required. Synthetic tests are in `tests/test_quality_alignment.py`. They exercise the actual 2,000,000-frame WAV admission boundary (constant PCM), reverse-direction stereo shifts, pair isolation, truncation and file-type denial. Dedicated exact-PR-SHA hosted CI prints elapsed seconds and peak-process RSS from `/usr/bin/time`. This measurement is a synthetic QA upper-size sample, not a measured VPS or real-track render budget.
+worker are required. Synthetic tests are in `tests/test_quality_alignment.py`. They exercise the actual 2,000,000-frame WAV admission boundary (constant PCM), regional two-half timing displacements, A/B reversal, equal-gain and one-off clean controls, reverse-direction stereo shifts, pair isolation, truncation and file-type denial. Dedicated exact-PR-SHA hosted CI prints elapsed seconds and peak-process RSS from `/usr/bin/time`. This measurement is a synthetic QA upper-size sample, not a measured VPS or real-track render budget.
 This isolated contribution does not change existing ML-07 core, spectral,
 dynamics, HTML review pack, ingest, CLI or DSP owner files. **M1 remains open**
 until licensed source, original MIR/stems work and ≥3 blinded listeners supply
