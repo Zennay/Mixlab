@@ -4,6 +4,7 @@ on:
     paths:
       - 'mixlab/quality/listener_controls.py'
       - 'tests/test_quality_listener_controls.py'
+      - 'tests/test_quality_listener_browser.py'
       - 'docs/quality-listener-controls.md'
       - '.github/workflows/ml07-listener-controls.yml'
   workflow_dispatch:
@@ -35,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          python -m compileall -q mixlab/quality/listener_controls.py tests/test_quality_listener_controls.py
+          python -m compileall -q mixlab/quality/listener_controls.py tests/test_quality_listener_controls.py tests/test_quality_listener_browser.py
       - name: Run synthetic form, privacy and existing canonical quality contracts
         run: |
           set -euo pipefail
@@ -43,3 +44,9 @@ jobs:
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_listener_controls.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
+      - name: Exercise real Chromium DOM, required responses and JSON export
+        if: matrix.python == '3.13'
+        run: |
+          set -euo pipefail
+          command -v google-chrome || command -v google-chrome-stable || command -v chromium
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_listener_browser.py'
