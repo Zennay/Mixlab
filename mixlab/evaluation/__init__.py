@@ -34,6 +34,11 @@ def verify_pack(root):
             or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
             or receipt.get("manifest_sha256") != manifest_sha):
         raise ValueError("Frozen pack manifest identity mismatch")
+    # The producer emits an *unvalidated* frozen listening pack. Human
+    # listening approvals belong to separate reviewed rating evidence,
+    # never to an editable public receipt status outside pack_id hashing.
+    if receipt.get("status") != "rendered-not-listener-validated":
+        raise ValueError("Invalid frozen pack status")
     renders = evidence.get("renders")
     if not isinstance(renders, list) or not renders:
         raise ValueError("Missing render evidence")
@@ -147,12 +152,23 @@ def aggregate(root, rating_paths):
                               [root/"review"/f"{tid}-{other_label}.wav"])["candidates"][0]
         if not result["level_comparable_for_blind_ab"] or result["warnings"]:
             confounds.append({"trial":tid,"warnings":result["warnings"]})
-    kinds = {evidence.get("kind")}
+    # Private evidence.kind is editable metadata *outside* the frozen pack
+    # identity hash. Do not let relabelling an all-synthetic source pack
+    # suppress the explicit "not musical preference evidence" limitation.
+    # This cross-check does not independently authenticate permission claims.
+    all_synthetic = all(
+        isinstance(row.get("metrics"), dict)
+        and isinstance(row["metrics"].get("source_permission_declarations"), dict)
+        and row["metrics"]["source_permission_declarations"].get("a") == "synthetic"
+        and row["metrics"]["source_permission_declarations"].get("b") == "synthetic"
+        for row in evidence["renders"]
+    )
     multiple_candidates = any(sum(p == row["pair"] for p,f in rows) > 1 for row in summaries)
     limitations = ["RMS comparison is not perceptual loudness matching",
                    "listener identities are pseudonyms, not independently verified"]
     if multiple_candidates: limitations.append("exploratory multi-candidate pack; not a preselected single-candidate pilot")
-    if "synthetic-smoke-only" in kinds: limitations.append("synthetic input cannot establish musical preference")
+    if evidence.get("kind") == "synthetic-smoke-only" or all_synthetic:
+        limitations.append("synthetic input cannot establish musical preference")
     return {"schema_version":1,"pack_id":receipt["pack_id"],"reviewers":len(reviewers),
             "trials":len(trials),"counts":total,"non_tied_preferences":decisive,
             "candidate_preference_fraction":total["candidate"]/decisive if decisive else None,

@@ -12,7 +12,7 @@ import time
 import unittest
 from unittest import mock
 
-from mixlab.evaluation import _load, verify_pack
+from mixlab.evaluation import _load, verify_pack, aggregate
 from mixlab.cli import fixture, benchmark
 from mixlab.ingest import MAX_BYTES
 from mixlab.evaluation import json_admission
@@ -113,6 +113,68 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.temp.cleanup()
+
+    def test_all_synthetic_render_permissions_keep_synthetic_limitation(self):
+        # evidence.kind is not included in pack-id. Changing it must not
+        # erase the synthetic-only limitation if every source declaration
+        # still says synthetic and the listening audio is unchanged.
+        evidence_path = self.pack / "private" / "evidence.json"
+        receipt_path = self.pack / "receipt.json"
+        key_path = self.pack / "private" / "answer-key.json"
+        original = evidence_path.read_bytes()
+        rating_path = self.root / "synthetic-listener.json"
+        try:
+            evidence = json.loads(original)
+            self.assertEqual(evidence["kind"], "synthetic-smoke-only")
+            self.assertTrue(all(
+                entry["metrics"]["source_permission_declarations"] ==
+                {"a": "synthetic", "b": "synthetic"}
+                for entry in evidence["renders"]
+            ))
+            evidence["kind"] = "development-pilot"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            receipt = json.loads(receipt_path.read_text())
+            answers = json.loads(key_path.read_text())
+            rating_path.write_text(json.dumps({
+                "schema_version": 1, "pack_id": receipt["pack_id"],
+                "reviewer": "synthetic",
+                "ratings": [{"trial": row["trial"], "preference": "Tie"}
+                            for row in answers]
+            }), encoding="utf-8")
+            outcome = aggregate(self.pack, [rating_path])
+            self.assertIn(
+                "synthetic input cannot establish musical preference",
+                outcome["limitations"])
+            self.assertFalse(outcome["milestone_pass"])
+        finally:
+            evidence_path.write_bytes(original)
+            rating_path.unlink(missing_ok=True)
+
+    def test_receipt_cannot_spoof_completed_human_acceptance(self):
+        # The immutable renderer always records a non-listener-validated
+        # status. A post-freeze edit to this unhashed public field must not
+        # masquerade as actual music/listener validation.
+        path = self.pack / "receipt.json"
+        original = path.read_bytes()
+        try:
+            baseline = json.loads(original)
+            self.assertEqual(baseline["status"],
+                             "rendered-not-listener-validated")
+            for value in ("human-listening-passed", "release-approved",
+                          True, None):
+                with self.subTest(value=value):
+                    candidate = dict(baseline)
+                    candidate["status"] = value
+                    path.write_text(json.dumps(candidate), encoding="utf-8")
+                    with mock.patch(
+                        "mixlab.evaluation.inspect_wav_and_digest",
+                        side_effect=AssertionError("WAV opened")
+                    ) as inspect:
+                        with self.assertRaisesRegex(ValueError, "status"):
+                            verify_pack(self.pack)
+                        inspect.assert_not_called()
+        finally:
+            path.write_bytes(original)
 
     def test_receipt_counts_require_exact_json_integer_type(self):
         # A numeric float such as 3.0 compares equal to int 3 in Python,
