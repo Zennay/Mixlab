@@ -150,6 +150,39 @@ class PilotPreflightTests(unittest.TestCase):
             self.assertNotIn(str(self.fixture.root), invalid.stderr)
             self.assertNotIn("Traceback", invalid.stderr)
 
+    def test_review_html_replaced_after_static_checks_is_refused(self):
+        """Sequential validators must share one immutable file-set snapshot."""
+        from mixlab.quality.study_binding import verify_study_pack_binding
+        original = verify_study_pack_binding
+        page = self.pack / "review/index.html"
+        def mutate_after_public_pcm(study, pack, identifier):
+            result = original(study, pack, identifier)
+            # An untrusted process changes the canonical listener form after
+            # the browser/PCM inspectors validated its old contents.
+            payload = page.read_text(encoding="utf-8")
+            page.write_text(payload.replace(
+                "Which transition works?", "Biased first answer: A"))
+            return result
+        with patch("mixlab.quality.pilot_preflight.verify_study_pack_binding",
+                   side_effect=mutate_after_public_pcm):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                self.check()
+
+    def test_receipt_changed_after_binding_is_refused(self):
+        from mixlab.quality.study_binding import verify_study_pack_binding
+        original = verify_study_pack_binding
+        receipt_path = self.pack / "receipt.json"
+        def mutate_after_binding(study, pack, identifier):
+            result = original(study, pack, identifier)
+            data = json.loads(receipt_path.read_text(encoding="utf-8"))
+            data["status"] = "forged-validated"
+            receipt_path.write_text(json.dumps(data), encoding="utf-8")
+            return result
+        with patch("mixlab.quality.pilot_preflight.verify_study_pack_binding",
+                   side_effect=mutate_after_binding):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                self.check()
+
     def test_component_mismatches_never_show_a_clean_gate(self):
         real_report = self.check()
         common = {
