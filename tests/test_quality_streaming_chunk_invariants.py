@@ -11,6 +11,7 @@ import json
 import math
 import random
 from pathlib import Path
+from unittest import mock
 import struct
 import sys
 import tempfile
@@ -259,8 +260,12 @@ class StreamingChunkInvariants(unittest.TestCase):
         # PCM, but the *public* listener pack must refuse it: textual RIFF
         # metadata can leak artist/variant identities during blind review.
         self.assertEqual(scan_wav(review / "trial-001-B.wav")["frames"], 8000)
-        with self.assertRaises(ValueError):
-            inspect_review_pack(review)
+        # Metadata must be rejected from header admission *before* a
+        # potentially expensive/private PCM scan is even invoked.
+        with mock.patch("mixlab.quality.pack.compare_wavs",
+                        side_effect=AssertionError("unexpected PCM scan")):
+            with self.assertRaises(ValueError):
+                inspect_review_pack(review)
 
     def test_multicandidate_swapped_and_inverted_pcm_stays_detectable(self):
         # A source reused after a stereo L/R swap or sign inversion is still
