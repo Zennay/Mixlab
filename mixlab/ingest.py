@@ -321,18 +321,23 @@ def validate_library(manifest_path):
         raise ValueError("Library must contain 2–50 tracks")
     tracks, identities = {}, {}
     partitioned = any(isinstance(t, dict) and "partition" in t for t in records)
+    # Admit every record's cheap schema before opening any private WAV.
+    # A malformed final entry must not force inspection of 49 prior sources.
+    prepared = []
+    seen_ids = set()
     for track in records:
         _object(track, "track")
         tid = _identifier(track.get("id"), "track id")
-        if tid in tracks:
+        if tid in seen_ids:
             raise ValueError("Duplicate track id")
+        seen_ids.add(tid)
         rights = track.get("rights")
         if not isinstance(rights, str) or rights not in RIGHTS:
             raise ValueError("Explicit permission required")
         if not isinstance(track.get("provenance"), str) or not track["provenance"].strip():
             raise ValueError("Provenance required")
         raw = track.get("path")
-        if not isinstance(raw, str) or not raw or "\\" in raw:
+        if not isinstance(raw, str) or not raw or "\\\\" in raw:
             raise ValueError("Path must be a relative POSIX path")
         relative = Path(raw)
         if relative.is_absolute() or ".." in relative.parts:
@@ -340,22 +345,24 @@ def validate_library(manifest_path):
         path = (source.parent / relative).resolve()
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")
+        sha = track.get("sha256")
+        if not isinstance(sha, str) or not HASH.fullmatch(sha):
+            raise ValueError("Invalid source checksum")
+        number(track.get("bpm"), "manual bpm", 30, 300)
         partition = track.get("partition")
         if partitioned and (not isinstance(partition, str) or
                             partition not in {"development", "evaluation"}):
             raise ValueError("All tracks need a development/evaluation partition")
-        sha = track.get("sha256")
-        if not isinstance(sha, str) or not HASH.fullmatch(sha):
-            raise ValueError("Invalid source checksum")
+        recording = track.get("recording_id", tid)
+        _identifier(recording, "recording id")
+        prepared.append((track, tid, path, sha, partition, recording))
+
+    for track, tid, path, sha, partition, recording in prepared:
         info, observed_sha = inspect_wav_and_digest(path)
         if observed_sha != sha:
             raise ValueError("Source checksum mismatch")
-        number(track.get("bpm"), "manual bpm", 30, 300)
         if "downbeat_seconds" in track:
             number(track["downbeat_seconds"], "manual downbeat", 0, info["duration_seconds"])
-
-        recording = track.get("recording_id", tid)
-        _identifier(recording, "recording id")
         for identity in ("pcm:" + info["pcm_sha256"], "recording:" + recording):
             if identity in identities and identities[identity] != partition:
                 raise ValueError("Recording leaks across partitions")
