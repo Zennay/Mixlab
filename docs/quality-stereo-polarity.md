@@ -45,12 +45,16 @@ python3 -m unittest discover -s tests -p 'test_stereo_polarity.py' -v
 python3 -m unittest discover -s tests -p 'test_quality.py' -v
 ```
 
-The existing ML-07 PR workflow compiles the quality module and runs the second
-command, but does not automatically discover the **new** isolated module.
-Therefore a green ML-07 workflow alone is not evidence that these new tests
-passed. Require a separate exact-head run covering both commands (or
-equivalent integration-owned CI expansion) before merging. Keep the PR draft
-until that proof is available.
+The already-merged companion-suite check from PR #54 invokes
+`python3 -m unittest discover -s tests -p 'test_[!q]*.py' -v`
+within the quality suite; this pattern **includes** the new
+`test_stereo_polarity.py` module. The PR branch now contains a merge of that
+change, so an ML-07 quality Actions result for the **exact integrated PR
+head** exercises both the quality suite and this six-case regression.
+A green run for the older pre-merge head is *not* sufficient. Verify exact
+checkout SHA, the companion suite test count, and the hosted run conclusion
+before removing the draft gate. A later squash-merged main still requires
+independent exact-main proof.
 
 This is **synthetic DSP/quality QA only**. No private music, human preference
 ratings, sample-rate pitch proof or authorization for publication is claimed.
