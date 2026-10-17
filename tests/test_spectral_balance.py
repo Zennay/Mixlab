@@ -150,6 +150,23 @@ def make_stereo_band_segments(path, swaps, *, gain=8000):
         output.writeframes(samples.tobytes())
 
 
+def make_stereo_levels_wav(path, levels, *, rate=48000):
+    """Eight synthetic spans, (left_gain, right_gain) per span, same tone."""
+    samples = array("h")
+    for segment, (left, right) in enumerate(levels):
+        for offset in range(6000):
+            frame = segment * 6000 + offset
+            angle = 2 * math.pi * 600 * frame / rate
+            samples.extend((int(left * math.sin(angle)), int(right * math.sin(angle))))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -371,6 +388,77 @@ class SpectralBalanceTests(unittest.TestCase):
         make_wav(self.other, freq=4000, channels=2)
         row = self.report()["candidates"][0]
         self.assertIn("high_spectral_balance_shift_inspect", row["warnings"])
+
+    def test_swapped_stereo_volume_balance_detected_without_global_confounds(self):
+        make_stereo_levels_wav(self.base, [(4000, 8000)] * 8)
+        make_stereo_levels_wav(self.other, [(8000, 4000)] * 8)
+        report = self.report()
+        row = report["candidates"][0]
+        self.assertAlmostEqual(0.0, row["rms_delta_db_vs_baseline"], delta=.01)
+        self.assertAlmostEqual(0.0, row["stereo_mono_fold_ratio_delta_db"], delta=.01)
+        for band in ("low", "mid", "high"):
+            self.assertAlmostEqual(0, row[band + "_proxy_delta_db"], delta=.02)
+            self.assertFalse(row["stereo_channel_" + band + "_spectral_shift_risk"])
+        self.assertTrue(row["stereo_channel_level_balance_shift_risk"])
+        self.assertIn("stereo_channel_level_balance_shift_inspect", row["warnings"])
+        self.assertEqual(1.0, row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertIn("stereo_temporal_level_balance_shift_inspect", row["warnings"])
+        report_text = json.dumps(report)
+        for secret in ("_channel_spans", str(self.dir), "left_gain", "right_gain"):
+            self.assertNotIn(secret, report_text)
+
+    def test_temporal_stereo_gain_swap_hidden_by_channel_and_global_rms(self):
+        a = [(4000, 8000)] * 4 + [(8000, 4000)] * 4
+        b = a[::-1]
+        make_stereo_levels_wav(self.base, a)
+        make_stereo_levels_wav(self.other, b)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(0, row["rms_delta_db_vs_baseline"], delta=.01)
+        self.assertFalse(row["stereo_channel_level_balance_shift_risk"])
+        self.assertEqual(1.0, row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertIn("stereo_temporal_level_balance_shift_inspect", row["warnings"])
+        self.assertNotIn("stereo_channel_level_balance_shift_inspect", row["warnings"])
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_global_gain_only_does_not_create_stereo_balance_warning(self):
+        make_stereo_levels_wav(self.base, [(4000, 8000)] * 8)
+        make_stereo_levels_wav(self.other, [(3000, 6000)] * 8)
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_channel_level_balance_shift_risk"])
+        self.assertEqual(0.0, row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertNotIn("stereo_channel_level_balance_shift_inspect", row["warnings"])
+        self.assertNotIn("stereo_temporal_level_balance_shift_inspect", row["warnings"])
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+
+    def test_one_brief_stereo_balance_swap_does_not_trigger_persistence(self):
+        a = [(4000, 8000)] * 8
+        b = [(8000, 4000)] + [(4000, 8000)] * 7
+        make_stereo_levels_wav(self.base, a)
+        make_stereo_levels_wav(self.other, b)
+        row = self.report()["candidates"][0]
+        self.assertEqual(.125, row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertNotIn("stereo_temporal_level_balance_shift_inspect", row["warnings"])
+
+    def test_stereo_balance_insufficient_channel_energy_is_unknown(self):
+        make_stereo_levels_wav(self.base, [(0, 8000)] * 8)
+        make_stereo_levels_wav(self.other, [(0, 8000)] * 8)
+        row = self.report()["candidates"][0]
+        self.assertIsNone(row["stereo_channel_level_balance_shift_risk"])
+        self.assertIsNone(row["stereo_temporal_level_balance_mismatch_fraction"])
+        self.assertIn("stereo_channel_near_silence_inspect", row["warnings"])
+
+    def test_stereo_balance_checks_skip_mono_and_preserve_stream_chunk_semantics(self):
+        self.assertNotIn("stereo_channel_level_balance_shift_risk", self.report()["candidates"][0])
+        self.assertNotIn("stereo_temporal_level_balance_mismatch_fraction", self.report()["candidates"][0])
+        make_stereo_levels_wav(self.base, [(4000, 8000)] * 4 + [(8000, 4000)] * 4)
+        make_stereo_levels_wav(self.other, [(8000, 4000)] * 4 + [(4000, 8000)] * 4)
+        original = self.report()
+        for size in (1, 257, 4096, 8191):
+            with self.subTest(size=size), patch.object(spectral, "READ_FRAMES", size):
+                self.assertEqual(original, self.report())
+                self.assertEqual(original["baseline"], scan_spectral_proxy(self.base))
 
     def test_stereo_near_silent_channel_is_not_false_clean(self):
         make_wav(self.base, freq=1000, channels=2)
