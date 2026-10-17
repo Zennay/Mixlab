@@ -68,10 +68,13 @@ def scan_spectral_proxy(
                 high_alpha = -math.expm1(-2 * math.pi * HIGH_PASS_HZ / rate)
                 low_state = [0.0] * channels
                 high_state = [0.0] * channels
-                total_energy = low_energy = high_energy = 0.0
+                # A second LP at 2500 Hz follows the 180 Hz HP residual:
+                # a cheap midrange proxy, not an isolated spectral band.
+                mid_state = [0.0] * channels
+                total_energy = low_energy = mid_energy = high_energy = 0.0
                 # Constant memory (eight aggregate bins), never samples or
                 # per-span envelopes in the public report.
-                span_energy = [[0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
+                span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
                 remaining = frames
                 while remaining:
                     count = min(READ_FRAMES, remaining)
@@ -88,18 +91,23 @@ def scan_spectral_proxy(
                         low_state[channel] += low_alpha * (value - low_state[channel])
                         high_state[channel] += high_alpha * (value - high_state[channel])
                         high_residual = value - high_state[channel]
+                        mid_input = value - low_state[channel]
+                        mid_state[channel] += high_alpha * (mid_input - mid_state[channel])
                         sample_energy = value * value
                         low_sample_energy = low_state[channel] ** 2
                         high_sample_energy = high_residual * high_residual
+                        mid_sample_energy = mid_state[channel] ** 2
                         total_energy += sample_energy
                         low_energy += low_sample_energy
+                        mid_energy += mid_sample_energy
                         high_energy += high_sample_energy
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
                         span_energy[span][1] += low_sample_energy
-                        span_energy[span][2] += high_sample_energy
+                        span_energy[span][2] += mid_sample_energy
+                        span_energy[span][3] += high_sample_energy
                         if channel == 0:
-                            span_energy[span][3] += 1
+                            span_energy[span][4] += 1
                     remaining -= count
             if _source_identity(before) != _source_identity(os.fstat(handle.fileno())):
                 raise ValueError("WAV changed while being inspected")
@@ -118,15 +126,17 @@ def scan_spectral_proxy(
         "frames": frames,
         "rms_dbfs": round(20 * math.log10(rms), 3) if rms else None,
         "lowpass_180_ratio": math.sqrt(low_energy / total_energy) if total_energy else None,
+        "midpass_180_2500_ratio": math.sqrt(mid_energy / total_energy) if total_energy else None,
         "highpass_2500_ratio": math.sqrt(high_energy / total_energy) if total_energy else None,
         "_rms": rms,
         "_spans": [
             (
                 math.sqrt(low / total) if total else None,
+                math.sqrt(mid / total) if total else None,
                 math.sqrt(high / total) if total else None,
                 math.sqrt(total / (count * channels)) if count else 0.0,
             )
-            for total, low, high, count in span_energy
+            for total, low, mid, high, count in span_energy
         ],
     }
 
@@ -161,7 +171,11 @@ def compare_spectral_balance(
         if reference["_rms"] < SILENT_WINDOW_RMS or current["_rms"] < SILENT_WINDOW_RMS:
             warnings.append("insufficient_audible_energy_for_spectral_comparison")
         else:
-            for name, key in (("low", "lowpass_180_ratio"), ("high", "highpass_2500_ratio")):
+            for name, key in (
+                ("low", "lowpass_180_ratio"),
+                ("mid", "midpass_180_2500_ratio"),
+                ("high", "highpass_2500_ratio"),
+            ):
                 a, b = reference[key], current[key]
                 if a is None or b is None or min(a, b) < MIN_RESOLVABLE_RATIO:
                     deltas[name + "_proxy_delta_db"] = None
@@ -171,7 +185,7 @@ def compare_spectral_balance(
                     deltas[name + "_proxy_delta_db"] = round(delta, 3)
                     if abs(delta) >= threshold_db:
                         warnings.append(name + "_spectral_balance_shift_inspect")
-        for name in ("low", "high"):
+        for name in ("low", "mid", "high"):
             deltas.setdefault(name + "_proxy_delta_db", None)
 
         # A/B can have *equal global* low/high ratios even if the bass and
@@ -179,10 +193,10 @@ def compare_spectral_balance(
         # expose persistent level-normalized band changes without exporting
         # source time coordinates, band envelopes, or audio. Skip quiet or
         # unresolved spans; never create a false 0dB from missing evidence.
-        for name, slot in (("low", 0), ("high", 1)):
+        for name, slot in (("low", 0), ("mid", 1), ("high", 2)):
             eligible = differing = 0
             for ref_span, cur_span in zip(reference["_spans"], current["_spans"]):
-                if min(ref_span[2], cur_span[2]) < SILENT_WINDOW_RMS:
+                if min(ref_span[3], cur_span[3]) < SILENT_WINDOW_RMS:
                     continue
                 a, b = ref_span[slot], cur_span[slot]
                 if a is None or b is None or min(a, b) < MIN_RESOLVABLE_RATIO:
