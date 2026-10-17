@@ -78,6 +78,45 @@ class ProviderProvenanceCacheTests(unittest.TestCase):
         self.assertEqual(expected, analyze_cached(self.source, directory, custom))
         self.assertTrue(entry.exists())
 
+    def test_manual_config_version_cannot_be_repurposed_after_creation(self):
+        provider = ManualProvider(120, first_beat=0, downbeats=(0, 0.5),
+                                  phrases=(0,), key="A minor",
+                                  annotator="synthetic")
+        original_version = provider.version
+        directory, entry, first, _ = self._warm(provider, "frozen-manual")
+        self.assertEqual(first, analyze_cached(self.source, directory, provider))
+        for key, value in (("bpm", 121), ("first_beat", 0.5),
+                           ("downbeats", (0,)), ("key", "C major"),
+                           ("annotator", "different")):
+            with self.subTest(key=key), self.assertRaises(TypeError):
+                provider.config[key] = value
+        self.assertEqual(provider.version, original_version)
+        self.assertEqual(provider.config["bpm"], 120)
+        self.assertEqual(first, analyze_cached(self.source, directory, provider))
+        self.assertTrue(entry.is_file())
+
+    def test_manual_constructor_rejects_bad_types_before_audio_io(self):
+        invalid = (
+            {"key": []}, {"key": {"C": "major"}},
+            {"downbeats": None}, {"downbeats": "0,1"},
+            {"downbeats": {"bad": 1}}, {"downbeats": (True,)},
+            {"downbeats": (float("nan"),)}, {"downbeats": (float("inf"),)},
+            {"downbeats": (-1,)}, {"downbeats": (0, 0)},
+            {"downbeats": (0.5, 0)}, {"downbeats": (0.333,)},
+            {"phrases": None}, {"phrases": "0"},
+            {"phrases": (0.5,)}, {"phrases": (True,)},
+            {"phrases": (0, 0)}, {"phrases": (float("nan"),)},
+            {"downbeats": [i * 0.5 for i in range(10001)]},
+        )
+        from unittest import mock
+        with mock.patch("mixlab.analysis.inspect_wav",
+                        side_effect=AssertionError("audio accessed")) as audio:
+            for kwargs in invalid:
+                with self.subTest(kwargs=str(kwargs)[:70]):
+                    with self.assertRaises(ValueError):
+                        ManualProvider(120, annotator="synthetic", **kwargs)
+            audio.assert_not_called()
+
     def test_measured_receipt_cannot_claim_manual_or_fabricated_features(self):
         provider = EnergyOnsetProvider()
         directory, entry, expected, pristine = self._warm(provider, "measured")
