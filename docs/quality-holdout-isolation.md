@@ -110,6 +110,13 @@ per-channel silence, common ±2,400-count DC offsets and preserved
 The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
 and does not mount private music or access the production VPS/queue.
+The capacity matrix now also verifies **40 development plus 10 evaluation
+sources with actual independently synthesized stereo PCM16 WAV frames**,
+including the real five-window scan. These are *short 0.5-second, 8-kHz*
+test tones, not a worst-case 50 x 2,000,000-frame / 96-kHz production
+benchmark: peak memory and latency observed here must not be presented
+as production audio throughput proof. The per-source 2,000,000-frame limit
+is separately verified on one genuine long WAV.
 
 **Boundary:** This sparse exact-sample screen does not detect time-stretched,
 resampled, non-integer-amplified (e.g. 1.5x), lossy-compressed, DC-shifted,
