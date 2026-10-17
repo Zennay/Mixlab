@@ -52,7 +52,7 @@ class PureFamilySensitivityTests(unittest.TestCase):
     def test_opposite_family_pattern_hidden_in_positive_overall_vote(self):
         groups = ["bass_swap"] * 7 + ["echo_exit"] * 2 + ["hard_cut"]
         report = inspect_family_sensitivity(
-            summary(["win"] * 8 + ["loss", "tie"], groups))
+            summary(["win"] * 7 + ["loss"] * 2 + ["tie"], groups))
         self.assertTrue(report["opposing_family_directions_review"])
         self.assertTrue(report["family_sensitivity_review_required"])
         self.assertFalse(report["milestone_pass"])
