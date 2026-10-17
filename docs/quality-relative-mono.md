@@ -18,9 +18,20 @@ Exit `0`: no *new sustained* mono cancellation detected **on RMS-comparable, ali
 
 A candidate-specific risk requires at least 25% of **jointly active** 100-ms windows with ≥9dB candidate fold-down loss **and** at least 25 percentage points increase over the baseline measured on the *same jointly active frames*. Each accepted 100-ms interval must contain ≥50% simultaneous source activity; the full pair needs ≥4096 common high-level frames, ≥4 accepted intervals and at least four **consecutive** accepted intervals. Partial trailing windows cannot establish evidence. The gate abstains on mono audio, duration <1s, >20% silent canonical 100-ms windows, insufficient common-frame evidence or absent RMS metrics. It also emits the explicit `rms_level_confound` HOLD when the existing canonical A/B loudness-tolerance gate rejects the pair; valid stereo phases must never override a roughly 6dB candidate-vs-baseline mismatch. A baseline already at or above 25% cancellation on aligned evidence requires review. This remains a technical proxy, not perceptual mono loudness or phase coherence. The output includes only opaque candidate ordinal, category and risk-fraction delta.
 
+## Source PCM integrity gate (technical HOLD only)
+
+A blind listening comparator must not present a source with an unreviewed audio artifact as a clean condition merely because its *stereo-to-mono fold-down* metric is unchanged. After evidence of sufficient jointly audible PCM, this companion now uses the **already-computed**, bounded canonical baseline/candidate artifact flags to return `ab_audio_integrity_confound` (exit **3**, human/DSP review) when **either** audio variant shows:
+
+- a recovered interior silence ≥200ms or a whole-stereo PCM dropout ≥50ms;
+- a single-channel interior dropout ≥50ms while the other channel continues;
+- an isolated ≥25%-FS click surrounded by ≤6.25%-FS samples, or any >50%-FS sample discontinuity;
+- a repeated high-level PCM flat-top plateau of at least four samples (a *clipping proxy*, not clipping proof).
+
+The prior canonical module remains the owner of these thresholds; no new audio processing or DSP rendering is introduced. Procedural tests exercise recovered 60ms total and channel dropouts, an isolated sample impulse, a high-level plateau, a severe discontinuity and a defective *baseline*. These proxies can also flag deliberate percussion or editing effects, so `HOLD` explicitly **requires inspection** rather than claiming a musical defect. The report never exposes samples, frame positions, track names or source paths. Inadequate duration or joint PCM evidence still takes precedence as `insufficient_stereo_evidence`. These checks do not constitute a complete music-quality review, blind preference result or a release sign-off.
+
 ## Blind A/B comparability beyond global RMS
 
-A technically clean stereo fold-down can still be a **biased listening comparison**. MixLab's canonical 100-ms PCM16 scanner already evaluates three bounded flags that are now enforced as `ab_timing_or_dynamics_confound` (exit **3**, HOLD) **only after adequate jointly audible frames**:
+A technically clean stereo fold-down can still be a **biased listening comparison**, even when no integrity artifact is detected. MixLab's canonical 100-ms PCM16 scanner already evaluates three bounded flags that are now enforced as `ab_timing_or_dynamics_confound` (exit **3**, HOLD) **only after adequate jointly audible frames**:
 
 - `short_window_level_mismatch_risk`: a persistent large gain gap in local 100-ms windows even when the *whole-clip* RMS levels are matched.
 - `prominent_onset_mismatch_risk`: audible entries offset by at least 75ms on the scanner's >5%-full-scale PCM-onset heuristic.
