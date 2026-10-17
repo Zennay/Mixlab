@@ -165,8 +165,8 @@ class EnvelopeAlignmentTests(unittest.TestCase):
                                "--" + private],
                               capture_output=True, text=True, timeout=20)
         self.assertEqual(proc.returncode, 2)
-        self.assertTrue(proc.stderr.endswith("\\n"))
-        self.assertNotIn(r"\\n", proc.stderr)
+        self.assertTrue(proc.stderr.endswith("\n"))
+        self.assertNotIn(r"\n", proc.stderr)
         self.assertNotIn(private, proc.stderr + proc.stdout)
 
     def test_cli_fail_on_warnings_is_bounded_and_redacted(self):
