@@ -115,9 +115,9 @@ python3 -m mixlab.quality.fd_guard --ab-group --max-group-frames 400000 \
 The CLI accepts integer budgets **1–8,000,000 only**; Python callers can
 pass `max_total_frames` to `validate_private_ab_group`, with the exact same
 range. Aggregate duration is `frame_count * total_sources`, and all source
-headers are examined **before any PCM is decoded**. A budget exceeded or an
-invalid value returns the same redacted source rejection and does not leak
-audio, names or memory addresses. This option can only tighten, never increase,
+headers are examined **before any PCM is decoded**. An aggregate budget exceedance or out-of-range integer fails with the
+redacted source status **3**; a non-integer CLI argument is a redacted
+argument error **2**. Neither path leaks audio, names or memory addresses. This option can only tighten, never increase,
 the fixed quality-validation ceiling. It does **not** authorise scheduling a
 new MixLab worker or render on an overloaded VPS: obey zCloud admission and
 the project release gate separately.
