@@ -23,14 +23,34 @@ iterators are consumed for **at most eight entries**, even if infinite, and
 iterator failures are redacted rather than propagating private strings.
 
 Admission is fail-closed: no symlink in any current parent component or source
-basename, regular files only, nonblocking and nofollow FD, first/last pathname
-and descriptor identity checks, PCM16 mono/stereo, 8–96 kHz, 1–2,000,000
-frames and 44 B–32 MiB per file, total up to 8,000,000 source frames, A/B
-sample rate/channels/frames must be exactly equal and every participant must be
-a distinct inode. All sources are opened and admitted before reading PCM.
-Reads are <=4096 frames; post-scan identity is checked for all sources before
-returning **any** JSON. Stat-based checks cannot make arbitrary malicious
-filesystem rewrites atomic; continue to use private immutable local files.
+basename; regular files only. The original preflight lstat() is **not** enough
+to safely open private audio because its parent can be swapped into a symlink
+between that check and opening the final filename. Every ancestor directory is
+therefore opened through a relative **O_DIRECTORY | O_NOFOLLOW** descriptor,
+starting at the filesystem root, and the final file is opened with
+**O_NONBLOCK | O_NOFOLLOW** relative to the pinned parent FD. Intermediate
+descriptors are closed on success and every failure. The complete ancestor
+directory device/inode chain is snapshotted at admission and checked again
+after the entire A/B group, alongside the final pathname and file FD identity.
+This rejects renamed/relocated parents even when the replacement directory
+contains a hardlink to the **same source inode**.
+
+PCM16 mono/stereo, 8–96 kHz, 1–2,000,000 frames and 44 B–32 MiB per file,
+total up to 8,000,000 source frames; each A/B group must match sample rate,
+channel count and frame count exactly, and all members must have distinct
+file inodes. All sources are admitted before reading the first PCM frame.
+Reads are <=4096 frames, and any postscan source/ancestor mutation rejects the
+entire group **without partial JSON**. Adversarial rapid changes cannot be
+made perfectly atomic by userspace stat comparisons; trusted, immutable local
+source files remain required.
+
+The synthetic regression suite includes two real parent-symlink swap timings
+and one same-inode hardlink-parent replacement. [Original RED evidence](https://github.com/Zennay/Mixlab/actions/runs/39039047013)
+demonstrated that the previous final-component-only O_NOFOLLOW was insufficient:
+both Python 3.13 and 3.14 actually opened a private alternate inode before
+rejecting it. The later parent-hardlink RED exposed an unchanged final file
+identity hiding a replaced ancestor directory. These failures are distinct
+from audio scoring and do not imply any actual exploitation of user files.
 
 The heuristic counts each channel's **high-level samples** (absolute signed
 PCM value >=2048), and their modulo-4, modulo-16 and modulo-256 residue bins.
