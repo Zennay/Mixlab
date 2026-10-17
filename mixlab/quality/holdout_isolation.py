@@ -197,7 +197,12 @@ def audit_holdout_isolation(development_manifest, evaluation_manifest,
         if len(set(eval_pcm)) != len(eval_pcm):
             _refuse()
 
-        # Same-song subclips can evade both full-file hashes and an inaccurate\n        # recording_id. Require a bounded actual PCM substring preflight.\n        if _exact_pcm_excerpt_overlap(dev, eva):\n            _refuse()\n\n        # Observable mutations between the first PCM reads and final verdict
+        # Same-song subclips can evade both full-file hashes and an inaccurate
+        # recording_id. Require a bounded actual PCM substring preflight.
+        if _exact_pcm_excerpt_overlap(dev, eva):
+            _refuse()
+
+        # Observable mutations between the first PCM reads and final verdict
         # invalidate the result; the gate is not an immutable storage system.
         again_dev = validate_library(dev_path)
         again_eva = validate_library(eva_path)
