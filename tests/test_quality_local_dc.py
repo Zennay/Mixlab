@@ -139,6 +139,30 @@ class LocalDCQualityTests(unittest.TestCase):
         self._append_riff_chunks(self.alt, (b"JUNK" + struct.pack("<I", 0)) * 1026)
         self._assert_riff_rejected_before_pcm()
 
+    def test_valid_metadata_chunk_before_fmt_is_accepted(self):
+        _wav(self.base)
+        _wav(self.alt)
+        payload = bytearray(self.alt.read_bytes())
+        # Metadata can legally precede the fmt chunk. Keep all RIFF sizes
+        # consistent and verify both read-only paths still scan the samples.
+        payload[12:12] = b"JUNK" + struct.pack("<I", 4) + b"ABCD"
+        struct.pack_into("<I", payload, 4, len(payload) - 8)
+        self.alt.write_bytes(payload)
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_data_before_fmt_chunk_rejected_before_any_pcm_decoding(self):
+        _wav(self.base)
+        _wav(self.alt)
+        original = self.alt.read_bytes()
+        self.assertEqual(original[12:16], b"fmt ")
+        self.assertEqual(original[36:40], b"data")
+        # RIFF outer length and both inner chunk sizes remain intact, but
+        # their order becomes invalid: the PCM data precedes its format.
+        swapped = original[:12] + original[36:] + original[12:36]
+        self.alt.write_bytes(swapped)
+        self._assert_riff_rejected_before_pcm()
+
     def test_odd_sized_valid_metadata_chunk_is_accepted(self):
         _wav(self.base)
         _wav(self.alt)
