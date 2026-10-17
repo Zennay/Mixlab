@@ -48,7 +48,8 @@ def scan_spectral_proxy(
     if not isinstance(max_frames, int) or isinstance(max_frames, bool) or not 1 <= max_frames <= MAX_SOURCE_FRAMES:
         raise ValueError("max_frames must be within the configured source budget")
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(os.fspath(path), flags)
+    source_path = os.fspath(path)
+    fd = os.open(source_path, flags)
     try:
         with os.fdopen(fd, "rb", buffering=0) as handle:
             before = os.fstat(handle.fileno())
@@ -118,6 +119,16 @@ def scan_spectral_proxy(
                     remaining -= count
             if _source_identity(before) != _source_identity(os.fstat(handle.fileno())):
                 raise ValueError("WAV changed while being inspected")
+            # A stable open descriptor alone is insufficient: a concurrent
+            # rename could replace the pathname while we read the old inode.
+            # Fail closed if its on-disk identity no longer matches the FD.
+            try:
+                named_after = os.stat(source_path, follow_symlinks=False)
+            except OSError as exc:
+                raise ValueError("WAV pathname changed while being inspected") from exc
+            if (not stat.S_ISREG(named_after.st_mode)
+                    or _source_identity(before) != _source_identity(named_after)):
+                raise ValueError("WAV pathname changed while being inspected")
     except BaseException:
         # fdopen normally owns fd; if creation failed, avoid leaking it.
         try:
@@ -136,6 +147,8 @@ def scan_spectral_proxy(
         "midpass_180_2500_ratio": math.sqrt(mid_energy / total_energy) if total_energy else None,
         "highpass_2500_ratio": math.sqrt(high_energy / total_energy) if total_energy else None,
         "_rms": rms,
+        # Only used privately to flag aliases / hardlinks in a blind pack.
+        "_source_key": (before.st_dev, before.st_ino),
         "_channels": [
             (
                 math.sqrt(low / total) if total else None,
@@ -170,6 +183,7 @@ def compare_spectral_balance(
 
     reference = scan_spectral_proxy(baseline)
     rows = []
+    seen_sources = {reference["_source_key"]}
     scanned_frames = reference["frames"]
     for index, candidate in enumerate(candidates, 1):
         remaining_budget = MAX_AGGREGATE_FRAMES - scanned_frames
@@ -183,6 +197,9 @@ def compare_spectral_balance(
         if any(current[key] != reference[key] for key in ("sample_rate", "channels", "frames")):
             raise ValueError("A/B sample rate, channel count or frame count differs")
         warnings = []
+        if current["_source_key"] in seen_sources:
+            warnings.append("same_input_file_inspect_for_blind_noop")
+        seen_sources.add(current["_source_key"])
         deltas = {}
         if reference["_rms"] < SILENT_WINDOW_RMS or current["_rms"] < SILENT_WINDOW_RMS:
             warnings.append("insufficient_audible_energy_for_spectral_comparison")
