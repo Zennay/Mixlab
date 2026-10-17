@@ -48,16 +48,23 @@ tool never determines which is the baseline or accesses `private/answer-key.json
 Anonymized JSON contains the trial IDs, two sets of technical metrics,
 a B-vs-A RMS comparison, local-level mismatch and duplicate-PCM flags.
 It **does not** export paths, sample arrays, PCM fingerprints, envelope windows
-or the private answer key. Unexpected non-WAV assets such as `index.html`
-are ignored. It reads and checks only regular, non-symlink WAV files.
+or the private answer key. The review directory is treated as publishable:
+only neutral A/B WAVs and the generated regular `index.html` are allowed.
+Unexpected files (especially `answer-key.json` / evidence / unapproved
+downloads), symlinks and nested directories cause a sanitized failure,
+rather than risking accidental publication of private trial assignments.
+The inspector does not read or copy hidden source/answer content.
 
 By default it exits **0** with JSON regardless of nonfatal warnings.
 With `--fail-on-warnings`, it exits **2** when any review pair raises a
 technical warning (including identical A/B PCM) but still prints the JSON.
 Good technical preflight is not evidence of listener preference or of a
 musically superior transition, and intentional DJ effects may be flagged.
-A synthetic regression also renders actual DSP transition families before
-feeding a review directory into this quality gate.
+Synthetic regressions render actual DSP transition families and also run
+MixLab's **official** `fixture -> benchmark -> review` workflow before feeding
+the resulting public review directory into this quality gate. That verifies
+the deployed pack filename/layout contract; it is still not real-audio or
+human preference evidence.
 
 ## Contract and interpretations
 - Bounded per input: at most 32 MiB and 2,000,000 PCM16 frames; supported
