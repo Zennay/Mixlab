@@ -9,7 +9,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
+
+from mixlab.quality import precision
 
 from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 
@@ -119,6 +122,77 @@ class PrecisionTest(unittest.TestCase):
         wav(self.a, frames=4000)
         wav(self.b, frames=4000)
         self.assertIsNone(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_baseline_modified_after_its_scan_is_rejected(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,))
+        original_scan = precision._scan
+        calls = 0
+
+        def intervening_edit(path, **kwargs):
+            nonlocal calls
+            receipt = original_scan(path, **kwargs)
+            calls += 1
+            if calls == 1:
+                # Same PCM length and same inode, but different source bytes.
+                wav(self.a, seed=42)
+            return receipt
+
+        with patch.object(precision, "_scan", side_effect=intervening_edit):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                compare_precision(self.a, self.b)
+        self.assertEqual(calls, 2)
+
+    def test_baseline_replaced_after_its_scan_is_rejected(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,))
+        original_scan = precision._scan
+        replaced = self.root / "replacement.wav"
+        wav(replaced)
+
+        def intervening_replace(path, **kwargs):
+            receipt = original_scan(path, **kwargs)
+            if Path(path) == self.a:
+                # Identical bytes, different inode; still an invalid freeze.
+                os.replace(replaced, self.a)
+            return receipt
+
+        with patch.object(precision, "_scan", side_effect=intervening_replace):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                compare_precision(self.a, self.b)
+
+    def test_candidate_modified_after_scan_is_rejected(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,))
+        original_scan = precision._scan
+
+        def intervening_edit(path, **kwargs):
+            receipt = original_scan(path, **kwargs)
+            if Path(path) == self.b:
+                wav(self.b, coarse=(0,), seed=45)
+            return receipt
+
+        with patch.object(precision, "_scan", side_effect=intervening_edit):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                compare_precision(self.a, self.b)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlink final path")
+    def test_baseline_replaced_with_symlink_after_scan_is_rejected(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,))
+        original_scan = precision._scan
+        old = self.root / "old-baseline.wav"
+
+        def intervening_symlink(path, **kwargs):
+            receipt = original_scan(path, **kwargs)
+            if Path(path) == self.a:
+                os.replace(self.a, old)
+                self.a.symlink_to(old)
+            return receipt
+
+        with patch.object(precision, "_scan", side_effect=intervening_symlink):
+            with self.assertRaisesRegex(ValueError, "replaced or modified"):
+                compare_precision(self.a, self.b)
 
     def test_detection_never_mutates_private_inputs(self):
         import hashlib
