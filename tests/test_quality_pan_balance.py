@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -238,6 +239,46 @@ class PanBalanceTests(unittest.TestCase):
                                        side_effect=AssertionError("opened before path limits")):
                     with self.assertRaises(ValueError):
                         pan_balance.inspect(suspect, self.b)
+
+    def test_valid_non_symlink_lexical_dotdot_and_relative_input(self):
+        album = self.root / "safe_album"
+        album.mkdir()
+        nested = album / "nested"
+        nested.mkdir()
+        source = album / "baseline.wav"
+        wav(source)
+        wav(self.b)
+        # Valid parent traversal must still work, without resolving away
+        # dangerous symlink components before validation.
+        lexical = nested / ".." / "baseline.wav"
+        relative = Path(os.path.relpath(lexical, Path.cwd()))
+        result = pan_balance.inspect(relative, self.b)
+        self.assertEqual(result["evidence_status"], "no_sustained_pan_bias_detected")
+        self.assertFalse(result["stereo_pan_confound_review"])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX named pipes")
+    def test_fifo_refused_without_blocking_or_reading_private_pcm(self):
+        wav(self.a)
+        os.mkfifo(self.b)
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("PCM decoded")):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect(self.a, self.b)
+
+    @unittest.skipUnless(Path("/proc/self/fd").is_dir(), "requires Linux procfs")
+    def test_repeated_parent_symlink_rejection_leaks_no_fds(self):
+        album = self.root / "source_album"
+        album.mkdir()
+        real = album / "original.wav"
+        wav(real)
+        wav(self.b)
+        alias = self.root / "unsafe_alias"
+        alias.symlink_to(album, target_is_directory=True)
+        initial = len(os.listdir("/proc/self/fd"))
+        for _ in range(32):
+            with self.assertRaises((OSError, ValueError)):
+                pan_balance.inspect(alias / "original.wav", self.b)
+        self.assertEqual(len(os.listdir("/proc/self/fd")), initial)
 
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
