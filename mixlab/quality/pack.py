@@ -7,6 +7,7 @@ Metrics are technical diagnostics, not proof of musical preference.
 from __future__ import annotations
 
 import argparse
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -15,6 +16,55 @@ from . import compare_wavs
 
 _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
+MAX_REVIEW_HTML_BYTES = 1024 * 1024
+
+
+class _ReviewPageLinks(HTMLParser):
+    """Extract audio references without executing or exposing HTML content."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.current_trial = None
+        self.trials = []
+        self.audio_links = []
+        self.invalid_nesting = False
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "fieldset":
+            if self.current_trial is not None:
+                self.invalid_nesting = True
+            self.current_trial = attributes.get("data-trial")
+            self.trials.append(self.current_trial)
+        elif tag == "audio":
+            self.audio_links.append((self.current_trial, attributes.get("src")))
+
+    def handle_endtag(self, tag):
+        if tag == "fieldset":
+            self.current_trial = None
+
+
+def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path]]) -> bool:
+    """Check generated review UI audio links against exactly the local trial WAVs.
+
+    A missing index is allowed for audio-only QA. When it exists, all
+    fieldsets/audio references must match the canonical blinding contract.
+    """
+    index = directory / "index.html"
+    if not index.exists():
+        return False
+    if index.stat().st_size > MAX_REVIEW_HTML_BYTES:
+        raise ValueError("Review page exceeds safe size")
+    checker = _ReviewPageLinks()
+    checker.feed(index.read_text(encoding="utf-8"))
+    checker.close()
+    expected_trials = sorted(groups)
+    expected_links = [(trial, f"{trial}-{label}.wav")
+                      for trial in expected_trials for label in ("A", "B")]
+    if (checker.invalid_nesting or checker.trials != expected_trials
+            or checker.audio_links != expected_links):
+        raise ValueError("Review page audio links do not match the trial WAV inventory")
+    return True
 
 
 def inspect_review_pack(
@@ -56,6 +106,7 @@ def inspect_review_pack(
         raise ValueError("Review directory contains no trial WAV pairs")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
+    page_links_verified = _verify_public_review_page(directory, groups)
 
     trials = []
     warning_trial_count = 0
@@ -96,6 +147,7 @@ def inspect_review_pack(
         "warning_trial_count": warning_trial_count,
         "human_preference_test_required": True,
         "answer_key_opened": False,
+        "review_page_audio_links_verified": page_links_verified,
         "contains_source_paths_hashes_or_audio": False,
         "trials": trials,
     }
