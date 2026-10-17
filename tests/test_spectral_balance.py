@@ -200,6 +200,32 @@ class SpectralBalanceTests(unittest.TestCase):
         )
         self.assertIn("rms_level_mismatch_inspect_not_lufs", reverse["candidates"][0]["warnings"])
 
+    def test_rms_confound_threshold_is_decided_on_unrounded_signal_energy(self):
+        # 9500/8000 is below +1.5 dB; 9530/8000 is above.
+        # This is independent of the different spectrogram 6 dB threshold.
+        make_wav(self.other, gain=9500)
+        lower = self.report()["candidates"][0]
+        self.assertLess(lower["rms_delta_db_vs_baseline"], 1.5)
+        self.assertNotIn("rms_level_mismatch_inspect_not_lufs", lower["warnings"])
+        make_wav(self.other, gain=9530)
+        upper = self.report()["candidates"][0]
+        self.assertGreater(upper["rms_delta_db_vs_baseline"], 1.5)
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", upper["warnings"])
+
+    def test_55db_audibility_gate_consistent_across_sample_rates(self):
+        # A 90-LSB sine has > -55dBFS RMS, 80 LSB falls below it.
+        for rate in (8000, 48000, 96000):
+            with self.subTest(rate=rate):
+                make_wav(self.base, gain=90, rate=rate)
+                make_wav(self.other, gain=80, rate=rate)
+                report = self.report()
+                row = report["candidates"][0]
+                self.assertEqual(1.0, row["temporal_audibility_mismatch_fraction"])
+                self.assertIn("temporal_audibility_alignment_inspect", row["warnings"])
+                self.assertIn("insufficient_audible_energy_for_spectral_comparison", row["warnings"])
+                self.assertIsNone(row["rms_delta_db_vs_baseline"])
+                self.assertNotIn(str(self.dir), json.dumps(report))
+
     def test_silent_level_delta_is_undefined_not_fabricated(self):
         make_wav(self.other, gain=0)
         row = self.report()["candidates"][0]
