@@ -1,0 +1,48 @@
+name: MixLab ML-05 bounded evaluation JSON source QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/evaluation/json_admission.py"
+      - "tests/test_evaluation_json_admission.py"
+      - ".github/workflows/ml05-json-admission.yml"
+  push:
+    branches: [qa/ml05-bounded-json-admission-20261017-zsentinel]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml05-json-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-json-admission:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Check out immutable source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          clean: true
+      - name: Assert checkout SHA matches triggering source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile isolated source and tests
+        run: python3 -m compileall -q mixlab/evaluation/json_admission.py tests/test_evaluation_json_admission.py
+      - name: Prove deterministic untrusted-input isolation
+        run: python3 -m unittest -v tests.test_evaluation_json_admission
+      - name: Check compatibility with current offline synthetic suite
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
