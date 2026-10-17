@@ -47,7 +47,12 @@ tool, pack and tuning pipeline.
    validated source and scans all other sources of the same sample rate and
    channel count with overlapping streaming blocks. A byte-for-byte reused
    cropped excerpt is held even when neither full-file checksum, complete
-   decoded-PCM hash nor declared recording ID agrees. Development-development
+   decoded-PCM hash nor declared recording ID agrees. The bounded anchor
+   matcher additionally catches **exact** PCM16 variants from polarity
+   inversion, stereo L/R swapping, doubling gain, or their combinations
+   (only when multiplication remains in signed-16-bit range). This is an
+   integer-identical reproduction check, not a fuzzy perceptual fingerprint.
+   Development-development
    reuse is outside this gate; development-evaluation and evaluation-evaluation
    reuse are screened. Common silence and quiet spacers are intentionally not
    treated as musical duplicates. All PCM reads finish the underlying
@@ -77,15 +82,21 @@ reused track ID; repeated evaluation recording; rehashed frozen-source
 forgeries; wrong pair orientation; identical audible PCM cropped into a distinct longer WAV inside either library, and shared silence that must not trigger a false positive; unselected evaluation additions;
 missing partitions or rights metadata; bad pinned ID; malformed JSON;
 stream-block-spanning reused PCM; actual source mutation after substring
-screening but before the final rescan; and redaction in CLI subprocesses.
+screening but before the final rescan; polarity inversion, exact doubled
+positive/negative gain, stereo-channel exchange, integer overflow in
+PCM16 transformations, a 1.5x nonmatching-gain control, and redaction in
+CLI subprocesses.
 
 The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
 and does not mount private music or access the production VPS/queue.
 
-**Boundary:** This sparse exact-sample screen does not detect time-stretched, resampled,
-phase-shifted or acoustically re-mastered copies, nor every small reused
-fragment. It is a contamination **preflight**, not a music-identification
+**Boundary:** This sparse exact-sample screen does not detect time-stretched,
+resampled, non-integer-amplified (e.g. 1.5x), lossy-compressed, DC-shifted,
+acoustically re-mastered or most other transformed copies, nor every small
+reused fragment. It detects exactly inverted polarity, exact gain x2 and
+stereo channel swaps within PCM16 bounds; it is not a generalized gain,
+phase or timbre invariant audio matcher. It is a contamination **preflight**, not a music-identification
 system. File hashes cannot identify all perceptually identical
 remasters or bootleg versions. `recording_id`, provenance and rights are
 self-declared and must be audited by a person. Technical pass is **not**
