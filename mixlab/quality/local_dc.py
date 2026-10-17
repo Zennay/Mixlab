@@ -55,9 +55,11 @@ def _validate_riff_envelope(handle, physical_bytes: int) -> int:
         cursor = 12
         fmt_seen = data_seen = False
         data_size = None
-        for _ in range(MAX_RIFF_CHUNKS):
-            if cursor == physical_bytes:
-                break
+        chunk_count = 0
+        while cursor < physical_bytes:
+            chunk_count += 1
+            if chunk_count > MAX_RIFF_CHUNKS:
+                raise ValueError("Too many private RIFF chunks")
             if physical_bytes - cursor < 8:
                 raise ValueError("Incomplete private RIFF chunk header")
             handle.seek(cursor)
@@ -79,8 +81,6 @@ def _validate_riff_envelope(handle, physical_bytes: int) -> int:
                 data_seen = True
                 data_size = size
             cursor = next_cursor
-        else:
-            raise ValueError("Too many private RIFF chunks")
 
         if cursor != physical_bytes or not fmt_seen or not data_seen:
             raise ValueError("Private RIFF chunk layout incomplete")
