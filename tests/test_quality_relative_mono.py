@@ -83,6 +83,16 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["status"], "rms_level_confound")
         self.assertFalse(result["milestone_pass"])
 
+    def test_loudness_confounded_candidate_avoids_expensive_second_pcm_scan(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="loud-normal")
+        # Once canonical streaming comparison has found an invalid 6dB
+        # level imbalance, no additional paired PCM scan can rescue it.
+        with patch("mixlab.quality.relative_mono._paired_phase_fractions",
+                   side_effect=AssertionError("unneeded second PCM read")):
+            result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "rms_level_confound")
+
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
         _wave(self.candidate, mode="opposed")
