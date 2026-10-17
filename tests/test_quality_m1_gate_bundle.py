@@ -265,6 +265,115 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
         self.assertNotIn(str(self.fixture.root), result.stdout + result.stderr)
 
+    def _expand_private_pcm_fixture_to_ten_pairs(self):
+        """Exercise the actual documented max pair/cardinality, not mocks.
+
+        The existing frozen five-pair fixture is extended with FIVE NEW,
+        original 8kHz PCM16 waves per blinded variant and unique synthetic
+        source identifiers. Study and pack commitments are rebuilt exactly.
+        """
+        import hashlib
+        import math
+        import struct
+        import wave
+        from mixlab.evaluation import verify_pack
+        from test_quality_study_binding import _canonical_sha, _write_json
+
+        study = json.loads(self.fixture.study.read_text())
+        key_path = self.fixture.private / "answer-key.json"
+        evidence_path = self.fixture.private / "evidence.json"
+        receipt_path = self.fixture.pack / "receipt.json"
+        keys = json.loads(key_path.read_text())
+        evidence = json.loads(evidence_path.read_text())
+        receipt = json.loads(receipt_path.read_text())
+        for i in range(6, 11):
+            number = f"{i:02d}"
+            left = hashlib.sha256(f"maxpilot-original-a-{number}".encode()).hexdigest()
+            right = hashlib.sha256(f"maxpilot-original-b-{number}".encode()).hexdigest()
+            family = ("hard_cut", "bass_swap", "echo_exit", "hard_cut", "bass_swap")[i - 6]
+            study["pairs"].append({
+                "pair_id": f"pair-{number}", "a": f"newtrack-{number}-a",
+                "b": f"newtrack-{number}-b", "a_sha256": left, "b_sha256": right,
+                "a_bpm": 120.0, "b_bpm": 120.0,
+                "renderable_without_stretch": True, "candidate_family": family,
+            })
+            trial = f"trial-{i:03d}"
+            pair = f"synthetic-alignment-{number}"
+            answer = {"trial": trial, "pair": pair,
+                      "A": "baseline" if i % 2 else family,
+                      "B": family if i % 2 else "baseline"}
+            keys.append(answer)
+            for label in ("A", "B"):
+                variant = answer[label]
+                wav_path = self.fixture.review / f"{trial}-{label}.wav"
+                with wave.open(str(wav_path), "wb") as out:
+                    out.setnchannels(1)
+                    out.setsampwidth(2)
+                    out.setframerate(8000)
+                    out.writeframes(b"".join(
+                        struct.pack("<h", int(2000 * math.sin(
+                            2 * math.pi * (92 + i * 17 + (label == "B") * 13)
+                            * frame / 8000
+                        ))) for frame in range(800)
+                    ))
+                evidence["renders"].append({
+                    "pair": pair, "study_pair": f"pair-{number}",
+                    "family": variant, "source_hashes": [left, right],
+                    "recipe": {"family": variant, "bpm": 120.0, "beats": 4,
+                               "a_start": 0.0, "b_start": 0.0,
+                               "gain_db": -6.0,
+                               "a_bpm": 120.0, "b_bpm": 120.0},
+                    "output_sha256": hashlib.sha256(wav_path.read_bytes()).hexdigest(),
+                })
+
+        study.pop("study_id")
+        self.fixture.pinned = _canonical_sha(study)
+        study["study_id"] = self.fixture.pinned
+        evidence["study_id"] = self.fixture.pinned
+        pack_identity = {
+            "manifest": evidence["manifest_sha256"], "answers": keys,
+            "outputs": [row["output_sha256"] for row in evidence["renders"]],
+        }
+        pack_id = hashlib.sha256(
+            json.dumps(pack_identity, sort_keys=True).encode()
+        ).hexdigest()
+        evidence["pack_id"] = receipt["pack_id"] = pack_id
+        receipt["trial_count"] = 10
+        receipt["render_count"] = 20
+        _write_json(self.fixture.study, study)
+        _write_json(key_path, keys)
+        _write_json(evidence_path, evidence)
+        _write_json(receipt_path, receipt)
+        self.fixture.answers = keys
+        self.fixture.receipt = receipt
+        self.assertEqual(len(verify_pack(self.fixture.pack)[2]), 10)
+
+    def test_max_ten_pair_five_rater_real_pcm_path(self):
+        self._expand_private_pcm_fixture_to_ten_pairs()
+        patterns = [
+            ["candidate"] * 10, ["baseline"] * 10,
+            ["candidate" if i % 2 else "baseline" for i in range(10)],
+            ["Tie"] * 10, ["candidate"] * 10,
+        ]
+        self.ballots = self.fixture.generate_reviews(patterns)
+        report = self.bundle()
+        self.assertEqual(report["frozen_pair_count"], 10)
+        self.assertEqual(report["reviewer_file_count"], 5)
+        self.assertIn(report["technical_screen"], ("SCREENED", "REVIEW_REQUIRED"))
+        self.assertIs(report["milestone_pass"], False)
+        wire = json.dumps(report)
+        self.assertNotIn(self.fixture.pinned, wire)
+        self.assertNotIn(str(self.fixture.root), wire)
+
+    def test_max_ten_pair_five_rater_all_unusable_is_valid_hold(self):
+        self._expand_private_pcm_fixture_to_ten_pairs()
+        self.ballots = self.fixture.generate_reviews([["Both unusable"] * 10] * 5)
+        report = self.bundle()
+        self.assertEqual(report["frozen_pair_count"], 10)
+        self.assertEqual(report["reviewer_file_count"], 5)
+        self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
+        self.assertIn("position-bias-or-insufficient-data", report["review_reasons"])
+
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
         original = module.inspect_real_pilot
