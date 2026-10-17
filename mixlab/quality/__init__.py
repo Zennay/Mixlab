@@ -19,6 +19,11 @@ SILENT_WINDOW_RMS = 10 ** (-55 / 20)
 # Investigate gaps of at least 200 ms between audible sections, even if
 # the rest of an otherwise valid transition is loud.
 INTERIOR_SILENT_GAP_WARNING_MS = 200
+# A 50-ms near-digital-silence dropout entirely inside one non-silent RMS
+# window can evade the existing >=200ms silent-window gap detector.
+# Detect only interior runs across all channels, without sample coordinates.
+SHORT_PCM_DROPOUT_WARNING_MS = 50
+QUIET_PCM_ABS_SAMPLE = 64
 # Differing start/end silence in a blind pair can give away the variant or
 # make playback timing unequal even with identical frame count.
 EDGE_SILENCE_CONFOUND_MS = 200
@@ -112,6 +117,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             leading_silence_frames = 0
             pending_interior_silence_frames = 0
             longest_interior_silence_frames = 0
+            # Per-frame quiet runs operate separately from coarse RMS windows.
+            # Ignore leading/trailing silence; flag only audible -> quiet -> audible.
+            seen_audible_frame = False
+            pending_quiet_frames = 0
+            longest_interior_quiet_frames = 0
             eligible_stereo_windows = 0
             phase_risk_windows = 0
             partial_channel_loss_windows = 0
@@ -173,6 +183,16 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     frame = values[i:i + channels]
                     if first_frame is None:
                         first_frame = frame
+                    if all(abs(sample) <= QUIET_PCM_ABS_SAMPLE for sample in frame):
+                        if seen_audible_frame:
+                            pending_quiet_frames += 1
+                    else:
+                        if seen_audible_frame:
+                            longest_interior_quiet_frames = max(
+                                longest_interior_quiet_frames, pending_quiet_frames
+                            )
+                        seen_audible_frame = True
+                        pending_quiet_frames = 0
                     for ch, sample in enumerate(frame):
                         magnitude = abs(sample)
                         peak_sample = max(peak_sample, magnitude)
@@ -224,7 +244,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     )
     # The pending trailing gap is intentionally excluded until sound resumes.
     interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
-    # The pending gap at EOF is trailing silence, not an interior dropout.
+    short_interior_quiet_gap_ms = round(1000 * longest_interior_quiet_frames / rate, 3)
+    # The pending gaps at EOF are trailing silence, not interior dropouts.
     # Fully silent files are already diagnosed separately: don't fabricate
     # an audible ending at their duration.
     leading_silence_ms = round(1000 * leading_silence_frames / rate, 3)
@@ -280,6 +301,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "trailing_silence_ms": trailing_silence_ms,
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
         "interior_silent_gap_risk": interior_silent_gap_ms >= INTERIOR_SILENT_GAP_WARNING_MS,
+        "longest_interior_quiet_pcm_gap_ms": short_interior_quiet_gap_ms,
+        "short_interior_pcm_dropout_risk": (
+            1000 * longest_interior_quiet_frames >= SHORT_PCM_DROPOUT_WARNING_MS * rate
+        ),
         "window_count": windows,
         "min_window_rms_dbfs": _dbfs(min(window_peaks)),
         "max_window_rms_dbfs": _dbfs(max(window_peaks)),
@@ -322,6 +347,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("many_low_level_windows_inspect_for_silence")
     if metrics["interior_silent_gap_risk"]:
         warnings.append("interior_silent_gap_inspect_for_dropouts")
+    if metrics["short_interior_pcm_dropout_risk"]:
+        warnings.append("short_interior_pcm_dropout_inspect")
     if metrics["mono_fold_down_cancellation_risk"]:
         warnings.append("stereo_mono_fold_down_cancellation_inspect")
     if metrics["stereo_channel_silence_risk"]:
