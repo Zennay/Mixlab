@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import stat
 import re
 
 from .listener_controls import check_review_controls
@@ -16,6 +18,42 @@ from .study_binding import verify_study_pack_binding
 
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _REFUSAL = "private study or review pack invalid (details withheld)"
+
+
+def _identity(path, *, directory=False):
+    """Stat a named canonical member without following its final symlink."""
+    info = os.lstat(path)
+    if directory and not stat.S_ISDIR(info.st_mode):
+        raise ValueError(_REFUSAL)
+    if not directory and not stat.S_ISREG(info.st_mode):
+        raise ValueError(_REFUSAL)
+    return (info.st_dev, info.st_ino, info.st_mode,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _private_inventory(root, study):
+    """Bounded before/after inventory for the MULTI-PASS QA transaction.
+
+    Individual scanners already detect their own mid-read changes. Without a
+    wrapper snapshot a modified public HTML or receipt *after its check but
+    before a different validator finishes* can still be marked a clean pass.
+    This detects ordinary concurrent replacements; it is not an atomic lock
+    or resistance to a malicious filesystem actor forging timestamps.
+    """
+    root = Path(root)
+    review = root / "review"
+    private = root / "private"
+    dirs = (root, review, private)
+    files = (study, root / "receipt.json",
+             private / "answer-key.json", private / "evidence.json",
+             review / "index.html")
+    dir_info = tuple(_identity(path, directory=True) for path in dirs)
+    file_info = tuple(_identity(path) for path in files)
+    entries = list(review.iterdir())
+    if not 2 <= len(entries) <= 121:
+        raise ValueError(_REFUSAL)
+    inventory = tuple(sorted((item.name, _identity(item)) for item in entries))
+    return dir_info, file_info, inventory
 
 
 def _inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
@@ -31,6 +69,7 @@ def _inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
         raise ValueError(_REFUSAL)
 
     root = Path(pack_root)
+    before = _private_inventory(root, study_path)
     form = check_review_controls(root / "review" / "index.html")
     screen = inspect_review_pack(
         root / "review", require_generated_html=True, require_receipt=True
@@ -63,6 +102,8 @@ def _inspect_pilot_preflight(pack_root, study_path, externally_pinned_study_id):
             or type(repeated) is not int or not 0 <= repeated <= 2 * n):
         raise ValueError(_REFUSAL)
     clear = warnings == 0 and repeated == 0
+    if _private_inventory(root, study_path) != before:
+        raise ValueError(_REFUSAL)
 
     # Deliberately no trial-level metrics, filenames, pack-id or source hashes.
     return {
