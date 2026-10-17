@@ -328,7 +328,7 @@ class ResolutionTests(unittest.TestCase):
         seen = set()
         for family in FAMILY_NAMES:
             with self.subTest(family=family):
-                candidate = self.root / ("private-render-" + family + ".wav")
+                candidate = self.root / ("private-render-family-" + family + ".wav")
                 render(self.base, self.good, candidate, Recipe(family=family, beats=2))
                 before = [sha256(p.read_bytes()).hexdigest() for p in (baseline, candidate)]
                 review = bitdepth.inspect_ab(baseline, [candidate])
