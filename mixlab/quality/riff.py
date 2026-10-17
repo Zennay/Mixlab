@@ -31,6 +31,7 @@ def verify_private_pcm16_header(path: str | Path) -> None:
             raise ValueError("Inconsistent RIFF container extent")
         offset = 12
         format_seen = False
+        data_seen = False
         block_align = None
         inspected_chunks = 0
         while offset + 8 <= riff_end:
@@ -75,14 +76,20 @@ def verify_private_pcm16_header(path: str | Path) -> None:
                     raise ValueError("Inconsistent PCM16 format header")
                 format_seen = True
             elif chunk_name == b"data":
-                if not format_seen or chunk_size % block_align:
-                    raise ValueError("Invalid PCM16 data alignment")
-                # The wave module performs the bounded frame read, checks
-                # sample limits, and rejects truncated payload independently.
-                return
+                if not format_seen or data_seen or chunk_size % block_align:
+                    raise ValueError("Invalid or duplicated PCM16 data chunk")
+                data_seen = True
+                # Do not stop here: a second data/fmt chunk, truncated RIFF
+                # trailer or unexpected structure after playback can make
+                # other WAV players interpret a different recording.
             # Honor RIFF even-byte chunk alignment when skipping metadata;
             # metadata payload is never read into memory or returned.
             offset = end + (chunk_size & 1)
             if offset > riff_end:
                 raise ValueError("Missing RIFF chunk padding")
-    raise ValueError("Missing PCM16 data chunk")
+        if offset != riff_end:
+            raise ValueError("Incomplete RIFF chunk trailer")
+        if not data_seen:
+            raise ValueError("Missing PCM16 data chunk")
+        # The wave module performs the bounded frame read independently;
+        # header integrity is now checked through the full declared RIFF.
