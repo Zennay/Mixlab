@@ -40,6 +40,7 @@ do not supply the private answer-key folder or any recording/source library.
 
     python3 -m mixlab.quality.pack /private/pack/review
     python3 -m mixlab.quality.pack /private/pack/review --fail-on-warnings
+    python3 -m mixlab.quality.pack /private/pack/review --require-generated-html --fail-on-warnings
 
 The pack inspector rejects empty, incomplete, improperly named, linked or
 excessive (more than 60) trial WAV inventories and errors out with a
@@ -68,8 +69,19 @@ An inadvertently modified listener page must not fetch third-party
 resources during offline review. This guards common static exfiltration
 paths but **does not prove arbitrary inline JavaScript safe**; the exact
 generated listener script still requires code review/CSP before public
-distribution. A clean technical check is not permission to publish
-third-party music.
+distribution. For a frozen **official MixLab-generated** study, use the
+opt-in `--require-generated-html` mode: the inspector rebuilds the
+current official `write_review` HTML in a private temporary directory
+from the **public** pack ID and neutral trial IDs, and requires exact
+HTML equality. This detects modified inline scripts, text or CSS that
+static audio-link screening alone could miss. No audio or answer key is
+read during template reconstruction. Custom pages or missing `index.html`
+fail closed with status 3 in this strict-template mode. A report records
+`official_generated_html_verified` only if requested and confirmed;
+the default remains `false` to avoid implying a performed check.
+Matching the official template does **not** prove its JavaScript safe,
+replace human JS/CSP security review, establish listening preference or
+authorize publication of third-party music.
 
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral

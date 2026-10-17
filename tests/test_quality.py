@@ -545,6 +545,8 @@ class QualityTests(unittest.TestCase):
         valid = neutral_review_page(["trial-001"])
         page.write_text(valid)
         self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        with self.assertRaisesRegex(ValueError, "canonical public pack"):
+            inspect_review_pack(review, require_generated_html=True)
         for wrong in (
             valid.replace("trial-001-B.wav", "https://example.invalid/music.wav"),
             valid.replace("trial-001-A.wav", "__temporary__")
@@ -615,6 +617,11 @@ class QualityTests(unittest.TestCase):
         public_files = list((output / "review").iterdir())
         self.assertEqual(7, len(public_files))  # index.html and six WAVs.
         report = inspect_review_pack(output / "review")
+        strict_page = inspect_review_pack(output / "review", require_generated_html=True)
+        self.assertFalse(report["official_generated_html_verified"])
+        self.assertTrue(strict_page["official_generated_html_verified"])
+        self.assertEqual(3, strict_page["trial_count"])
+        self.assertEqual(report["trials"], strict_page["trials"])
         self.assertEqual(3, report["trial_count"])
         self.assertTrue(report["review_page_audio_links_verified"])
         # The official synthetic benchmark reuses the *same* baseline
@@ -633,6 +640,29 @@ class QualityTests(unittest.TestCase):
         self.assertNotIn(str(self.root), serialized)
         self.assertNotIn("sha256", serialized)
         self.assertNotIn("answer-key", serialized)
+        # Altering just inline JS does not change the correct static
+        # A/B audio references. Only canonical full-template validation
+        # can fail closed on this otherwise undetectable review-page drift.
+        page = output / "review" / "index.html"
+        trusted_html = page.read_text(encoding="utf-8")
+        self.assertIn("Ratings downloaded.", trusted_html)
+        page.write_text(trusted_html.replace("Ratings downloaded.", "Compromised listener action!"))
+        self.assertTrue(inspect_review_pack(output / "review")["review_page_audio_links_verified"])
+        with self.assertRaisesRegex(ValueError, "official offline generator"):
+            inspect_review_pack(output / "review", require_generated_html=True)
+        args = [sys.executable, "-m", "mixlab.quality.pack", str(output / "review"),
+                "--require-generated-html"]
+        invalid = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(3, invalid.returncode)
+        self.assertFalse(invalid.stdout)
+        self.assertNotIn(str(self.root), invalid.stdout + invalid.stderr)
+        self.assertNotIn("Compromised", invalid.stderr)
+        page.write_text(trusted_html)
+        valid = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(0, valid.returncode)
+        self.assertTrue(json.loads(valid.stdout)["official_generated_html_verified"])
+        strict = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
+        self.assertEqual(2, strict.returncode)  # Repeated baseline across trials.
 
     def test_renderer_to_blind_review_quality_preflight_integration(self):
         # Exercise the actual streaming renderer, not only hand-built WAV
