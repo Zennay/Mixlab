@@ -26,7 +26,10 @@ second of active stereo audio was available without that defect, and `null`
 when there is insufficient active evidence to conclude either way. Also
 inspect `evidence_status` (`review_pan_balance`,
 `no_sustained_pan_bias_detected`, `insufficient_active_audio`).
-Exit 2: invalid, changed or unavailable input; stderr is generic. A private
+Exit 2: invalid, changed or unavailable input; stderr is generic.
+The public Python API also converts filesystem `OSError` messages into a
+source-name-free `ValueError`, including missing paths and symlinked parents.
+API callers should handle that generic refusal rather than log native file errors. A private
 argument parser also rejects missing, unknown or extra operands without echoing
 any supplied path or secret. The CLI does not expose its input filenames even
 when the command line itself is malformed. By default, a successful technical
@@ -141,3 +144,16 @@ Synthetic regression tests cover 8,001, 11,025, 16,001, 22,050 and 44,101 Hz,
 for exact-one-second clean and warned stereo signals, one-frame-short abstention
 and mixed group output. This is a timing-diagnostic correctness fix, not
 measured beat alignment or evidence of music preference.
+
+## Privacy failure reproduced and corrected
+
+A source missing from the private library, or a symlinked ancestor directory,
+previously surfaced built-in `FileNotFoundError` / `NotADirectoryError`
+exceptions containing the actual private basename when calling the Python
+`inspect()` and `inspect_batch()` APIs (the CLI was already sanitized).
+The isolated Python API regressions were deliberately RED on
+[hosted #39033952850](https://github.com/Zennay/Mixlab/actions/runs/39033952850).
+The wrapper now translates native filesystem failures into an anonymous
+`ValueError` without exposing the original OS error message. This is a
+privacy invariant for callers, not a claim that process-level exception
+introspection is equivalent to a sandbox.
