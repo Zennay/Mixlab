@@ -96,6 +96,24 @@ class RelativeMonoTests(unittest.TestCase):
         ])
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_different_wav_container_cannot_hide_identical_pcm(self):
+        _wave(self.base, mode="normal")
+        plain = self.base.read_bytes()
+        # A private JUNK chunk changes the WAV bytes but not decoded PCM16.
+        # The public listening-pack gate separately rejects such metadata.
+        payload = b"PRIVATE-INFO"  # no original media; synthetic only
+        if len(payload) % 2:
+            payload += b"!"
+        junk = b"JUNK" + struct.pack("<I", len(payload)) + payload
+        altered = (plain[:4] + struct.pack("<I", len(plain) - 8 + len(junk))
+                   + plain[8:36] + junk + plain[36:])
+        self.candidate.write_bytes(altered)
+        self.assertNotEqual(self.base.read_bytes(), self.candidate.read_bytes())
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "non_independent_ab_audio")
+        self.assertNotIn("PRIVATE-INFO", json.dumps(result))
+        self.assertNotIn(str(self.root), json.dumps(result))
+
     def test_same_inode_hardlink_cannot_count_as_new_ab_audio(self):
         _wave(self.base, mode="normal")
         os.link(self.base, self.candidate)
