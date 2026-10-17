@@ -6,10 +6,13 @@ analysis. All chapter boundaries come from the exact canonical export plan.
 from __future__ import annotations
 
 import argparse
+from array import array
 import json
+import math
 import os
 from pathlib import Path
 import stat
+import sys
 import wave
 
 from .ingest import digest
@@ -27,7 +30,10 @@ h1{font-size:clamp(3rem,7vw,5.6rem);letter-spacing:-.065em;margin:10px 0 25px}
 h2{font-size:1.25rem}p{line-height:1.6}
 .eyebrow{color:#c2afff;text-transform:uppercase;letter-spacing:.16em;font-size:.7rem;font-weight:800}
 .muted{color:#a9b0c3}.hero,.section{border:1px solid #363a51;background:#1e2130;padding:25px;border-radius:20px;margin:20px 0}
-audio{width:100%;margin:18px 0}button{border:1px solid #8e83c0;background:#38355d;color:#fff;
+audio{width:100%;margin:18px 0}.wave-wrap{border:1px solid #3e415b;border-radius:11px;overflow:hidden;background:#141628}
+canvas{display:block;width:100%;height:110px;cursor:crosshair}
+canvas:focus-visible{outline:3px solid #cdbbff;outline-offset:-3px}
+button{border:1px solid #8e83c0;background:#38355d;color:#fff;
 font:inherit;padding:12px 16px;border-radius:12px;cursor:pointer}
 button:focus-visible{outline:3px solid #ccbcff;outline-offset:2px}button:hover{background:#4d477a}
 .controls{display:flex;gap:9px;flex-wrap:wrap}.controls button{flex:1}
@@ -42,6 +48,10 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 De cuepunten komen uit jouw handmatig goedgekeurde Studio-sessie.</p>
 <section class="hero">
 <h2>Luister de hele set</h2><audio id="player" controls preload="metadata"></audio>
+<div class="wave-wrap"><canvas id="waveform" width="900" height="110" tabindex="0"
+role="slider" aria-label="Waveform. Klik of gebruik pijltjes links/rechts om te navigeren"
+aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
+<small>Gesamplede amplitudeweergave (geen nauwkeurige loudness-meting). Klik of gebruik ←/→ om te springen.</small>
 <p id="now" aria-live="polite">Kies play om je set te luisteren.</p>
 <div class="controls"><button id="prev">◀ Vorige passage</button><button id="next">Volgende passage ▶</button></div>
 <p class="muted" id="meta"></p>
@@ -59,7 +69,41 @@ creatieve afspeelpagina, geen onafhankelijke DJ-beoordeling of rechtenverklaring
 "use strict";
 const data=JSON.parse(document.getElementById("mixlab-player-data").textContent);
 const audio=document.getElementById("player");
+const waveform=document.getElementById("waveform");
 audio.src="./"+encodeURIComponent(data.wav_name);
+function drawWaveform(){
+  const width=Math.max(1,Math.round(waveform.clientWidth*(window.devicePixelRatio||1)));
+  const height=Math.max(1,Math.round(110*(window.devicePixelRatio||1)));
+  if(waveform.width!==width||waveform.height!==height){
+    waveform.width=width;waveform.height=height;
+  }
+  const ctx=waveform.getContext("2d");ctx.clearRect(0,0,width,height);
+  const step=width/data.waveform.length;
+  ctx.fillStyle="#ac9bff";
+  data.waveform.forEach((level,i)=>{
+    const bar=Math.max(1,Math.round(level*(height-16)));
+    ctx.fillRect(i*step,(height-bar)/2,Math.max(1,step*.83),bar);
+  });
+  ctx.strokeStyle="#4acbdb";ctx.lineWidth=Math.max(1,window.devicePixelRatio||1);
+  data.chapters.forEach(ch=>{
+    const x=(ch.start_seconds/data.duration_seconds)*width;
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();
+  });
+  ctx.fillStyle="#f8de96";
+  ctx.fillRect((audio.currentTime/data.duration_seconds)*width,0,Math.max(2,window.devicePixelRatio||1),height);
+}
+waveform.addEventListener("click",e=>{
+  const box=waveform.getBoundingClientRect();
+  if(box.width>0)audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
+    (e.clientX-box.left)/box.width*data.duration_seconds));
+});
+waveform.addEventListener("keydown",e=>{
+  if(e.key!=="ArrowLeft" && e.key!=="ArrowRight")return;
+  e.preventDefault();
+  audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
+    (audio.currentTime||0)+(e.key==="ArrowRight"?5:-5)));
+});
+window.addEventListener("resize",drawWaveform);
 const list=document.getElementById("chapters");
 const now=document.getElementById("now");
 document.getElementById("meta").textContent=
@@ -91,6 +135,8 @@ function highlight(){
     else break;
   }
   rows.forEach((li,i)=>li.setAttribute("aria-current",String(i===current)));
+  waveform.setAttribute("aria-valuenow",String(Math.floor(t)));
+  drawWaveform();
   now.textContent="Nu: "+data.chapters[current].label+" ("+
     (data.chapters[current].kind==="transition"?"overgang":"track")+") · "+format(t);
 }
@@ -128,6 +174,8 @@ document.getElementById("download-cue").addEventListener("click",()=>{
   });
   save("mixlab-full-set.cue",lines.join("\\r\\n")+"\\r\\n","text/plain");
 });
+waveform.setAttribute("aria-valuemax",String(Math.floor(data.duration_seconds)));
+audio.addEventListener("loadedmetadata",drawWaveform);
 highlight();
 </script></body></html>"""
 
@@ -150,6 +198,38 @@ def _output_metadata(wav_path, receipt):
     if entry.st_size != 44 + frames * ch * 2:
         raise ValueError("Complete WAV has unexpected trailing/short PCM data")
     return rate, frames
+
+
+
+def _sampled_envelope(wav_path, frames, channels):
+    """Bounded, sparse, relative RMS preview. Not a loudness or quality metric.
+
+    Read <= 640 * 4 * 256 frames independent of source duration, with at most
+    one small PCM buffer in memory. True source/output integrity is checked
+    separately by the full WAV SHA and immutable export receipt.
+    """
+    points = min(640, max(1, (frames + 1023) // 1024))
+    window = min(256, frames)
+    values = []
+    with wave.open(str(wav_path), "rb") as source:
+        for index in range(points):
+            peak = 0.0
+            for part in range(4):
+                center = round(((index + (part + .5) / 4) / points) * frames)
+                start = max(0, min(frames - window, center - window // 2))
+                source.setpos(start)
+                raw = source.readframes(window)
+                if len(raw) != window * channels * 2:
+                    raise ValueError("Sampled waveform encountered truncated PCM16")
+                samples = array("h")
+                samples.frombytes(raw)
+                if sys.byteorder != "little":
+                    samples.byteswap()
+                power = sum((int(sample) / 32768.0) ** 2 for sample in samples) / len(samples)
+                peak = max(peak, math.sqrt(power))
+            values.append(peak)
+    reference = max(.000001, max(values))
+    return [round(min(1.0, value / reference), 3) for value in values]
 
 
 def build_chapters(session_dir, wav_path):
@@ -205,6 +285,8 @@ def build_chapters(session_dir, wav_path):
     return {"schema_version": 1, "kind": "mixlab-private-wav-chapters",
             "wav_name": wav_path.name, "wav_sha256": receipt["output_sha256"],
             "duration_seconds": frames / rate, "duration_label": str(round(frames / rate / 60, 1)) + " minuten",
+            "waveform_basis": "bounded sparse window RMS preview, normalized per output",
+            "waveform": _sampled_envelope(wav_path, frames, receipt["channels"]),
             "chapters": chapters}
 
 
