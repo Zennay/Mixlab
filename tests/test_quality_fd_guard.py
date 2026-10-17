@@ -408,6 +408,8 @@ class PrivateFdGuardTests(unittest.TestCase):
 
     def test_ab_group_exact_eight_million_frames_admitted(self):
         with open(self.source, "r+b") as source:
+            source.seek(4)
+            source.write(struct.pack("<I", 36 + 2_000_000 * 2))
             source.seek(40)
             source.write(struct.pack("<I", 2_000_000 * 2))
             source.truncate(44 + 2_000_000 * 2)
