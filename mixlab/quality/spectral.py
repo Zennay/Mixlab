@@ -37,6 +37,9 @@ SPECTRAL_SPANS = 8
 TEMPORAL_PROXY_THRESHOLD_DB = 9.0
 TEMPORAL_PROXY_MIN_FRACTION = 0.25
 TEMPORAL_PROXY_MIN_SPANS = 3
+# Inspect persistent changes in *relative* within-track loudness envelope:
+# a gain-only transform must not create this warning.
+TEMPORAL_ENVELOPE_DELTA_DB = 3.0
 
 
 def _source_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -338,6 +341,30 @@ def compare_spectral_balance(
                 and current["_rms"] >= SILENT_WINDOW_RMS
                 and comparable_activity < TEMPORAL_PROXY_MIN_SPANS):
             warnings.append("insufficient_temporal_spectral_coverage_inspect")
+
+        # Equal whole-track RMS can hide swapped loud/quiet passages.
+        # Compare the level *shape*, normalized by each file's own RMS, so
+        # a constant gain adjustment is not mistaken for altered dynamics.
+        envelope_compared = envelope_mismatched = 0
+        if reference["_rms"] >= SILENT_WINDOW_RMS and current["_rms"] >= SILENT_WINDOW_RMS:
+            for ref_span, cur_span in zip(reference["_spans"], current["_spans"]):
+                a, b = ref_span[3], cur_span[3]
+                if min(a, b) < SILENT_WINDOW_RMS:
+                    continue
+                envelope_compared += 1
+                level_change_db = 20 * math.log10(
+                    (b / current["_rms"]) / (a / reference["_rms"])
+                )
+                if abs(level_change_db) >= TEMPORAL_ENVELOPE_DELTA_DB:
+                    envelope_mismatched += 1
+        deltas["temporal_rms_envelope_mismatch_fraction"] = (
+            round(envelope_mismatched / envelope_compared, 6)
+            if envelope_compared >= TEMPORAL_PROXY_MIN_SPANS else None
+        )
+        if (envelope_compared >= TEMPORAL_PROXY_MIN_SPANS
+                and envelope_mismatched >= 2
+                and envelope_mismatched / envelope_compared >= TEMPORAL_PROXY_MIN_FRACTION):
+            warnings.append("temporal_rms_envelope_shift_inspect_not_lufs")
 
         # A/B can have *equal global* low/high ratios even if the bass and
         # treble moments were swapped. Eight private time-aligned summaries
