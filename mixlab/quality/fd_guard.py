@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import os
 import stat
+import struct
 import wave
 
 MAX_BYTES = 32 * 1024 * 1024
@@ -58,7 +59,7 @@ def admitted_pcm16(path):
             fd = -1
             try:
                 reader = wave.open(stream, "rb")
-            except (wave.Error, EOFError, OSError, ValueError):
+            except (wave.Error, EOFError, OSError, ValueError, struct.error):
                 raise ValueError(_ERROR) from None
             try:
                 channels, width, rate, frames, compression, _ = reader.getparams()
@@ -79,7 +80,7 @@ def admitted_pcm16(path):
                     raise ValueError(_ERROR)
             finally:
                 reader.close()
-    except (OSError, wave.Error, EOFError):
+    except (OSError, wave.Error, EOFError, struct.error):
         raise ValueError(_ERROR) from None
     finally:
         if fd >= 0:
