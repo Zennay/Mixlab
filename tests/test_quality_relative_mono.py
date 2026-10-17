@@ -149,7 +149,7 @@ class RelativeMonoTests(unittest.TestCase):
         def changed_after_canonical_scan(base, candidate):
             with open(self.candidate, "r+b") as out:
                 out.seek(44)
-                out.write(b"\\x01\\x00\\x02\\x00")
+                out.write(b"\x01\x00\x02\x00")
                 out.flush()
                 os.fsync(out.fileno())
             return actual(base, candidate)
@@ -164,7 +164,7 @@ class RelativeMonoTests(unittest.TestCase):
             out.setnchannels(2)
             out.setsampwidth(2)
             out.setframerate(8000)
-            out.writeframes(b"\\x00\\x00\\x00\\x00" * 2_000_001)
+            out.writeframes(b"\x00\x00\x00\x00" * 2_000_001)
         _wave(self.candidate, mode="normal")
         with self.assertRaises(ValueError):
             inspect(str(self.base), [str(self.candidate)])
