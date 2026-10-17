@@ -31,6 +31,9 @@ STEREO_CHANNEL_LOSS_MIN_FRACTION = 0.2
 # A >50% full-scale adjacent PCM step is suspicious for a splice pop,
 # but percussion and intentional cuts still require human inspection.
 SEVERE_SAMPLE_JUMP = 0.5 * 32768
+# An isolated playback excerpt starting or ending far from zero may click
+# even without a large jump *between* its existing PCM samples.
+PLAYBACK_EDGE_STEP_WARNING = 0.25 * 32768
 # Earlier digital clipping may have been attenuated: a repeated high-level
 # PCM plateau can persist without any sample reaching digital full-scale.
 # Warn on >=4 *exactly equal* consecutive samples above 72% full-scale.
@@ -90,6 +93,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             high_flat_top_plateau_count = 0
             flat_top_run = [0] * channels
             previous = None
+            first_frame = None
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
             window_mid_sum_squares = 0.0
@@ -160,6 +164,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     values.byteswap()
                 for i in range(0, len(values), channels):
                     frame = values[i:i + channels]
+                    if first_frame is None:
+                        first_frame = frame
                     for ch, sample in enumerate(frame):
                         magnitude = abs(sample)
                         peak_sample = max(peak_sample, magnitude)
@@ -198,6 +204,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
 
     rms = math.sqrt(sum_squares / total_samples) / 32768
     peak = peak_sample / 32768
+    playback_start_peak = max(abs(sample) for sample in first_frame) / 32768
+    playback_end_peak = max(abs(sample) for sample in previous) / 32768
+    playback_boundary_pop_risk = (
+        max(playback_start_peak, playback_end_peak) >= PLAYBACK_EDGE_STEP_WARNING / 32768
+    )
     # The pending trailing gap is intentionally excluded until sound resumes.
     interior_silent_gap_ms = round(1000 * longest_interior_silence_frames / rate, 3)
     # The pending gap at EOF is trailing silence, not an interior dropout.
@@ -262,6 +273,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "max_adjacent_sample_jump": round(max_jump / 32768, 6),
         "severe_adjacent_jump_count": severe_jump_count,
         "severe_sample_discontinuity_risk": severe_jump_count > 0,
+        "playback_start_peak": round(playback_start_peak, 6),
+        "playback_end_peak": round(playback_end_peak, 6),
+        "playback_boundary_pop_risk": playback_boundary_pop_risk,
         "high_flat_top_plateau_count": high_flat_top_plateau_count,
         "high_flat_top_plateau_risk": high_flat_top_plateau_count > 0,
         "stereo_phase_correlation": phase_correlation,
@@ -303,6 +317,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("dc_offset_inspect_for_headroom")
     if metrics["severe_sample_discontinuity_risk"]:
         warnings.append("severe_sample_discontinuity_inspect_for_pops")
+    if metrics["playback_boundary_pop_risk"]:
+        warnings.append("playback_boundary_step_inspect_for_clicks")
     if metrics["high_flat_top_plateau_risk"]:
         warnings.append("high_flat_top_plateau_inspect_for_prior_limiting")
     return warnings

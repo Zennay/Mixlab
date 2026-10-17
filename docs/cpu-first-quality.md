@@ -231,6 +231,16 @@ human preference evidence.
   baseline and candidates. It is an **inspect-for-prior-limiting heuristic**,
   not proof of clipped audio: deliberately flattened bass, square waves or
   creative effects can legitimately trigger it. No automatic audio repair.
+- Separately from jumps *between* PCM samples, the first and last sample
+  of each playback excerpt can cause a click when playback enters/exits from
+  zero. The bounded scanner privately examines only those two stereo/mono
+  frames and warns `playback_boundary_step_inspect_for_clicks` when any
+  channel reaches >=25% of full scale at either file boundary. The report
+  carries aggregate `playback_start_peak` / `playback_end_peak` and
+  `playback_boundary_pop_risk`, not raw sample values, paths or music.
+  This is a potential step at an isolated playback boundary, **not** a
+  measured audible click: a beat cut, joined continuous audio or intentional
+  DJ effect can be valid. No fading or repair is applied automatically.
 - Unexpected adjacent-sample jumps >=50% full scale are counted, including
   across the internal 4096-frame read boundary, and receive a technical pop
   warning. DC offset exceeding 3% full scale on any channel receives an
