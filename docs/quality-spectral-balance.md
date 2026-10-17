@@ -51,7 +51,17 @@ source's *unfiltered* RMS. A/B reports compute
 gain-normalized, but **not** loudness-matched or perceptual loudness.
 
 An additional **eight-span temporal proxy** checks whether the same
-low/high content occurred at the same *time* in both variants. The source
+low/mid/high content occurred at the same *time* in both variants.
+A/B silence alignment is screened independently: when one source is audible
+(>=-55 dBFS RMS) in a time span but the other is not, the report includes
+`temporal_audibility_alignment_inspect` and publishes only the aggregate
+`temporal_audibility_mismatch_fraction` (0..1). If fewer than **three**
+spans are mutually audible while both sources are globally audible,
+`insufficient_temporal_spectral_coverage_inspect` is emitted and any
+under-supported band-mismatch fractions remain `null`, never falsely
+reported as 0% agreement. This catches equal-energy sources whose music
+occurs in opposite halves; they have zero overlapping audible windows.
+Intentional silence and cuts can trigger warnings, not quality verdicts. The source
 is divided into eight deterministic equal-duration bins, with a fixed eight
 aggregate-energy buffers regardless of excerpt length. For each bin the
 same RMS-normalized low/mid/high proxies are compared in A/B order; any span
@@ -133,7 +143,7 @@ mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
 same-inode/hardlink reuse, concurrent path replacement/unlink,
 full-comparison early-baseline/candidate mutation and symlink-substitution
 rejection, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
-shifts, stereo temporal gain invariance, matched-RMS midrange depletion,
+shifts, stereo temporal gain invariance, shifted silence and sparse temporal coverage, matched-RMS midrange depletion,
 midrange time reordering, stereo channel-frequency swaps with
 globally identical energies, stereo gain invariance, single-channel silence from either side,\nstrict CLI failure on a shared channel dropout, silent spans, strict warning exit
 and CLI canary privacy. It is discovered
