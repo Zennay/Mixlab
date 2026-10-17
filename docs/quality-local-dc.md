@@ -25,8 +25,13 @@ regular-file identities** (same path or hardlinks are rejected; independent
 identical copies remain admissible). Reads are bounded to 4096 frames/chunk. Window sums
 consume only O(channels × floor(frames / 250ms)) memory. Per-source and
 pair-wide device/inode/size/mtime/ctime freeze checks reject detectable source
-changes, including path swaps. This is best effort and **not** an atomic
-filesystem snapshot.
+changes, including path swaps. Single-pair and batch execution both
+pre-admit every source **before any PCM decoding**. The RIFF/WAVE physical
+container length must match the declared RIFF size exactly: forged lengths and
+unclaimed trailing bytes fail closed, while properly accounted metadata/JUNK
+chunks remain valid. This guards misleading technical screening on malformed
+private clips, but is not a complete RIFF consistency or codec/security audit.
+This is best effort and **not** an atomic filesystem snapshot.
 
 ## Batch input contract
 
