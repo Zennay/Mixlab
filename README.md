@@ -2,7 +2,7 @@
 
 An offline AI-DJ research project: understand track segments, discover surprising combinations, render real transitions and eventually build full sets around context and an energy journey.
 
-**Current phase: M1 — Transition Lab (OPEN).** MixLab now has a private real-music import route, a visual two-deck cue editor, a local transition Studio, a two-song full-length WAV exporter, a manual multi-song party-mix exporter, and a one-command playable synthetic DJ demo. These are creative product features, not proof of superior musical quality. Equal-BPM/manual-cue constraints remain. Automatic downbeat/phrase/key analysis, actual source separation, approved real-track listening evidence and blinded preference comparisons have **not** passed M1 gates.
+**Current phase: M1 — Transition Lab (OPEN).** MixLab now has a private real-music import route, a visual two-deck cue editor, a local transition Studio, a two-song full-length WAV exporter, a continuous multi-track WAV+chaptered player, a guided private playlist and transition-idea workflow, and a one-command playable three-song synthetic DJ demo. These are creative product features, not proof of superior musical quality. Equal-BPM/manual-cue constraints remain. Automatic downbeat/phrase/key analysis, actual source separation, approved real-track listening evidence and blinded preference comparisons have **not** passed M1 gates.
 
 - [Notion project](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
 - [Current handoff](https://app.notion.com/p/3e79e19ac95581f4bf15c26a833da642)
@@ -12,10 +12,11 @@ An offline AI-DJ research project: understand track segments, discover surprisin
 
 ## Probeer MixLab direct — geen muziekbestanden nodig
 
-Er is nu een **volledig lokale, luisterbare DJ-productdemo**. Deze maakt twee
-originele synthetische 120-BPM-nummers, genereert vier echte
-overgangsvarianten en een complete twee-track-mix, plus een visuele
-cue-editor. Er worden geen beschermde muziektracks, modellen of
+Er is nu een **volledig lokale, luisterbare DJ-productdemo**. Deze maakt
+drie originele synthetische 120-BPM-nummers, rendert acht echte
+overgangsvarianten verdeeld over twee paren, één complete **drie-track
+WAV-set**, een visuele golfvormspeler met hoofdstukken en de Set
+Composer om zelf overgangen te kiezen. Er worden geen beschermde muziektracks, modellen of
 externe diensten gedownload; voor deze WAV-demo is geen FFmpeg nodig.
 
 ~~~bash
@@ -27,7 +28,49 @@ Gebruik een nieuwe directory buiten je Git-checkout. De
 synthetische productdemo is géén bewijs voor echte muziekkwaliteit of een
 geblindeerde gebruikersstudie. Zie [de demo-handleiding](docs/offline-dj-demo.md).
 
-### Eigen muziek: van nummers naar echte DJ-overgang
+### Eigen muziek: een complete set in één begeleide opdracht
+
+Kies 2–11 nummers in een vaste afspeelvolgorde, leg handmatig de werkelijke
+BPM, bronrechten en overgangscues vast en laat MixLab **alle bestaande
+DSP-overgangen renderen**. De originele muziek blijft op je eigen computer;
+MP3/FLAC/M4A vereisen reeds geïnstalleerde FFmpeg/FFprobe en canonieke
+44,1 kHz PCM16-WAV werkt zonder extra runtimepakket.
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 --beats 16
+~~~
+
+Open **/private/mixlab-playlist-01/set-composer/index.html**.
+Beluister de reeds gerenderde overgangen, bouw je route en download
+`mixlab-set-plan.private.json`. Render daarna één complete WAV:
+
+~~~bash
+python3 -m mixlab.set_composer render \
+  /private/mixlab-playlist-01 \
+  /private/mixlab-set-plan.private.json \
+  /private/mixlab-party.wav
+~~~
+
+Daar verschijnt ook **/private/mixlab-party.wav.player.html** met een
+interactieve golfvorm, hoofdstukken per overgang en CUE-export. Je kunt
+de handmatige invoer vooraf vastleggen met `--manifest-only` en later
+zonder opnieuw typen renderen met `--resume`.
+
+Wil je creatieve cuevoorstellen op basis van een **handmatig bevestigd**
+beat/downbeat-grid en lokale RMS-energie, gebruik dan `--ideas`
+(vereist een expliciet ingevulde eerste downbeat voor iedere track).
+Elke keuze vereist handmatige goedkeuring; geen automatische muzikale
+kwaliteit of echte phrase-detectie wordt geclaimd.
+
+Lees [de Playlist Studio-handleiding](docs/guided-playlist-studio.md),
+[de offline Set Composer](docs/offline-set-composer.md),
+[de Full Set Player](docs/private-full-set-player.md) en
+[Transition Idea Board](docs/transition-idea-board.md).
+
+### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
 cues visueel laten goedkeuren en een volledige mix exporteren.
@@ -71,6 +114,12 @@ zijn niet afgerond; experimenteer alleen met bronnen die je mag gebruiken.
 - Replaceable analysis provider, measured regular-tempo proposals, manual cue/key annotations, content-addressed private feature cache and beat-error evaluation.
 - Streaming transition renderer with exclusive complete-file publication, clipping rejection and post-PCM metrics.
 - Checksum-bound rating aggregation with duplicate/coverage validation and explicit volume confounds.
+- One-command private playlist Studio (2–11 tracks), manual tempo/rights/cues,
+  ordered transition pair graph, immutable stage/resume and offline Set Composer.
+- Checksum-bound transition-energy Idea Board with explicit DJ approval into a
+  new development manifest; no silent changes to frozen evaluations.
+- Full private continuous WAV, chaptered offline player, clickable sampled
+  waveform, keyboard navigation and CUE/JSON chapter exports.
 - No runtime dependencies beyond Python 3.10+ standard library.
 
 ## Reproduce on the VPS runner
