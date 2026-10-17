@@ -183,7 +183,5 @@ class LocalDCQualityTests(unittest.TestCase):
                     f.write(b"CHANGED")
             return r
         with mock.patch.object(local_dc, "_scan_private_pcm", change_after_first_scan):
-            # Explicitly capture current contract: per-source freeze is local
-            # to each scan; pair-wide freeze is a separate integration gate.
-            result = local_dc.inspect(self.base, self.alt)
-        self.assertEqual(result["warning"], False)
+            with self.assertRaisesRegex(ValueError, "pair inspection"):
+                local_dc.inspect(self.base, self.alt)
