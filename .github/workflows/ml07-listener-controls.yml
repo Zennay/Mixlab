@@ -5,6 +5,8 @@ on:
       - 'mixlab/quality/listener_controls.py'
       - 'tests/test_quality_listener_controls.py'
       - 'tests/test_quality_listener_browser.py'
+      - 'tests/test_quality_pilot_preflight.py'
+      - 'mixlab/quality/pilot_preflight.py'
       - 'docs/quality-listener-controls.md'
       - '.github/workflows/ml07-listener-controls.yml'
   workflow_dispatch:
@@ -36,12 +38,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          python -m compileall -q mixlab/quality/listener_controls.py tests/test_quality_listener_controls.py tests/test_quality_listener_browser.py
+          python -m compileall -q mixlab/quality/listener_controls.py tests/test_quality_listener_controls.py tests/test_quality_listener_browser.py mixlab/quality/pilot_preflight.py tests/test_quality_pilot_preflight.py
       - name: Run synthetic form, privacy and existing canonical quality contracts
         run: |
           set -euo pipefail
           ulimit -v 196608
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_listener_controls.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_pilot_preflight.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
       - name: Exercise real Chromium DOM, required responses and JSON export
