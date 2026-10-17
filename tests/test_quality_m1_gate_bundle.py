@@ -134,6 +134,22 @@ class PureM1ReportContract(unittest.TestCase):
             with self.assertRaises(M1GateBundleError):
                 compose(*rows)
 
+    def test_tristate_position_contract_for_underpowered_pilots(self):
+        low = reports()
+        low[2]["sufficient_for_position_screen"] = False
+        low[2]["aggregate_position_dominance_review"] = None
+        self.assertEqual(compose(*low)["technical_screen"], "REVIEW_REQUIRED")
+        # Inconclusive is not a permissible substitute for the result when
+        # there actually are enough decisive observations.
+        high = reports()
+        high[2]["aggregate_position_dominance_review"] = None
+        with self.assertRaises(M1GateBundleError):
+            compose(*high)
+        # A forged decisive conclusion while insufficient is also rejected.
+        low[2]["aggregate_position_dominance_review"] = False
+        with self.assertRaises(M1GateBundleError):
+            compose(*low)
+
     def test_does_not_echo_private_data_from_input_reports(self):
         rows = reports()
         for report in rows:
@@ -170,6 +186,43 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertNotIn(str(self.fixture.root), wire)
         self.assertNotIn("trial-001", wire)
         self.assertNotIn("synthetic-cross-gate", wire)
+
+    def test_inconclusive_real_pcm_ballots_hold_instead_of_invalid_data(self):
+        # Exactly valid trial/pack/PCM inputs, with no enough decisive answers.
+        # These must be REVIEW_REQUIRED (exit 3), not invalid-data (exit 2).
+        for count in (3, 4, 5):
+            for choice in ("Tie", "Both unusable"):
+                with self.subTest(reviewers=count, choice=choice):
+                    self.ballots = self.fixture.generate_reviews([[choice] * 5] * count)
+                    result = self.bundle()
+                    self.assertEqual(result["technical_screen"], "REVIEW_REQUIRED")
+                    self.assertIn("position-bias-or-insufficient-data",
+                                  result["review_reasons"])
+                    self.assertIn("pair-sensitivity-or-insufficient-data",
+                                  result["review_reasons"])
+                    self.assertIs(result["milestone_pass"], False)
+
+    def test_mixed_valid_low_information_ballots_hold(self):
+        self.ballots = self.fixture.generate_reviews([
+            ["candidate", "Tie", "Tie", "Tie", "Tie"],
+            ["baseline", "Tie", "Tie", "Tie", "Tie"],
+            ["candidate", "Tie", "Tie", "Tie", "Tie"],
+        ])
+        report = self.bundle()
+        self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
+        self.assertIn("position-bias-or-insufficient-data", report["review_reasons"])
+
+    def test_inconclusive_real_cli_uses_review_exit_three(self):
+        self.ballots = self.fixture.generate_reviews([["Tie"] * 5] * 3)
+        result = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.m1_gate_bundle",
+            str(self.fixture.study), str(self.fixture.pack),
+            *map(str, self.ballots), "--expected-study-id", self.fixture.pinned,
+        ], capture_output=True, text=True, timeout=45)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
+        self.assertNotIn(str(self.fixture.root), result.stdout + result.stderr)
 
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
