@@ -203,8 +203,8 @@ def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dic
             warnings.append("microtiming_alignment_inconclusive_inspect")
         if regional_risk is True:
             warnings.append("regional_timing_shift_inspect_not_tempo_estimate")
-        elif regional_risk is None:
-            warnings.append("regional_timing_alignment_inconclusive_inspect")
+        elif regional_risk is None and risk is not True:
+            warnings.append("regional_timing_alignment_inconclusive_inspect"
         results.append({
             "id": f"candidate-{index:02d}",
             "temporal_envelope_shift_risk": risk,
