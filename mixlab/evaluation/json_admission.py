@@ -76,6 +76,32 @@ def load_bounded_json(path):
     except UnicodeDecodeError:
         raise ValueError("Invalid evaluation JSON UTF-8") from None
 
+    # Explicit shallow JSON structure limit instead of relying on a
+    # Python-version-specific decoder recursion ceiling. Delimiters within
+    # quoted strings and escaped quotes are ignored.
+    depth = 0
+    quoted = False
+    escaped = False
+    for char in decoded:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > 64:
+                raise ValueError("Evaluation JSON nesting limit exceeded")
+        elif char in "]}":
+            depth -= 1
+            if depth < 0:
+                # The JSON decoder retains authority over syntax errors.
+                break
+
     def unique_pairs(pairs):
         result = {}
         for key, value in pairs:
