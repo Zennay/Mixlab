@@ -64,6 +64,10 @@ class QualityTests(unittest.TestCase):
         )
         self.assertRegex(check.stderr, r"Ran [1-9][0-9]* tests? in ")
         self.assertIn("\nOK", check.stderr)
+        # Print only the public numeric summary to preserve reproducible
+        # CI evidence without echoing synthetic fixture paths or metadata.
+        suites = [line for line in check.stderr.splitlines() if line.startswith("Ran ")]
+        print("MixLab companion regression: " + suites[-1])
 
     def test_equal_pcm_is_level_comparable_with_no_path_leak(self):
         before = self.candidate.read_bytes()
