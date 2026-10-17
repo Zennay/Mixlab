@@ -11,3 +11,23 @@ ManualProvider retains annotation provenance through its configuration hash and 
 - Built-in energy-onset: no packages/models, streaming PCM input, short excerpts only; useful diagnostic baseline, insufficient as the final wedding/club analyzer.
 
 Run `python3 -m mixlab.analysis clip.wav --cache /private/features`. Automatic output never silently changes a render recipe. Compare providers against manually annotated real audio, report beat error and abstention/coverage before automatic mixpoint acceptance. Synthetic regular-click regression only verifies timing mechanics.
+
+## Addendum — measured key and bar/phrase proposals, 17 October 2026
+
+Decision: add two standard-library, CPU-only proposal providers beside the beat estimator, without changing the `Analysis` record, cache schema or provider-specific cache rules owned by `mixlab/analysis/__init__.py`. Both emit their own versioned records (`schema_version` 1) labelled `measured-heuristic` and abstain rather than guess.
+
+- `mixlab/analysis/tonal.py` · `ChromaKeyProvider` (`chroma-kk-v1`): channel-averaged PCM is boxcar-decimated to about 4 kHz; Hann-windowed single-bin DFTs at equal-tempered pitches C2–B5 (A4 = 440 Hz) build a per-frame normalized, octave-folded pitch-class profile (at most 240 frames of 4096 samples). Pearson correlation against rotated Krumhansl–Kessler major/minor profiles ranks the 24 keys. A key is proposed only with correlation ≥ 0.6, margin ≥ 0.04 over the runner-up and ≥ 3 non-silent frames. `key_score`/`key_report` give MIREX-style weighted scores (exact 1, fifth 0.5, relative 0.3, parallel 0.2) plus abstention rate against manual references.
+- `mixlab/analysis/meter.py` · `AccentMeterProvider` (`accent-phase-v1`): takes a supplied beatgrid (energy-onset proposal or a verified manual grid). Per beat it measures low-band (150 Hz one-pole) energy, onset contrast and harmonic change, z-normalizes and averages them, and compares each bar phase. Downbeats are proposed only when the best phase has contrast ≥ 0.75, margin ≥ 0.5 and is the bar maximum in ≥ 60 % of whole bars. Phrase starts use a checkerboard novelty over half-phrase windows (energy jump + harmonic distance), so chord changes repeating inside a phrase cancel; they need ≥ 2 whole phrases and the same thresholds pattern (contrast ≥ 1.0, margin ≥ 0.5, consistency ≥ 0.6). Phrase starts are always a subset of proposed downbeats.
+
+This is not "renaming every fourth beat": a uniformly accented click track abstains. Assumptions remain explicit in every record: fixed meter (default 4/4), fixed phrase length (default 8 bars), one global key, standard tuning, no modulation or modal detection. Opposite-polarity stereo cancels in the channel average and therefore abstains. Boxcar decimation is a crude anti-alias filter. Energy-onset octave errors propagate into bar phases; verify the beatgrid first.
+
+Evidence boundary: deterministic synthetic chords, cadences and drum/harmony loops verify mechanics, transposition invariance and abstention only. They are not accuracy on music. Acceptance for M1 still requires a permitted, manually annotated real-track set, reporting `key_report` and downbeat `beat_errors` F-measure with abstention per provider. Proposals never change a render recipe automatically; a human confirms them through `ManualProvider`, which re-validates them on the grid.
+
+```bash
+python3 -m mixlab.analysis.tonal /private/library/clip.wav
+python3 -m mixlab.analysis.meter /private/library/clip.wav --bpm 128 --first-beat 0.31
+```
+
+### Reference benchmark harness
+
+`python3 -m mixlab.analysis.benchmark /private/annotations/refs.json` scores the three measured providers against private manual references. Schema v1: `{"schema_version": 1, "items": [{"id", "path" (relative, beside the JSON), "sha256", "bpm", "first_beat"?, "downbeats"?, "key"?, "annotator"}]}`. Every provider record (beat, both meter runs, key) must carry the annotated `sha256`, and the file is re-hashed after the last provider, so a recording replaced between providers fails closed. This is a consistency check, not an immutable snapshot. Output has track IDs and scores only: beat F1/abstention, downbeat F1 on the verified grid (bar-phase error only) and on the estimated grid (end-to-end), and `key_report`. Annotate the whole excerpt, because unannotated trailing bars count as false positives. This harness is the M1 analysis gate measurement; synthetic references only exercise it.
