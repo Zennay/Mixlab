@@ -175,7 +175,11 @@ def compare_intersample(baseline: str | Path, candidates: list[str | Path]) -> d
     if not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise AudioInputError("Invalid number of candidates")
     with ExitStack() as stack:
-        sources = [_open_pcm(stack, os.fspath(path)) for path in (baseline, *candidates)]
+        # Keep caller paths only in memory. The open file descriptor is stable
+        # even if its pathname is replaced during a later participant's scan;
+        # validate both identities before releasing an anonymous A/B report.
+        source_paths = tuple(os.fspath(path) for path in (baseline, *candidates))
+        sources = [_open_pcm(stack, private_path) for private_path in source_paths]
         shapes = [source[3] for source in sources]
         if any(shape != shapes[0] for shape in shapes[1:]):
             raise AudioInputError("A/B sample format and length mismatch")
@@ -193,12 +197,28 @@ def compare_intersample(baseline: str | Path, candidates: list[str | Path]) -> d
             ):
                 raise AudioInputError("Source changed during read")
         # Hold all FDs open and detect mutations of earlier sources too.
-        for _, stream, before, _ in sources:
+        for private_path, (_, stream, before, _) in zip(source_paths, sources):
             after = os.fstat(stream.fileno())
-            if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-                after.st_size, after.st_mtime_ns, after.st_ctime_ns
-            ):
+            if (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns) != (
+                    after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns):
                 raise AudioInputError("Source changed during group read")
+            # fstat alone cannot notice path replacement: it continues to
+            # read the unlinked old inode. A renamed/replaced/symlinked source
+            # is therefore not an identity-stable comparison, even when the
+            # replacement is bit-identical and same-size.
+            try:
+                live_path = os.stat(private_path, follow_symlinks=False)
+            except OSError:
+                raise AudioInputError("Source path changed during group read") from None
+            if (not stat.S_ISREG(live_path.st_mode)
+                    or (live_path.st_dev, live_path.st_ino,
+                        live_path.st_size, live_path.st_mtime_ns,
+                        live_path.st_ctime_ns) != (
+                        after.st_dev, after.st_ino, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns)):
+                raise AudioInputError("Source path changed during group read")
     return {
         "schema_version": 1,
         "method": "adaptive_four_to_eight_times_sixteen_tap_windowed_sinc_screen_not_bs1770",
