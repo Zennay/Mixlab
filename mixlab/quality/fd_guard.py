@@ -16,6 +16,7 @@ import wave
 
 MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
+MAX_PRE_DATA_CHUNKS = 4096
 _ERROR = "Private WAV admission rejected (details withheld)"
 
 
@@ -24,6 +25,36 @@ def _stamp(value):
         value.st_dev, value.st_ino, value.st_size,
         value.st_mtime_ns, value.st_ctime_ns,
     )
+
+
+def _locate_data_chunk(stream, size):
+    """Bound work before Wave_read parses RIFF, without a second FD.
+
+    This is only pre-data header admission, not validation of post-data RIFF
+    trailers or complete chunk semantics (owned by the scanner/RIFF reviewer).
+    """
+    prefix = stream.read(12)
+    if len(prefix) != 12 or prefix[:4] != b"RIFF" or prefix[8:12] != b"WAVE":
+        raise ValueError(_ERROR)
+    declared_end = 8 + int.from_bytes(prefix[4:8], "little")
+    if not 44 <= declared_end <= size:
+        raise ValueError(_ERROR)
+    for _ in range(MAX_PRE_DATA_CHUNKS):
+        if stream.tell() + 8 > declared_end:
+            raise ValueError(_ERROR)
+        chunk = stream.read(8)
+        if len(chunk) != 8:
+            raise ValueError(_ERROR)
+        chunk_size = int.from_bytes(chunk[4:8], "little")
+        data_start = stream.tell()
+        next_chunk = data_start + chunk_size + (chunk_size & 1)
+        if next_chunk > declared_end:
+            raise ValueError(_ERROR)
+        if chunk[:4] == b"data":
+            stream.seek(0)
+            return data_start, chunk_size
+        stream.seek(next_chunk)
+    raise ValueError(_ERROR)
 
 
 @contextmanager
@@ -59,6 +90,9 @@ def admitted_pcm16(path):
             raise ValueError(_ERROR)
         with os.fdopen(fd, "rb", closefd=True) as stream:
             fd = -1
+            # An attacker can fit millions of empty RIFF chunks below
+            # 32 MiB; do not let wave.open walk an unbounded header chain.
+            data_start, data_bytes = _locate_data_chunk(stream, before.st_size)
             try:
                 reader = wave.open(stream, "rb")
             except (wave.Error, EOFError, OSError, ValueError, struct.error):
@@ -69,10 +103,11 @@ def admitted_pcm16(path):
                         or channels not in (1, 2)
                         or not 8000 <= rate <= 96000
                         or not 1 <= frames <= MAX_FRAMES
-                        # wave reads arbitrary legal pre-data chunks. Count
-                        # available bytes from the *actual* data start, not
-                        # a fixed 44-byte canonical WAV-header assumption.
-                        or stream.tell() + frames * channels * width > before.st_size):
+                        # Validate against actual data location and byte
+                        # count, including noncanonical pre-data RIFF chunks.
+                        or stream.tell() != data_start
+                        or data_bytes != frames * channels * width
+                        or data_start + data_bytes > before.st_size):
                     raise ValueError(_ERROR)
                 yield reader
                 after = os.fstat(stream.fileno())
