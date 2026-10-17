@@ -87,6 +87,52 @@ class SpectralBalanceTests(unittest.TestCase):
             text=True, capture_output=True, timeout=15
         )
 
+    def test_public_scan_api_redacts_inode_timestamps_and_private_envelopes(self):
+        public = scan_spectral_proxy(self.base)
+        self.assertEqual({"sample_rate", "channels", "frames", "rms_dbfs",
+                          "lowpass_180_ratio", "midpass_180_2500_ratio",
+                          "highpass_2500_ratio"}, set(public))
+        serialized = json.dumps(public, allow_nan=False)
+        self.assertNotIn(str(self.dir), serialized)
+        self.assertNotIn("_source", serialized)
+        self.assertNotIn("_channels", serialized)
+        self.assertNotIn("_spans", serialized)
+        self.assertNotIn("inode", serialized)
+        self.assertNotIn("mtime", serialized)
+        self.assertNotIn("ctime", serialized)
+        self.assertEqual(public, self.report()["baseline"])
+
+    def test_public_scan_metrics_are_safe_at_chunk_and_sample_rate_edges(self):
+        for rate in (8000, 44100, 96000):
+            for frames in (1, 4095, 4096, 4097, 9003):
+                with self.subTest(rate=rate, frames=frames):
+                    make_wav(self.base, rate=rate, duration=frames / rate)
+                    make_wav(self.other, rate=rate, duration=frames / rate)
+                    public = scan_spectral_proxy(self.base)
+                    self.assertEqual(frames, public["frames"])
+                    self.assertEqual(rate, public["sample_rate"])
+                    self.assertEqual(public, self.report()["baseline"])
+                    self.assertEqual([], [
+                        key for key in public if key.startswith("_")
+                    ])
+                    json.dumps(self.report(), allow_nan=False)
+
+    def test_pcm16_extrema_have_finite_safe_public_ratios(self):
+        samples = array("h", [-32768, 32767, 0, -32768, 32767] * 2000)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        for path in (self.base, self.other):
+            with wave.open(str(path), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(8000)
+                out.writeframes(samples.tobytes())
+        report = self.report()
+        self.assertEqual(report["baseline"], report["candidates"][0]["metrics"])
+        for field in ("lowpass_180_ratio", "midpass_180_2500_ratio", "highpass_2500_ratio"):
+            self.assertTrue(math.isfinite(report["baseline"][field]))
+        json.dumps(report, allow_nan=False)
+
     def test_equal_pcm_has_equal_proxies_and_no_warning(self):
         before = self.base.read_bytes(), self.other.read_bytes()
         result = self.report()
