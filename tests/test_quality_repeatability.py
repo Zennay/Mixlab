@@ -454,6 +454,56 @@ class RepeatabilityTests(unittest.TestCase):
                     ):
                         verify_repeatability(one, two, receipts=pair)
 
+    def test_two_matching_overlong_recipes_cannot_bypass_m1_120s_limit(self):
+        # Recipe.__post_init__ rejects 128s (64 beats at 30 BPM); the
+        # verifier must not accept two equally invalid, self-declared M1
+        # receipts simply because both WAVs physically have 128s of PCM.
+        import hashlib
+        import struct
+        from mixlab.models import Recipe
+
+        rate, frames = 8000, 64 * 60 * 8000 // 30
+        self.assertEqual(1_024_000, frames)
+        with self.assertRaises(ValueError):
+            Recipe(family="baseline", bpm=30, beats=64, gain_db=0)
+
+        header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI", b"RIFF", 36 + frames * 2,
+            b"WAVE", b"fmt ", 16, 1, 1, rate, rate * 2, 2, 16,
+            b"data", frames * 2,
+        )
+        for path in (self.a, self.b):
+            with path.open("wb") as stream:
+                stream.write(header)
+                stream.truncate(44 + frames * 2)
+        with self.a.open("rb") as stream:
+            sha_a = hashlib.file_digest(stream, "sha256").hexdigest()
+        with self.b.open("rb") as stream:
+            sha_b = hashlib.file_digest(stream, "sha256").hexdigest()
+        receipt = {
+            "schema_version": 1,
+            "engine_version": "synthetic-duration-guard-v1",
+            "recipe": {
+                "family": "baseline", "bpm": 30, "beats": 64,
+                "a_start": 0.0, "b_start": 0.0, "gain_db": 0,
+                "a_bpm": None, "b_bpm": None,
+            },
+            "sample_rate": rate, "channels": 1, "frames": frames,
+            "duration_seconds": 128, "gain_linear": 1,
+            "start_frames": {"a": 0, "b": 0},
+            "alignment_source": "synthetic-only",
+            "tempo_source": "synthetic-only",
+            "sources": [{"sha256": "a" * 64}, {"sha256": "b" * 64}],
+        }
+        with self.assertRaisesRegex(
+            RepeatabilityError, "^invalid, changed or incompatible source$"
+        ):
+            verify_repeatability(
+                self.a, self.b,
+                receipts=(dict(receipt, output_sha256=sha_a),
+                          dict(receipt, output_sha256=sha_b)),
+            )
+
     def test_untrusted_receipt_size_and_nesting_are_rejected_before_serialization(self):
         # JSON serialization *before* checking the 16KiB cap can allocate
         # arbitrarily large data on hostile private metadata. The validator
