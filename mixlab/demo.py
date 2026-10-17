@@ -163,11 +163,11 @@ def create_demo(destination):
             "tracks": source_tracks,
             "pairs": [{
                 "id": "demo-pair-001", "a": source_tracks[0]["id"],
-                "b": source_tracks[1]["id"], "beats": 16,
+                "b": source_tracks[1]["id"], "bpm": BPM, "beats": 16,
                 "a_start_seconds": 16.0, "b_start_seconds": 0.0
             }, {
                 "id": "demo-pair-002", "a": source_tracks[1]["id"],
-                "b": source_tracks[2]["id"], "beats": 16,
+                "b": source_tracks[2]["id"], "bpm": BPM, "beats": 16,
                 "a_start_seconds": 16.0, "b_start_seconds": 0.0
             }]
         }
