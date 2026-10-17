@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from mixlab.cli import write_review, benchmark, fixture
 from mixlab.evaluation import aggregate
@@ -179,13 +180,40 @@ class ReviewerParityBrowserTests(unittest.TestCase):
             self.assertIsNotNone(measured, "chromium did not execute input matrix")
             observations = json.loads(base64.b64decode(measured.group(1)).decode("utf-8"))
             self.assertEqual(len(observations), len(candidates))
-            for original, (normalized, native_allowed) in zip(candidates, observations):
-                with self.subTest(raw=original):
-                    self.assertIs(type(native_allowed), bool)
-                    self.assertEqual(
-                        native_allowed, INGEST_PATTERN.fullmatch(normalized) is not None,
-                        "native browser validation differs from real Python rating-ingest regex",
-                    )
+            # The regex mirrored in this QA module may drift from the actual
+            # aggregate() implementation. Exercise the production Python
+            # reviewer admission path for EACH browser-normalized identity.
+            # Mock only the already-verified private pack/PCM inputs: never
+            # read real audio or create dozens of private WAV files.
+            receipt = {"pack_id": "a" * 64}
+            trials = {"trial-001": {"pair": "pair-001", "A": "baseline", "B": "hard_cut"}}
+            current_vote = {"schema_version": 1, "pack_id": receipt["pack_id"],
+                            "reviewer": None,
+                            "ratings": [{"trial": "trial-001", "preference": "Tie"}]}
+            neutral_quality = {"candidates": [{
+                "level_comparable_for_blind_ab": True, "warnings": [],
+            }]}
+            with patch("mixlab.evaluation.verify_pack",
+                       return_value=(receipt, {}, trials)), \
+                 patch("mixlab.evaluation._load", side_effect=lambda _: current_vote), \
+                 patch("mixlab.quality.compare_wavs", return_value=neutral_quality):
+                for original, (normalized, native_allowed) in zip(candidates, observations):
+                    with self.subTest(raw=original):
+                        self.assertIs(type(native_allowed), bool)
+                        self.assertEqual(
+                            native_allowed, INGEST_PATTERN.fullmatch(normalized) is not None,
+                            "browser validator differs from mirrored Python QA regex",
+                        )
+                        current_vote["reviewer"] = normalized
+                        if native_allowed:
+                            accepted = aggregate(root / "virtual-pack",
+                                                 [root / "virtual-rating.json"])
+                            self.assertEqual(accepted["reviewers"], 1)
+                            self.assertFalse(accepted["milestone_pass"])
+                        else:
+                            with self.assertRaisesRegex(ValueError, "Invalid reviewer pseudonym"):
+                                aggregate(root / "virtual-pack",
+                                          [root / "virtual-rating.json"])
 
     def test_real_synthetic_renderer_browser_export_to_aggregate(self):
         """Actual bounded MixLab engine + Chrome + rating ingest; never human evidence."""
