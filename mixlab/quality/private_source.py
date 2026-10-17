@@ -20,6 +20,22 @@ def _file_identity(info):
             info.st_mtime_ns, info.st_ctime_ns)
 
 
+def private_path_identity(path: str | Path):
+    """Capture a private input's neutral metadata without opening PCM.
+
+    This is a *best-effort* multi-file comparison guard. It detects source
+    replacements/edits between individual scans; it is not an atomic
+    filesystem transaction and does not retain paths in report output.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
+        raise ValueError("Private comparison input disappeared") from None
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("Private comparison input must remain a regular file")
+    return _file_identity(info)
+
+
 @contextmanager
 def open_verified_private_pcm16(path: str | Path, *, max_bytes: int):
     """Open a regular, non-symlink PCM16 WAV once and verify that same fd.
