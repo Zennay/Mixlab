@@ -159,6 +159,42 @@ class PrivateRiffQualityTests(unittest.TestCase):
                 scan_wav(self.variant)
         self.assertEqual(self.original, self.baseline.read_bytes())
 
+    def test_private_metadata_after_audio_is_safe_and_ignored_for_pcm_identity(self):
+        # A valid RIFF can include metadata chunks after PCM; do not falsely
+        # reject local recordings or serialize source metadata in a report.
+        after = b"LIST" + (5).to_bytes(4, "little") + b"label" + b"\\x00"
+        modified = self.original + after
+        modified = patch_header(modified, 4, (len(modified) - 8).to_bytes(4, "little"))
+        self.variant.write_bytes(modified)
+        unchanged = self.variant.read_bytes()
+        result = compare_wavs(self.baseline, [self.variant])
+        self.assertEqual("baseline", result["candidates"][0]["duplicate_pcm_of"])
+        self.assertNotIn("label", json.dumps(result))
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertEqual(unchanged, self.variant.read_bytes())
+
+    def test_rejects_ambiguous_or_incomplete_riff_tail_after_pcm(self):
+        # Prior header preflight returned on its FIRST data chunk, allowing
+        # malformed extra audio/fmt segments to bypass format checks.
+        fmt = self.original[12:36]
+        variants = (
+            (b"data" + (0).to_bytes(4, "little"), "data chunk"),
+            (fmt, "fmt chunk"),
+            (b"XY", "trailer"),
+            (b"JUNK" + (64).to_bytes(4, "little"), "exceeds RIFF"),
+        )
+        for tail, error in variants:
+            with self.subTest(expected=error):
+                modified = self.original + tail
+                modified = patch_header(
+                    modified, 4, (len(modified) - 8).to_bytes(4, "little"))
+                self.variant.write_bytes(modified)
+                with patch("mixlab.quality.wave.open",
+                           side_effect=AssertionError("PCM decode started")):
+                    with self.assertRaisesRegex(ValueError, error):
+                        scan_wav(self.variant)
+                self.assertEqual(self.original, self.baseline.read_bytes())
+
     def test_both_cli_modes_fail_sanitized_on_malformed_pcm_container(self):
         invalid = patch_header(self.original, 28, bytes(4))
         self.variant.write_bytes(invalid)
