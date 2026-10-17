@@ -133,7 +133,12 @@ def _validate_group(records):
 def _measure_open_pair(a, b):
     """Measure a pair of admitted open PCM descriptors at their PCM offsets."""
     rate, frames = a[3], a[4]
-    window_frames = max(1, rate * WINDOW_MS // 1000)
+    # Integer rational boundaries prevent truncation from erasing the last
+    # sample of a real second at 8,001 / 11,025 / 22,050 Hz and similar
+    # supported sample rates. Keep an absolute frame count for every window.
+    window_index = 1
+    next_window_end = (rate * WINDOW_MS + 500) // 1000
+    processed_frames = 0
     sum_sq = [[0, 0], [0, 0]]
     count = 0
     active_windows = 0
@@ -157,7 +162,8 @@ def _measure_open_pair(a, b):
             sum_sq[1][0] += l1 * l1
             sum_sq[1][1] += r1 * r1
             count += 1
-            if count == window_frames:
+            processed_frames += 1
+            if processed_frames == next_window_end:
                 floor = (MIN_ACTIVE_RMS * 32768) ** 2 * count
                 if all(value >= floor for pair in sum_sq for value in pair):
                     active_windows += 1
@@ -178,8 +184,11 @@ def _measure_open_pair(a, b):
                     consecutive_shift_frames = 0
                 sum_sq = [[0, 0], [0, 0]]
                 count = 0
+                window_index += 1
+                next_window_end = (window_index * rate * WINDOW_MS + 500) // 1000
         remaining -= take
-    # Remainder <250ms is deliberately non-decisive, never counted as 1 second.
+    # Incomplete trailing fractional windows are non-decisive; a full
+    # exactly-one-second clip must account for every actual PCM frame.
     _unchanged(a)
     _unchanged(b)
     # Distinguish insufficient evidence from a conclusive negative result.
