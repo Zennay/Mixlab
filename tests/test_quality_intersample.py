@@ -1,6 +1,8 @@
 """Deterministic synthetic quality regressions: no copyrighted audio."""
 import array
 import json
+import io
+from contextlib import redirect_stderr, redirect_stdout
 import math
 import os
 from pathlib import Path
@@ -463,6 +465,60 @@ class IntersampleTests(unittest.TestCase):
         self.assertEqual(800, report["frames_per_source"])
         self.assertNotIn(str(self.root), json.dumps(report))
         self.assertFalse(report["baseline"]["technical_review_required"])
+
+    def test_path_replacement_cli_error_is_pathless_and_does_not_emit_report(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        replacement = self.root / "very-private-track-title.wav"
+        write_wav(replacement, [0] * 800)
+        real_scan = intersample_module._scan
+        changed = False
+
+        def replace_baseline(reader, channels, frames):
+            nonlocal changed
+            result = real_scan(reader, channels, frames)
+            if not changed:
+                changed = True
+                os.replace(replacement, self.a)
+            return result
+
+        captured_out, captured_err = io.StringIO(), io.StringIO()
+        with patch.object(intersample_module, "_scan", side_effect=replace_baseline):
+            with redirect_stdout(captured_out), redirect_stderr(captured_err):
+                with self.assertRaises(SystemExit) as exit_info:
+                    intersample_module.main([str(self.a), str(self.b)])
+        self.assertEqual(3, exit_info.exception.code)
+        self.assertEqual("", captured_out.getvalue())
+        self.assertNotIn(str(self.root), captured_err.getvalue())
+        self.assertNotIn("very-private-track-title", captured_err.getvalue())
+
+    @unittest.skipUnless(Path("/proc/self/fd").exists(), "Linux-only descriptor leak check")
+    def test_repeated_disallowed_inputs_close_descriptors(self):
+        # Group readers must exit cleanly after a failing final-path check.
+        fd_dir = Path("/proc/self/fd")
+        open_before = len(list(fd_dir.iterdir()))
+        for n in range(12):
+            with self.subTest(case=n):
+                write_wav(self.a, [0] * 800)
+                write_wav(self.b, [0] * 800)
+                replacement = self.root / ("swap-%02d.wav" % n)
+                write_wav(replacement, [0] * 800)
+                real_scan = intersample_module._scan
+                swapped = False
+
+                def replace_baseline(reader, channels, frames):
+                    nonlocal swapped
+                    result = real_scan(reader, channels, frames)
+                    if not swapped:
+                        swapped = True
+                        os.replace(replacement, self.a)
+                    return result
+
+                with patch.object(intersample_module, "_scan", side_effect=replace_baseline):
+                    with self.assertRaises(AudioInputError):
+                        compare_intersample(self.a, [self.b])
+        open_after = len(list(fd_dir.iterdir()))
+        self.assertLessEqual(open_after, open_before + 1)
 
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
