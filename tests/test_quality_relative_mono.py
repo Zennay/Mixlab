@@ -70,7 +70,14 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
             elif mode == "dc-shift":
                 left = right = v + 1600
             elif mode == "near-full-scale":
-                left = right = (32767 if i == frames // 2 else v)
+                # Smooth +/-20-frame raised sinusoidal bump, exactly 32767
+                # at its apex. No single-frame click or flat-top plateau:
+                # this isolates canonical near-full-scale detection.
+                center = frames // 2
+                if abs(i - center) <= 20:
+                    left = right = round(32767 * math.cos(math.pi * (i - center) / 40))
+                else:
+                    left = right = v
             elif mode == "delayed-right-125ms":
                 left = v
                 right = 0 if i < rate // 8 else v
@@ -401,6 +408,9 @@ class RelativeMonoTests(unittest.TestCase):
         from mixlab.quality import compare_wavs
         source = compare_wavs(self.base, [self.candidate])["candidates"][0]
         self.assertGreater(source["metrics"]["near_full_scale_fraction"], 0)
+        self.assertFalse(source["metrics"]["severe_sample_discontinuity_risk"])
+        self.assertFalse(source["metrics"]["isolated_sample_impulse_risk"])
+        self.assertFalse(source["metrics"]["high_flat_top_plateau_risk"])
         report = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
         self.assertFalse(report["milestone_pass"])
