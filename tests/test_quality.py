@@ -878,6 +878,45 @@ class QualityTests(unittest.TestCase):
         page.write_text(clean)
         self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_review_page_rejects_duplicate_html_attributes_before_trusting_links(self):
+        # HTMLParser preserves duplicates, but dict(attrs) silently selected
+        # the *last* value. Browsers use the first parsed attribute, which
+        # could load remote audio while the static audit saw a local WAV.
+        review = self.root / "duplicate-html-attributes"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x * 0.9) for x in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        malicious = (
+            clean.replace('src="trial-001-A.wav"',
+                          'src="https://collector.example/a.wav" src="trial-001-A.wav"'),
+            clean.replace('src="trial-001-B.wav"',
+                          'SRC="https://collector.example/b.wav" src="trial-001-B.wav"'),
+            clean.replace('data-trial="trial-001"',
+                          'data-trial="trial-999" data-trial="trial-001"'),
+            clean.replace('src="trial-001-B.wav"',
+                          'src="trial-001-B.wav" src="trial-001-B.wav"'),
+            clean + '<form data-pack-id="bad" data-pack-id="good"></form>',
+        )
+        for content in malicious:
+            with self.subTest(content=content[:90]):
+                page.write_text(content)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+                process = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, process.returncode)
+                self.assertFalse(process.stdout)
+                self.assertNotIn("collector.example", process.stderr)
+                self.assertNotIn(str(self.root), process.stderr)
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
