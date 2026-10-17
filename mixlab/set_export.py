@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import stat
 import sys
 import tempfile
 import wave
@@ -184,24 +185,64 @@ def _admit(root, choices):
             "studio_hash": digest(studio_dir / "studio-receipt.private.json")}
 
 
-def _write_pcm(out, path, start, frames, channels, *, apply_gain):
-    # Canonical pcm_blocks accepts at most 2M frames per open; split larger
-    # solo passages into bounded chunks without buffering the whole song.
-    remaining = frames
-    offset = start
-    while remaining:
-        count = min(remaining, MAX_FRAMES)
-        for block in pcm_blocks(path, offset, count, BLOCK_FRAMES):
-            if apply_gain:
-                scaled = array("h", (round(int(x) * STUDIO_GAIN) for x in block))
-            else:
-                scaled = block
-            if sys.byteorder != "little":
-                scaled.byteswap()
-            out.writeframesraw(scaled.tobytes())
-        offset += count
-        remaining -= count
+def _identity(value):
+    return (value.st_dev, value.st_ino, value.st_size,
+            value.st_mtime_ns, value.st_ctime_ns)
 
+
+def _write_solo(out, path, start, frames, channels, rate):
+    """Stream potentially multi-minute tracks via one verified regular FD.
+
+    Canonical pcm_blocks deliberately limits *entire* WAVs to 2M frames, so
+    it is only appropriate for the short Studio transition candidates.
+    """
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("Full track is no longer a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if not stat.S_ISREG(opened.st_mode) or _identity(before) != _identity(opened):
+            raise ValueError("Track changed before reading")
+        try:
+            with wave.open(handle, "rb") as source:
+                if (source.getnchannels(), source.getsampwidth(), source.getframerate(),
+                    source.getcomptype()) != (channels, 2, rate, "NONE"):
+                    raise ValueError("Track format changed after manifest verification")
+                if start < 0 or frames < 0 or start + frames > source.getnframes():
+                    raise ValueError("Manually approved solo section is out of bounds")
+                source.setpos(start)
+                remaining = frames
+                while remaining:
+                    n = min(remaining, BLOCK_FRAMES)
+                    raw = source.readframes(n)
+                    if len(raw) != n * channels * 2:
+                        raise ValueError("Full track ended before its selected cue")
+                    samples = array("h")
+                    samples.frombytes(raw)
+                    if sys.byteorder != "little":
+                        samples.byteswap()
+                    scaled = array("h", (round(int(x) * STUDIO_GAIN) for x in samples))
+                    if sys.byteorder != "little":
+                        scaled.byteswap()
+                    out.writeframesraw(scaled.tobytes())
+                    remaining -= n
+        except (EOFError, wave.Error) as exc:
+            raise ValueError("Invalid PCM16 solo section") from exc
+        after = os.fstat(handle.fileno())
+    if _identity(opened) != _identity(after) or _identity(opened) != _identity(path.lstat()):
+        raise ValueError("Normalized full track changed during export")
+
+
+def _write_transition(out, path, frames, channels):
+    """Reuse the exact existing Studio candidate without applying gain twice."""
+    for block in pcm_blocks(path, 0, frames, BLOCK_FRAMES):
+        if len(block) % channels:
+            raise ValueError("Incomplete transition PCM frame")
+        if sys.byteorder != "little":
+            block.byteswap()
+        out.writeframesraw(block.tobytes())
 
 def export_set(session_dir, destination, selections):
     root = Path(session_dir).resolve(strict=True)
@@ -220,7 +261,10 @@ def export_set(session_dir, destination, selections):
             out.setparams((plan["channels"], 2, plan["rate"], plan["frames"], "NONE", "not compressed"))
             for kind, identity, start, frames in plan["portions"]:
                 path = plan["sources"][identity]["path"] if kind == "solo" else by_pair[identity]["render"]
-                _write_pcm(out, path, start, frames, plan["channels"], apply_gain=(kind == "solo"))
+                if kind == "solo":
+                    _write_solo(out, path, start, frames, plan["channels"], plan["rate"])
+                else:
+                    _write_transition(out, path, frames, plan["channels"])
         if tmp.stat().st_size != 44 + plan["frames"] * plan["channels"] * 2:
             raise ValueError("Final PCM output frame count differs from planned set")
         for track in plan["sources"].values():
