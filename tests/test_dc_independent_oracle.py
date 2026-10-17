@@ -126,7 +126,14 @@ class DcWindowIndependentOracleTests(unittest.TestCase):
                     )
                     self.assertEqual(fraction, row["ab_dc_window_mismatch_fraction"])
                     self.assertEqual(risk, row["ab_dc_window_mismatch_risk"])
-                    self.assertFalse(row["ab_dc_offset_mismatch_risk"])
+                    # If the requested three windows cover a short entire
+                    # file, the *global* DC guard should also fire. Derive
+                    # its expected result independently from PCM means.
+                    total_changed = min(length, 3 * window_frames)
+                    expected_global = (
+                        1080 * total_changed > 3 * 32768 * length / 100
+                    )
+                    self.assertEqual(expected_global, row["ab_dc_offset_mismatch_risk"])
                     self.assertEqual((length + window_frames - 1) // window_frames,
                                      row["metrics"]["window_count"])
 
