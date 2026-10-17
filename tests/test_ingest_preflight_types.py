@@ -69,6 +69,27 @@ class IngestPreflightTypesTests(unittest.TestCase):
         manifest["tracks"][-1]["id"] = manifest["tracks"][0]["id"]
         self._assert_rejected_without_audio(manifest, "Duplicate track id")
 
+    def test_cyclic_source_symlink_is_rejected_before_audio(self):
+        # Older Python Path.resolve raises RuntimeError for a cycle, newer
+        # releases may raise OSError. Both must become a safe ValueError.
+        loop = self.manifest.parent / "cycle.wav"
+        loop.symlink_to("cycle.wav")
+        manifest = json.loads(json.dumps(self.original))
+        manifest["tracks"][-1]["path"] = "cycle.wav"
+        self._assert_rejected_without_audio(manifest, "resolved safely")
+
+    def test_resolution_error_never_exposes_private_source_path(self):
+        manifest = json.loads(json.dumps(self.original))
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        with mock.patch("mixlab.ingest.Path.resolve",
+                        side_effect=RuntimeError("PRIVATE_AUDIO_SOURCE.wav")):
+            with mock.patch("mixlab.ingest.inspect_wav_and_digest") as audio:
+                with self.assertRaises(ValueError) as caught:
+                    validate_library(self.manifest)
+                audio.assert_not_called()
+        self.assertIn("resolved safely", str(caught.exception))
+        self.assertNotIn("PRIVATE_AUDIO_SOURCE", str(caught.exception))
+
     def test_invalid_pair_recipes_never_open_any_audio(self):
         # Prior implementation verified every WAV before checking pairs.
         cases = (
