@@ -63,6 +63,10 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 # Detectable >=8192-LSB isolated impulse, but <16384 jump
                 # from the adjacent sine frames to isolate this one gate.
                 left = right = 14000 if i == 4000 else v
+            elif mode == "flat-top":
+                left = right = 25000 if 4000 <= i < 4007 else v
+            elif mode == "large-jump":
+                left = right = 28000 if i == 4000 else v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -325,6 +329,26 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(checked["candidates"][0]["status"], "ab_audio_integrity_confound")
         self.assertFalse(checked["milestone_pass"])
         self.assertNotIn(str(self.root), json.dumps(checked))
+
+    def test_sustained_flat_top_requires_audio_integrity_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="flat-top")
+        from mixlab.quality import compare_wavs
+        metrics = compare_wavs(self.base, [self.candidate])["candidates"][0]["metrics"]
+        self.assertTrue(metrics["high_flat_top_plateau_risk"])
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_large_pcm_discontinuity_requires_audio_integrity_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="large-jump")
+        from mixlab.quality import compare_wavs
+        metrics = compare_wavs(self.base, [self.candidate])["candidates"][0]["metrics"]
+        self.assertTrue(metrics["severe_sample_discontinuity_risk"])
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(result["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
