@@ -1,6 +1,6 @@
 """Actual Chromium DOM/form submission smoke on synthetic offline MixLab review HTML.
 
-No WAVs, external packages, networks, or real reviewer responses are used.
+Only generated rights-safe synthetic PCM16 WAVs, never real music, are used.
 This is an interactive browser check, not an accessibility certification.
 """
 from __future__ import annotations
@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
+import wave
 import subprocess
 import tempfile
 import unittest
@@ -68,6 +70,62 @@ _SCRIPT = r"""
 """
 
 
+_AUDIO_SCRIPT = r"""
+(() => {
+  // Confirm the ACTUAL local file-backed WAV can be opened and decoded by the
+  // browser, rather than trusting merely visible <audio controls> markup.
+  const clips = [...document.querySelectorAll('fieldset audio')];
+  if (clips.length !== 10) {
+    document.documentElement.dataset.mixlabAudioCheck = 'fail';
+    return;
+  }
+  let complete = false;
+  const timeout = setTimeout(() => {
+    if (!complete) document.documentElement.dataset.mixlabAudioCheck = 'timeout';
+  }, 3000);
+  Promise.all(clips.map((clip) => new Promise(resolve => {
+    let settled = false;
+    const finish = success => {
+      if (settled) return;
+      settled = true;
+      resolve(success);
+    };
+    clip.addEventListener('loadedmetadata', () => finish(
+      clip.readyState >= HTMLMediaElement.HAVE_METADATA &&
+      clip.error === null &&
+      clip.currentSrc.startsWith('file:') &&
+      clip.duration >= 0.35 && clip.duration <= 0.45 &&
+      clip.videoWidth === undefined
+    ), {once: true});
+    clip.addEventListener('error', () => finish(false), {once: true});
+    clip.preload = 'auto';
+    clip.load();
+  }))).then(results => {
+    complete = true;
+    clearTimeout(timeout);
+    document.documentElement.dataset.mixlabAudioCheck =
+      results.every(Boolean) ? 'pass' : 'fail';
+  });
+})();
+"""
+
+
+def _synthetic_pcm_wav(path: Path, *, sample_rate=8000, channels=2):
+    """Make a private, deterministic, permitted 0.4s PCM16 fixture."""
+    frames = sample_rate * 2 // 5
+    pcm = bytearray()
+    for i in range(frames):
+        # Non-silent, band-limited repeating ramp; no external source media.
+        val = ((i % 64) - 32) * 280
+        for channel in range(channels):
+            pcm.extend(struct.pack("<h", val if channel == 0 else -val))
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(pcm)
+
+
 @unittest.skipUnless(_BROWSER, "Optional local Chromium executable not available")
 class BrowserFormTests(unittest.TestCase):
     def setUp(self):
@@ -104,6 +162,41 @@ class BrowserFormTests(unittest.TestCase):
                           done.stdout, flags=re.IGNORECASE)
         self.assertIsNotNone(match, "instrumented browser marker was not rendered")
         self.assertEqual(match.group(1), "pass", "browser controls/export integrity failed")
+
+
+    def test_real_browser_loads_all_ten_offline_pcm16_sources(self):
+        """No missing audio can pass: actual Chrome decodes all ten references."""
+        page = self.root / "index.html"
+        write_review(page, [f"trial-{i:03d}" for i in range(1, 6)], "a" * 64)
+        for i in range(1, 6):
+            for option in ("A", "B"):
+                _synthetic_pcm_wav(self.root / f"trial-{i:03d}-{option}.wav",
+                                   channels=1 if option == "A" else 2)
+        source = page.read_text(encoding="utf-8")
+        page.write_text(source.replace("</html>",
+                                      "<script>" + _AUDIO_SCRIPT + "</script></html>"),
+                        encoding="utf-8")
+        command = [
+            _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+            "--disable-dev-shm-usage", "--disable-background-networking",
+            "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+            "--disable-sync", "--virtual-time-budget=4500",
+            "--user-data-dir=" + str(self.root / "pcm-chrome-profile"),
+            "--dump-dom", page.as_uri(),
+        ]
+        env = dict(os.environ)
+        env["HOME"] = str(self.root)
+        try:
+            done = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=35, env=env)
+        except subprocess.TimeoutExpired:
+            self.fail("bounded synthetic Chrome WAV loading timed out")
+        self.assertEqual(done.returncode, 0, "Offline Chromium WAV load failed")
+        match = re.search(r'<html\\b[^>]*data-mixlab-audio-check="([^"]+)"',
+                          done.stdout, flags=re.IGNORECASE)
+        self.assertIsNotNone(match, "offline Chrome media status marker was not rendered")
+        self.assertEqual(match.group(1), "pass", "browser failed to decode a local WAV")
+
 
 
 if __name__ == "__main__":
