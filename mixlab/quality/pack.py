@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import argparse
 from html.parser import HTMLParser
+import hashlib
 import json
 from pathlib import Path
 import re
+import wave
 
 from . import compare_wavs
 
@@ -67,6 +69,36 @@ def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path
     return True
 
 
+def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
+    """Identify repeated *playback PCM* without exporting an audio fingerprint.
+
+    Source format is included so the same sample bytes played at a different
+    rate or channel layout do not create a false match. The streaming scanner
+    already validated format and byte/frame limits before this private pass.
+    """
+    digest = hashlib.sha256()
+    try:
+        with wave.open(str(path), "rb") as source:
+            channels, sample_width, rate, frames, compression, _ = source.getparams()
+            if (channels != expected_metrics["channels"] or sample_width != 2
+                    or rate != expected_metrics["sample_rate"]
+                    or frames != expected_metrics["frames"] or compression != "NONE"):
+                raise ValueError("Review audio changed during quality preflight")
+            for number in (channels, rate, frames):
+                digest.update(number.to_bytes(4, "little"))
+            remaining = frames
+            while remaining:
+                count = min(4096, remaining)
+                raw = source.readframes(count)
+                if len(raw) != count * channels * sample_width:
+                    raise ValueError("Review audio truncated during quality preflight")
+                digest.update(raw)
+                remaining -= count
+    except (wave.Error, EOFError) as exc:
+        raise ValueError("Invalid review WAV") from exc
+    return digest.digest()
+
+
 def inspect_review_pack(
     review_directory: str | Path, *, window_ms: int = 100,
     loudness_tolerance_db: float = 1.5,
@@ -110,6 +142,8 @@ def inspect_review_pack(
 
     trials = []
     warning_trial_count = 0
+    cross_trial_repeated_variant_count = 0
+    seen_audio: dict[bytes, str] = {}
     for trial_id, labels in sorted(groups.items()):
         result = compare_wavs(
             labels["A"], [labels["B"]], window_ms=window_ms,
@@ -127,6 +161,25 @@ def inspect_review_pack(
                 "identical_pcm_between_A_and_B" if w == "identical_pcm_to_baseline_inspect_for_noop" else w
                 for w in warnings["B"]
             ]
+        # Repeating an identical reference across independently randomized
+        # trials can reveal its identity through recognition. This is an
+        # inspect-for-blinding warning, not a claim that the answers leaked.
+        # A/B-neutral references are safe; fingerprints never leave memory.
+        earlier_audio = {}
+        for label in ("A", "B"):
+            digest = _private_audio_fingerprint(labels[label], (
+                result["baseline"] if label == "A" else candidate["metrics"]
+            ))
+            previous = seen_audio.get(digest)
+            if previous is not None:
+                # Duplicate A/B within the same trial is already reported by
+                # compare_wavs; only repetition in *different* trials counts.
+                if not previous.startswith(trial_id + "/"):
+                    warnings[label].append("repeated_pcm_across_trials_inspect_blinding")
+                    earlier_audio[label] = previous
+                    cross_trial_repeated_variant_count += 1
+            else:
+                seen_audio[digest] = f"{trial_id}/{label}"
         flagged = bool(warnings["A"] or warnings["B"])
         warning_trial_count += flagged
         trials.append({
@@ -137,6 +190,7 @@ def inspect_review_pack(
             "short_window_level_mismatch_fraction": candidate["short_window_level_mismatch_fraction"],
             "short_window_level_mismatch_risk": candidate["short_window_level_mismatch_risk"],
             "identical_pcm": candidate["duplicate_pcm_of"] == "baseline",
+            "cross_trial_repeated_pcm_of": earlier_audio,
             "technical_warnings_present": flagged,
         })
     return {
@@ -145,6 +199,7 @@ def inspect_review_pack(
         "analysis_method": "streaming_pcm16_rms_not_lufs",
         "trial_count": len(trials),
         "warning_trial_count": warning_trial_count,
+        "cross_trial_repeated_variant_count": cross_trial_repeated_variant_count,
         "human_preference_test_required": True,
         "answer_key_opened": False,
         "review_page_audio_links_verified": page_links_verified,
