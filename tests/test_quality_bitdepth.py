@@ -110,6 +110,54 @@ class ResolutionTests(unittest.TestCase):
         result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
         self.assertEqual([False, False], result["per_channel_review"])
 
+    def test_twelve_bit_quantization_inside_pcm16_is_detected(self):
+        # 12-bit effective precision: four LSBs are locked to an offset,
+        # while the byte-level residue still varies over sixteen values.
+        original = array.array("h")
+        original.frombytes(samples())
+        shifted = array.array("h", ((value // 16) * 16 + 3 for value in original))
+        if sys.byteorder != "little":
+            shifted.byteswap()
+        wav(self.bad, shifted.tobytes())
+        report = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([True, True], report["candidates"][0]["per_channel_review"])
+
+    def test_fourteen_bit_quantization_inside_pcm16_is_detected(self):
+        # 14-bit content hidden in 16-bit container leaves only 4 residue
+        # values; a fixed two-bit remainder is a candidate-specific failure.
+        original = array.array("h")
+        original.frombytes(samples())
+        shifted = array.array("h", ((value // 4) * 4 + 1 for value in original))
+        if sys.byteorder != "little":
+            shifted.byteswap()
+        wav(self.bad, shifted.tobytes())
+        report = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([True, True], report["candidates"][0]["per_channel_review"])
+
+    def test_already_fourteen_bit_baseline_requires_inconclusive_result(self):
+        original = array.array("h")
+        original.frombytes(samples())
+        low_precision = array.array("h", ((value // 4) * 4 + 1 for value in original))
+        if sys.byteorder != "little":
+            low_precision.byteswap()
+        wav(self.base, low_precision.tobytes())
+        wav(self.good, low_precision.tobytes())
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual([None, None], report["candidates"][0]["per_channel_review"])
+
+    def test_twelve_bit_degradation_still_detected_from_fourteen_bit_reference(self):
+        original = array.array("h")
+        original.frombytes(samples())
+        base_14 = array.array("h", ((value // 4) * 4 + 1 for value in original))
+        candidate_12 = array.array("h", ((value // 16) * 16 + 3 for value in original))
+        if sys.byteorder != "little":
+            base_14.byteswap()
+            candidate_12.byteswap()
+        wav(self.base, base_14.tobytes())
+        wav(self.bad, candidate_12.tobytes())
+        report = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([True, True], report["candidates"][0]["per_channel_review"])
+
     def test_single_channel_regression_detected(self):
         wav(self.bad, samples(collapse=True, right_only=True))
         result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
