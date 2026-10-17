@@ -44,6 +44,25 @@ verification, this is **not atomic storage** under a malicious concurrent
 writer; keep frozen study/pack immutable and use the separately implemented
 full-path admission before public reviewer release.
 
+## Recovery proposal for the owning renderer
+
+The same module now exports
+`propose_private_balanced_sides(candidate_families, seed)`: a pure, bounded
+(5–10 pairs; at most 1024 candidate assignments) function. It chooses a
+deterministic, seed-ranked **private** orientation sequence satisfying the
+global, within-family and streak rules. It rejects malformed counts/families,
+invalid seeds and unavailable schedules instead of fabricating a pass.
+It is **not connected to production pack generation** and must never be
+called to reshuffle an existing blinded study after seeing ratings.
+
+Suggested ML-05 adoption only after ownership transfer: generate a newly
+preregistered private assignment schedule from the frozen family sequence and
+a separately recorded study seed; render A/B using that sequence, then bind
+the final answer key and pack ID as usual, and verify via this QA gate.
+The returned orientation sequence is an **answer key**: do not log it or
+expose it to listeners. This intentionally does not change public HTML,
+share any audio or certify that a real listener remained blind.
+
 ## Synthetic proof
 
 `tests/test_quality_assignment_balance.py` reuses the already-merged real
