@@ -42,8 +42,22 @@ Blind preference and lawful real-media access are still missing.
   boundary cannot wrap into a false polarity-inverted fingerprint; the
   diagnostic reader still reports its clipping/headroom risk.
 - Verify a public blind-review WAV with extra RIFF JUNK metadata is refused
-  even when the internal diagnostic reader can decode that PCM unchanged.\n  A patched comparator would raise if ever invoked: the guard must refuse\n  extra public RIFF chunks during header admission, before a PCM scan.
-- Check simultaneous **multi-candidate** stereo L/R swaps, signed polarity\n  inversion and PCM-identical audio with changed RIFF container at frame\n  4095 or 4096. The comparator must preserve reuse warnings without\n  revealing original paths or private decoded fingerprints.\n- Check truncation after 1, 4095, 4096, 4097 and 10,002 declared source\n  frames, for both mono and stereo. An incomplete read must fail closed.\n- Run a **reproducible seeded metamorphic sweep** across 20 interior\n  offsets (including both 4096-frame read seams) with 399/400 frame\n  quiet runs. 50ms at 8 kHz must trigger; one less frame must not.\n- Preserve the independent **1.5dB global RMS confound gate** under\n  mono/stereo and non-audio RIFF metadata: +1.40dB passes the comparison\n  tolerance, +1.58dB fails closed without revealing private paths.\n- Check A/B candidate warnings retain an isolated impulse; verify JSON does
+  even when the internal diagnostic reader can decode that PCM unchanged.
+  A patched comparator would raise if ever invoked: the guard must refuse
+  extra public RIFF chunks during header admission, before a PCM scan.
+- Check simultaneous **multi-candidate** stereo L/R swaps, signed polarity
+  inversion and PCM-identical audio with changed RIFF container at frame
+  4095 or 4096. The comparator must preserve reuse warnings without
+  revealing original paths or private decoded fingerprints.
+- Check truncation after 1, 4095, 4096, 4097 and 10,002 declared source
+  frames, for both mono and stereo. An incomplete read must fail closed.
+- Run a **reproducible seeded metamorphic sweep** across 20 interior
+  offsets (including both 4096-frame read seams) with 399/400 frame
+  quiet runs. 50ms at 8 kHz must trigger; one less frame must not.
+- Preserve the independent **1.5dB global RMS confound gate** under
+  mono/stereo and non-audio RIFF metadata: +1.40dB passes the comparison
+  tolerance, +1.58dB fails closed without revealing private paths.
+- Check A/B candidate warnings retain an isolated impulse; verify JSON does
   not contain fixture locations or source bytes.
 - Refuse a declared PCM16 WAV whose actual data is truncated.
 
