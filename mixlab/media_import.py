@@ -102,9 +102,9 @@ def _format_metadata(path, ffprobe):
         info = json.loads(output.stdout)
     except (ValueError, UnicodeError) as exc:
         raise ValueError("Invalid local media metadata") from exc
-    if not isinstance(info, dict) or not any(
-        isinstance(item, dict) and item.get("codec_type") == "audio"
-        for item in info.get("streams", []) if isinstance(info.get("streams"), list)
+    streams = info.get("streams") if isinstance(info, dict) else None
+    if not isinstance(streams, list) or not any(
+        isinstance(item, dict) and item.get("codec_type") == "audio" for item in streams
     ):
         _error("Media contains no declared audio stream")
     try:
@@ -126,7 +126,8 @@ def _transcode(source, target, ffmpeg, timeout_seconds):
            "-map_metadata", "-1", "-map_chapters", "-1",
            "-threads", "1", "-filter_threads", "1",
            "-ac", str(OUTPUT_CHANNELS), "-ar", str(OUTPUT_RATE),
-           "-c:a", "pcm_s16le", "-f", "wav", "-n", str(target)]
+           "-c:a", "pcm_s16le", "-f", "wav", "-fs", str(MAX_SOURCE_BYTES),
+           "-n", str(target)]
     try:
         with subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                               stdout=subprocess.DEVNULL,
