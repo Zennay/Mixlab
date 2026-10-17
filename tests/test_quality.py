@@ -589,6 +589,71 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(2, strict.returncode)
         self.assertEqual(report, json.loads(strict.stdout))
 
+    def test_cross_trial_swapped_stereo_reuse_warns_without_unblinding_sides(self):
+        # Exact PCM hash differs when the *same stereo signal* is reused in
+        # another trial with left and right exchanged. Keep A/B labels secret.
+        review = self.root / "swapped-cross-trial"
+        review.mkdir()
+        stereo = [v for i in range(8000)
+                  for v in (int(4500 * math.sin(i * .13)),
+                            int(6000 * math.cos(i * .17)))]
+        swapped = [v for i in range(0, len(stereo), 2)
+                   for v in (stereo[i + 1], stereo[i])]
+        unrelated = [v for i in range(8000)
+                     for v in (int(4000 * math.sin(i * .21)),
+                               int(3200 * math.cos(i * .09)))]
+        wav(review / "trial-001-A.wav", stereo, channels=2)
+        wav(review / "trial-001-B.wav", [int(v * .8) for v in stereo], channels=2)
+        wav(review / "trial-002-A.wav", unrelated, channels=2)
+        wav(review / "trial-002-B.wav", swapped, channels=2)
+        before = {p.name: p.read_bytes() for p in review.iterdir()}
+        report = inspect_review_pack(review)
+        self.assertEqual(1, report["cross_trial_repeated_variant_count"])
+        self.assertEqual([], report["trials"][0]["trial_warnings"])
+        self.assertEqual(
+            ["repeated_pcm_across_trials_inspect_blinding"],
+            report["trials"][1]["trial_warnings"],
+        )
+        self.assertEqual([], report["trials"][1]["A"]["warnings"])
+        self.assertEqual([], report["trials"][1]["B"]["warnings"])
+        self.assertNotIn("trial-001-A.wav", json.dumps(report))
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("sha256", json.dumps(report))
+        self.assertEqual(before, {p.name: p.read_bytes() for p in review.iterdir()})
+        cmd = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.pack", str(review),
+             "--fail-on-warnings"], capture_output=True, text=True,
+        )
+        self.assertEqual(2, cmd.returncode)
+        self.assertEqual(report, json.loads(cmd.stdout))
+        self.assertNotIn(str(self.root), cmd.stdout + cmd.stderr)
+        # Full identity includes sample rate; same samples at different
+        # playback speed must not be incorrectly matched.
+        wav(review / "trial-002-A.wav", unrelated, rate=16000, channels=2)
+        wav(review / "trial-002-B.wav", swapped, rate=16000, channels=2)
+        report = inspect_review_pack(review)
+        self.assertEqual(0, report["cross_trial_repeated_variant_count"])
+
+    def test_cross_trial_swapped_stereo_keeps_one_trial_and_mono_guards(self):
+        review = self.root / "only-one-stereo-trial"
+        review.mkdir()
+        stereo = [v for i in range(8000)
+                  for v in (int(5000 * math.sin(i * .07)),
+                            int(6000 * math.cos(i * .12)))]
+        swapped = [v for i in range(0, len(stereo), 2)
+                   for v in (stereo[i + 1], stereo[i])]
+        wav(review / "trial-001-A.wav", stereo, channels=2)
+        wav(review / "trial-001-B.wav", swapped, channels=2)
+        report = inspect_review_pack(review)
+        self.assertEqual(0, report["cross_trial_repeated_variant_count"])
+        self.assertEqual([], report["trials"][0]["trial_warnings"])
+        # Two identical mono PCM clips are not a stereo channel swap.
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", self.samples)
+        report = inspect_review_pack(review)
+        self.assertEqual(0, report["cross_trial_repeated_variant_count"])
+        self.assertFalse(report["trials"][0]["trial_warnings"])
+
     def test_cross_trial_fingerprint_distinguishes_playback_sample_rate(self):
         review = self.root / "review"
         review.mkdir()
