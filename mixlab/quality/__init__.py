@@ -111,6 +111,15 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             # A silence-padded time-shift can preserve all actual PCM audio
             # while changing its full-length digest and blind-trial identity.
             edge_trimmed_pcm = EdgeSilencePcmFingerprint(channels)
+            # A signed stereo transform PLUS shifted zero-valued edge
+            # padding is otherwise invisible to the independent full-PCM
+            # transform and edge-only fingerprints. Reuse the already
+            # constructed 4096-frame transform buffers below; never store
+            # whole audio or publish the private fingerprints.
+            edge_transformed_pcm = [
+                EdgeSilencePcmFingerprint(channels)
+                for _ in range(7 if channels == 2 else 1)
+            ]
             # Stereo L/R exchange changes the interleaved PCM digest even
             # when the audible material is otherwise an exact reuse.
             swapped_stereo_digest = hashlib.sha256() if channels == 2 else None
@@ -228,15 +237,20 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     swapped[1::2] = values[::2]
                     if sys.byteorder != "little":
                         swapped.byteswap()
-                    swapped_stereo_digest.update(swapped.tobytes())
+                    swapped_bytes = swapped.tobytes()
+                    swapped_stereo_digest.update(swapped_bytes)
+                    edge_transformed_pcm[0].update(swapped_bytes)
                 if inverse_digest is not None:
                     if -32768 in values:
                         inverse_digest = None
+                        edge_transformed_pcm[1 if channels == 2 else 0] = None
                     else:
                         inverted = array("h", (-sample for sample in values))
                         if sys.byteorder != "little":
                             inverted.byteswap()
-                        inverse_digest.update(inverted.tobytes())
+                        inverted_bytes = inverted.tobytes()
+                        inverse_digest.update(inverted_bytes)
+                        edge_transformed_pcm[1 if channels == 2 else 0].update(inverted_bytes)
                 if channel_inverse_digests is not None:
                     for side in (0, 1):
                         digest = channel_inverse_digests[side]
@@ -247,12 +261,15 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         # overflowed/clipped approximation as an exact flip.
                         if -32768 in channel_samples:
                             channel_inverse_digests[side] = None
+                            edge_transformed_pcm[2 + side] = None
                             continue
                         channel_flipped = array("h", values)
                         channel_flipped[side::2] = array("h", (-v for v in channel_samples))
                         if sys.byteorder != "little":
                             channel_flipped.byteswap()
-                        digest.update(channel_flipped.tobytes())
+                        channel_flipped_bytes = channel_flipped.tobytes()
+                        digest.update(channel_flipped_bytes)
+                        edge_transformed_pcm[2 + side].update(channel_flipped_bytes)
                 if signed_swap_digests is not None:
                     left, right = values[::2], values[1::2]
                     # Transform (L,R) into (-R,L), (R,-L), (-R,-L).
@@ -267,6 +284,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         if ((negate_left and -32768 in left)
                                 or (negate_right and -32768 in right)):
                             signed_swap_digests[slot] = None
+                            edge_transformed_pcm[4 + slot] = None
                             continue
                         transformed = array("h", values)
                         transformed[::2] = array(
@@ -277,7 +295,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         )
                         if sys.byteorder != "little":
                             transformed.byteswap()
-                        digest.update(transformed.tobytes())
+                        signed_swap_bytes = transformed.tobytes()
+                        digest.update(signed_swap_bytes)
+                        edge_transformed_pcm[4 + slot].update(signed_swap_bytes)
                 for i in range(0, len(values), channels):
                     frame = values[i:i + channels]
                     if first_frame is None:
@@ -489,7 +509,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     ), (
         tuple(d.digest() if d is not None else None for d in signed_swap_digests)
         if signed_swap_digests is not None else None
-    ), edge_trimmed_pcm.digest()
+    ), edge_trimmed_pcm.digest(), tuple(
+        fingerprint.digest() if fingerprint is not None else None
+        for fingerprint in edge_transformed_pcm
+    )
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -498,7 +521,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -604,7 +627,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             raise ValueError("Quality comparison exceeds the total PCM frame budget")
     if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
         raise ValueError("Private WAV input changed during quality comparison")
-    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
@@ -612,7 +635,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     seen_trimmed_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest = (
+        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest, transformed_trimmed_digests = (
             _scan_wav_with_digest(candidate, window_ms=window_ms)
         )
         for field in ("sample_rate", "channels", "frames"):
@@ -705,6 +728,23 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 edge_silence_shifted_pcm_of = seen_trimmed_digests[trimmed_digest]
             if edge_silence_shifted_pcm_of is not None:
                 warnings.append("edge_silence_shifted_pcm_inspect_for_reused_audio")
+        # Compare privately against original edge-trimmed baseline/earlier
+        # candidate PCM. A sign/swap transform and a zero-edge shift may be
+        # combined; they must not masquerade as new blind-review audio.
+        # Matching is exact PCM16 only, not perceptual equivalence.
+        edge_silence_transformed_pcm_of = None
+        if candidate_digest != base_digest:
+            for transformed_digest in transformed_trimmed_digests:
+                if transformed_digest is None or transformed_digest == trimmed_digest:
+                    continue
+                if base_trimmed_digest is not None and transformed_digest == base_trimmed_digest:
+                    edge_silence_transformed_pcm_of = "baseline"
+                    break
+                if transformed_digest in seen_trimmed_digests:
+                    edge_silence_transformed_pcm_of = seen_trimmed_digests[transformed_digest]
+                    break
+        if edge_silence_transformed_pcm_of is not None:
+            warnings.append("edge_silence_transformed_pcm_inspect_for_reused_audio")
         if trimmed_digest is not None and trimmed_digest not in seen_trimmed_digests:
             seen_trimmed_digests[trimmed_digest] = f"candidate-{index:02d}"
         duplicate_pcm_of = None
@@ -736,6 +776,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "single_channel_polarity_inverted_pcm_of": single_channel_polarity_inverted_pcm_of,
             "signed_stereo_swap_pcm_of": signed_stereo_swap_pcm_of,
             "edge_silence_shifted_pcm_of": edge_silence_shifted_pcm_of,
+            "edge_silence_transformed_pcm_of": edge_silence_transformed_pcm_of,
             "requires_human_review": True,
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
         })
