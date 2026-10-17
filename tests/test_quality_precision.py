@@ -436,6 +436,18 @@ class BatchPrecisionTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         precision.compare_precision_batch(self.base, candidates)
 
+    def test_exact_eight_million_frame_stereo_budget_real_pcm(self):
+        # Actual (non-sparse) boundary workload: 4 sources x 2M stereo
+        # frames. Tests both admission equality and bounded streaming.
+        wav(self.base, channels=2, frames=2_000_000)
+        wav(self.c1, channels=2, frames=2_000_000, seed=2)
+        wav(self.c2, channels=2, frames=2_000_000, coarse=(1,))
+        wav(self.c3, channels=2, frames=2_000_000, seed=4)
+        result = precision.compare_precision_batch(
+            self.base, [self.c1, self.c2, self.c3])
+        self.assertEqual([x["candidate_precision_loss_inspect"]
+                          for x in result["candidates"]], [False, True, False])
+
     def test_aggregate_frame_budget_rejects_from_metadata_before_audio_scan(self):
         import struct
         # Tiny header lies about its PCM payload. The 5*2M-frame request
