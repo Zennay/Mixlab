@@ -60,8 +60,13 @@ tool, pack and tuning pipeline.
    of the stereo file differs, including mono/stereo copies.
    Development-development
    reuse is outside this gate; development-evaluation and evaluation-evaluation
-   reuse are screened. Common silence and quiet spacers are intentionally not
-   treated as musical duplicates. All PCM reads finish the underlying
+   reuse are screened. Common silence, quiet spacers and even substantial
+   **constant channel DC bias** are intentionally not treated as musical
+   duplicates. Each mono/stereo-channel view must have at least 512 average
+   absolute PCM16 counts of modulation **after removing its DC mean**; this
+   avoids false exclusions when two unrelated recordings share a zero-filled
+   or flat ±2,400-count stereo channel. An actual copied audible channel is
+   still rejected when whole WAV fingerprints differ. All PCM reads finish the underlying
    source-identity check before a collision is reported.
 4. The externally pinned 5–10 pair study is validated using MixLab's existing
    strict study proof. **Every evaluation track** must appear in that frozen
@@ -94,7 +99,8 @@ and one-channel copies between stereo files, integer overflow in PCM16
 transformations, a 1.5x nonmatching-gain control, copied excerpts
 at 25% and 75% in two distinct longer recordings, the exact upper
 2,000,000-source-frame limit and rejection of 2,000,001 frames, and
-redaction in CLI subprocesses.
+per-channel silence, common ±2,400-count DC offsets and preserved
+  rejection of an actual audible copied channel; plus redaction in CLI subprocesses.
 
 The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
