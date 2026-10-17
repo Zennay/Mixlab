@@ -250,6 +250,7 @@ def export_candidate(session_dir, pair_id, family, destination):
             raise ValueError("Do not export private audio to a Git checkout")
     try:
         with path.open("rb") as source, target.open("xb") as output:
+            os.fchmod(output.fileno(), 0o600)
             shutil.copyfileobj(source, output, length=65536)
         if digest(target) != record["sha256"]:
             raise ValueError("Exported WAV checksum mismatch")
