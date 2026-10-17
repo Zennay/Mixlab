@@ -54,3 +54,86 @@ jobs:
           ulimit -v 196608
           python -m py_compile mixlab/quality/reviewer_influence.py tests/test_quality_reviewer_influence.py
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_reviewer_influence.py' -v
+
+      - name: Checkout independent pinned ML-05 frozen study producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: e512d8fc2eae79efe765dc9a523105fad68a196f
+          path: producer-pr71
+          persist-credentials: false
+      - name: Genuine ML-05 PCM and three-to-five-reviewer omission proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C producer-pr71 rev-parse HEAD)" = "e512d8fc2eae79efe765dc9a523105fad68a196f"
+          cp mixlab/quality/reviewer_influence.py producer-pr71/mixlab/quality/reviewer_influence.py
+          cp mixlab/quality/study_binding.py producer-pr71/mixlab/quality/study_binding.py
+          cd producer-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.quality.reviewer_influence import inspect_real_reviewer_influence
+
+          spec = importlib.util.spec_from_file_location(
+              "pinned_ml05_reviewers", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              receipt, evidence, trials = verify_pack(fixture.pack)
+              assert len(trials) == 5 and evidence["study_id"] == fixture.study_doc["study_id"]
+              def write_rater(index, choices):
+                  path = fixture.root / f"ml05-private-reviewer-{index}.json"
+                  path.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"pinned-ml05-rater-{index}",
+                      "ratings": [
+                          {"trial": tid, "preference": (
+                              "A" if row["A"] == (
+                                  "baseline" if choice == "baseline"
+                                  else (row["B"] if row["A"] == "baseline" else row["A"]))
+                              else "B")}
+                          for (tid, row), choice in zip(sorted(trials.items()), choices)
+                      ],
+                  }), encoding="utf-8")
+                  return path
+
+              ratings = [
+                  write_rater(0, ["candidate"] * 5),
+                  write_rater(1, ["candidate"] * 3 + ["baseline"] * 2),
+                  write_rater(2, ["baseline"] * 5),
+              ]
+              original = aggregate(fixture.pack, ratings)
+              assert original["reviewers"] == 3
+              assert original["counts"]["candidate"] == 8
+              assert original["counts"]["baseline"] == 7
+              summary = inspect_real_reviewer_influence(
+                  fixture.study, fixture.pack, fixture.study_doc["study_id"], ratings)
+              assert summary["full_candidate_preference_fraction"] == 8 / 15
+              assert summary["min_leave_one_reviewer_out_candidate_fraction"] == 3 / 10
+              assert summary["max_leave_one_reviewer_out_candidate_fraction"] == 8 / 10
+              assert summary["omission_flips_candidate_plurality"] is True
+              assert summary["reviewer_influence_review_required"] is True
+              assert summary["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(summary)
+              assert receipt["pack_id"] not in json.dumps(summary)
+
+              # Protocol budget: five distinct reviewer pseudonyms, genuine
+              # five-pair PCM, 25 votes, six separate official PCM scans.
+              stable = [write_rater(i, ["candidate"] * 5) for i in range(5)]
+              result = inspect_real_reviewer_influence(
+                  fixture.study, fixture.pack, fixture.study_doc["study_id"], stable)
+              assert result["reviewer_file_count"] == 5
+              assert result["full_decisive_vote_count"] == 25
+              assert result["min_leave_one_reviewer_out_candidate_fraction"] == 1.0
+              assert result["max_absolute_reviewer_omission_fraction_shift"] == 0.0
+              assert result["omission_flips_candidate_plurality"] is False
+              assert result["milestone_pass"] is False
+              print("Genuine ML-05 pinned real PCM: 3-rater 8/15->3/10 plurality reversal HOLD; 5-rater 25/25 unanimous stable yet not M1 pass")
+          finally:
+              fixture.tearDownClass()
+          PY
