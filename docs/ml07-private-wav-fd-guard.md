@@ -16,10 +16,14 @@ quality CLI's path-stat/open race until its integration owner adopts it.
   source **once**, without checking the path beforehand.
 - The descriptor must identify a regular file of 44 bytes through 32 MiB.
   Symlink, FIFO, device, directory, missing and oversized inputs fail closed.
+- An up-front, same-descriptor RIFF walk admits **at most 4,096 headers up to
+  and including the first `data` chunk**. Every pre-data chunk fits inside
+  the RIFF-declared and physical bounds; malformed lengths or header floods
+  fail closed before Python's WAV parser can do unbounded header work.
 - Python `wave` must recognize uncompressed PCM16, 1–2 channels, 8–96 kHz,
-  1–2,000,000 declared frames with sufficient file bytes **after the actual
-  `data` offset**, even with legal `JUNK`/metadata chunks before the samples.
-  Assuming a fixed 44-byte header could wrongly admit truncated files.
+  1–2,000,000 frames with an **exact integral-frame data chunk** at the actual
+  `data` offset. Legal odd-size padded `JUNK`/metadata chunks remain supported.
+  A fixed 44-byte assumption could wrongly admit truncated audio.
 - Only the caller sees PCM frames, while the context is live. The helper does
   not retain or output PCM, source paths, digests or listener identities.
 - Successful exit compares device, inode, size, nanosecond mtime and ctime
@@ -29,7 +33,8 @@ quality CLI's path-stat/open race until its integration owner adopts it.
   activates any VPS worker.
 
 This is a TOCTOU mitigation for ordinary Linux filesystems, **not** a
-filesystem integrity proof or full RIFF/PCM parser. Validating all RIFF chunks,
+filesystem integrity proof or full RIFF/PCM parser. The initial bounded chunk
+walk stops at the first `data` chunk. Validating **all** RIFF chunks,
 unexpected trailing data, duplicate chunk declarations, truncation during
 streaming and unreadable PCM content remains the calling scanner's duty.
 A concurrent edit followed by restoring identical filesystem metadata is out
@@ -75,7 +80,8 @@ Use the isolated GitHub-hosted workflow on the **exact proposed PR HEAD**;
 the command above is documented, not a claim of a completed VPS render.
 No private music in test fixtures, artifacts or public CI. The synthetic
 tests exercise FIFO nonblocking behavior, symlink rejection, 32-MiB admission,
-2-Mframe shape, mono/stereo, corrupt headers, same-inode modification, path
+2-Mframe shape, mono/stereo, corrupt headers, the 4096-chunk admission fence,
+partial-frame rejection, same-inode modification, path
 replacement, pre-data RIFF metadata offsets, a full-frame standalone
 integrity probe, CLI path redaction and retained-source immutability.
 
