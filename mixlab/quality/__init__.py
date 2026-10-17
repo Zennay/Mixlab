@@ -81,6 +81,9 @@ SHORT_WINDOW_LEVEL_MISMATCH_FRACTION = 0.25
 # A stereo clip can preserve total and per-window RMS while changing
 # channel balance by >9 dB. Such A/B level comparisons need human review.
 STEREO_CHANNEL_LEVEL_MISMATCH_DB = 9.0
+# A candidate can preserve every stereo RMS level while cancelling almost
+# entirely after mono downmix. Compare relative loss, not raw stereo gain.
+MONO_FOLD_DOWN_AB_LEVEL_MISMATCH_DB = 6.0
 
 
 def _dbfs(value: float) -> float | None:
@@ -635,6 +638,26 @@ def _stereo_window_channel_level_confound(
     return fraction, audible >= 3 and mismatched / audible >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION
 
 
+def _mono_fold_down_ab_level_confound(baseline: dict, candidate: dict) -> tuple[float | None, bool]:
+    """Compare existing private stereo-to-mono RMS losses, no PCM reread.
+
+    An active stereo file with exactly zero mono mid-signal has undefined
+    (infinite) loss represented as None. One such file versus an ordinary
+    mono-compatible mix is a strong blind-level confound. Two cancelling
+    files share that problem but have no *relative* fold-down delta.
+    """
+    if baseline["channels"] != 2 or candidate["channels"] != 2:
+        return None, False
+    if baseline["rms_dbfs"] is None or candidate["rms_dbfs"] is None:
+        return None, False
+    original = baseline["mono_fold_down_loss_db"]
+    changed = candidate["mono_fold_down_loss_db"]
+    if original is None or changed is None:
+        return None, (original is None) != (changed is None)
+    delta = round(changed - original, 3)
+    return delta, abs(delta) >= MONO_FOLD_DOWN_AB_LEVEL_MISMATCH_DB
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -720,6 +743,11 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             )
             if stereo_window_channel_level_confound_risk:
                 warnings.append("stereo_window_channel_level_mismatch_inspect_not_lufs")
+        mono_fold_down_level_delta_db, ab_mono_fold_down_level_confound_risk = (
+            _mono_fold_down_ab_level_confound(base, metrics)
+        )
+        if ab_mono_fold_down_level_confound_risk:
+            warnings.append("ab_mono_fold_down_level_confound_inspect_not_lufs")
         # Aligned durations do not guarantee aligned audible starts/ends.
         # Only inspect non-silent pairs; a completely silent side is handled
         # by the existing silence-specific warning.
@@ -839,6 +867,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "stereo_channel_level_confound_risk": stereo_channel_level_confound_risk,
             "stereo_window_channel_level_mismatch_fraction": stereo_window_channel_level_mismatch_fraction,
             "stereo_window_channel_level_confound_risk": stereo_window_channel_level_confound_risk,
+            "mono_fold_down_level_delta_db_vs_baseline": mono_fold_down_level_delta_db,
+            "ab_mono_fold_down_level_confound_risk": ab_mono_fold_down_level_confound_risk,
             "edge_silence_mismatch_risk": edge_silence_mismatch_risk,
             "prominent_onset_mismatch_ms": onset_gap_ms,
             "prominent_onset_mismatch_risk": prominent_onset_mismatch_risk,
@@ -861,6 +891,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 and audible_level_windows >= 3 and not short_window_level_mismatch_risk
                 and not stereo_channel_level_confound_risk
                 and not stereo_window_channel_level_confound_risk
+                and not ab_mono_fold_down_level_confound_risk
             ),
         })
     # Do not publish a result if any baseline or candidate changed at any
