@@ -77,6 +77,26 @@ redacted rejection as an invalid WAV. No receipt fields, filenames, hashes or
 source audio appear in the result. With receipts absent, the report retains
 the original pure-PCM schema and makes **no** receipt-consistency claim.
 
+**Physical receipt invariants:** incoming declared `frames` must equal
+`round(beats * 60 / bpm * sample_rate)`; `duration_seconds` must match
+the observed PCM frame count divided by its sample rate; `gain_linear`
+must match `10 ** (gain_db / 20)`, and start-frame offsets must match
+the corresponding declared cue seconds. Recipe BPM, beat count, gain dB,
+source BPM overrides and start positions must satisfy the current bounded
+M1 Recipe contract. These checks reject **two equally false receipts**,
+not merely mismatches between receipts. They do not infer source rights,
+beat accuracy or perceptual quality.
+
+**Bound before serializing:** an in-process caller can accidentally pass
+untrusted receipt metadata. The validator now walks only plain JSON-type
+containers, rejecting cyclic/shared containers, depths above 16, more
+than 2,048 scalar/container nodes, more than 128 entries in a collection,
+huge strings and excessive total scalar lengths **before** `json.dumps`
+can construct an unbounded serialized copy. A separate 16 KiB ceiling
+applies to the actual serialized receipt. All rejections are path-free.
+These are defensive bounds on the optional private API, not a general
+network-facing JSON parser.
+
 **Trust boundary:** self-reported input fingerprints and recipes are
 cross-compared **between** the receipts, not authenticated against original
 source files, filesystem identities, licenses or a trusted external signature.
