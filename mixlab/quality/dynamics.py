@@ -59,12 +59,17 @@ def compare_crest_factors(
             if base_crest is not None and candidate_crest is not None else None
         )
         risk = delta is not None and abs(delta) >= crest_tolerance_db
+        warnings = []
+        if delta is None:
+            warnings.append("silence_prevents_crest_comparison")
+        if risk:
+            warnings.append("crest_factor_difference_inspect_not_preference")
         results.append({
             "candidate_id": entry["candidate_id"],
             "crest_factor_db": candidate_crest,
             "crest_delta_db_vs_baseline": delta,
             "crest_factor_confound_risk": risk,
-            "warnings": (["crest_factor_difference_inspect_not_preference"] if risk else []),
+            "warnings": warnings,
             "requires_human_review": True,
         })
     return {
@@ -103,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Cannot inspect PCM16 audio (details withheld)", file=sys.stderr)
         return 3
     print(json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False))
-    if args.fail_on_warnings and any(c["crest_factor_confound_risk"] for c in report["candidates"]):
+    if args.fail_on_warnings and any(c["warnings"] for c in report["candidates"]):
         return 2
     return 0
 
