@@ -35,7 +35,14 @@ detect any quantizer phase (sample mod 256, 128, 64, 32 or 16), not just multipl
 step: the candidate must concentrate >=99.5% of informative samples on one
 residue; the baseline must have <10% even in its **most frequent** residue.
 This also avoids false alarms when both sources are coarse but quantized with
-different offsets.
+different offsets. A second conservative pattern detects **two adjacent
+quantizer residues**, e.g. a 32-step quantizer with alternating +0/+1 PCM
+phase jitter: together >=99.5% of informative candidate values must occupy
+those two bins while the baseline's two strongest bins occupy <20%.
+Nonadjacent two-bin patterns are deliberately excluded: for example, residues
+3 and 11 modulo 16 describe an **8-step** grid and must not bypass the
+detector's lower-resolution limit. This only covers simple adjacent-phase
+jitter, **not arbitrary dithering/noise shaping** or perceptual quality.
 
 To catch a damaged part hidden by the undamaged rest, the same check runs
 across **8 fixed, corresponding time regions** per channel, each requiring
@@ -139,6 +146,8 @@ systems or evidence that the VPS has sufficient free RAM. Existing ML-07
 quality/companion/privacy suites run separately.
 
 Adversarial tests also exercise signed PCM, shifted 16/32/64/128/256-step quantization,
+one-LSB alternating adjacent-phase quantization (with half-step negative
+control), cross-stereo noncontiguous time-region persistence,
 different quantizer offsets in noncontiguous regions, partial one-channel
 loss, unknown/short regions, chunk-size invariance, read-only file hashes,
 nonregular sources, and redacted CLI errors. Healthy and suspicious verdicts
