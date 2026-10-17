@@ -110,6 +110,25 @@ have the same defect. The report does not reveal which channel or which
 source caused the warning. This is a technical listening prompt, not a
 claim that all intentional single-channel mixes are invalid.
 
+A fourth, **stereo mono-folding risk** inspection uses a single
+constant-space left/right cross-energy accumulator over the same PCM frames.
+It estimates the RMS ratio of arithmetic mono `(L+R)/2` to stereo RMS,
+**not** frequency-dependent phase, stereo imaging or perceptual quality.
+A risk warning `stereo_mono_fold_cancellation_inspect` is raised whenever
+either audible source has a fold ratio <=-10 dB (<=0.316 of stereo RMS).
+If both ratios are resolvable (greater than 1e-4), the signed A/B
+`stereo_mono_fold_ratio_delta_db` is reported and magnitude >=6dB
+triggers `stereo_mono_fold_change_inspect`; extreme cancellation remains
+`null` instead of pretending a finite ratio. Silence/unresolved scans
+give `stereo_mono_fold_unresolved_inspect`. Left/right polarity inversions
+leave the whole-file and each-channel energy proxies **unchanged** but
+can erase the mono downmix: the new separate warning prevents such a
+false clean result. The global crossing energy, absolute fold ratios
+and channel identity remain private; only neutral codes and the
+bounded A/B delta are published. It does not prove an intentional
+creative anti-phase signal is defective. The primary ML-07 PCM/phase
+scanner remains necessary.
+
 These filters are deliberately cheap, have gradual/overlapping responses,
 and are sensitive to DC, onsets and very short excerpts. The numbers are
 **not** disjoint frequency-band percentages, calibrated spectrum, true peak,
@@ -172,7 +191,9 @@ full-comparison early-baseline/candidate mutation and symlink-substitution
 rejection, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
 shifts, stereo temporal gain invariance, shifted silence and sparse temporal coverage, matched-RMS midrange depletion, independent louder/quieter A/B RMS gate,
 midrange time reordering, stereo channel-frequency swaps with
-globally identical energies, stereo gain invariance, single-channel silence from either side,\nstrict CLI failure on a shared channel dropout, silent spans, strict warning exit
+globally identical energies, stereo gain invariance, polarity-inverted L/R mono downmix cancellation
+despite equal whole and per-channel spectral energies, symmetric A/B
+fold-warning, single-channel silence from either side,\nstrict CLI failure on a shared channel dropout, silent spans, strict warning exit
 and CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
