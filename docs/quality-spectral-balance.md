@@ -5,8 +5,8 @@
 `python3 -m mixlab.quality.spectral BASELINE.wav CANDIDATE.wav [OTHER.wav] --fail-on-warnings`
 
 This additional **optional, read-only, CPU-only** screening command identifies
-gross spectral-balance changes that equal overall RMS can conceal (for example
-an inadvertently missing bass layer or high-frequency content). It is
+large low/mid/high proxy shifts that equal overall RMS can conceal (for example
+an inadvertently missing bass layer, midrange/vocal energy or high-frequency content). It is
 supplemental to the main PCM16 quality, signed-stereo identity, pack, tempo and
 LUFS reviews; it does not edit them or write media. No external packages,
 models, downloads or uploads.
@@ -26,8 +26,9 @@ checks under independent review in ML-07 PR #55.
 
 ## What the numbers mean
 
-For each channel, two first-order, sample-rate-adjusted recursive filters
-track a **180 Hz lowpass** and a **2500 Hz highpass residual**. After streaming,
+For each channel, first-order, sample-rate-adjusted recursive filters
+track a **180 Hz lowpass**, a **180–2500 Hz highpassed-then-lowpassed
+midrange proxy**, and a **2500 Hz highpass residual**. After streaming,
 the root-mean-square energy of each filtered proxy is normalized by that
 source's *unfiltered* RMS. A/B reports compute
 `20 log10(candidate_proxy_ratio / baseline_proxy_ratio)`. Ratios are
@@ -37,12 +38,12 @@ An additional **eight-span temporal proxy** checks whether the same
 low/high content occurred at the same *time* in both variants. The source
 is divided into eight deterministic equal-duration bins, with a fixed eight
 aggregate-energy buffers regardless of excerpt length. For each bin the
-same RMS-normalized low/high proxies are compared in A/B order; any span
+same RMS-normalized low/mid/high proxies are compared in A/B order; any span
 below -55 dBFS or with unresolved proxy energy is skipped. If at least
 three bins are comparable and at least two bins (and at least 25% of
 comparable bins) differ by >=9 dB, the corresponding
-`low_temporal_spectral_shift_inspect` or
-`high_temporal_spectral_shift_inspect` warning is produced. JSON exports
+`low_temporal_spectral_shift_inspect`, `mid_temporal_spectral_shift_inspect`
+or `high_temporal_spectral_shift_inspect` warning is produced. JSON exports
 only the aggregate mismatch fraction (or `null` if no bins compare);
 the eight source-specific ratios, exact span energies, times, waveforms
 and candidate filenames remain private. A one-span change can still
@@ -66,7 +67,7 @@ comparability is fabricated. All channels are combined in energy without
 downmixing; a separate stereo/mono check is still required.
 
 The JSON has only a synthetic candidate-01 numbering, generic warning
-codes, format/duration facts, rounded global RMS and two energy ratios
+codes, format/duration facts, rounded global RMS and three energy ratios
 per source, aggregate A/B deltas, eight-span mismatch *fractions*\n(not envelopes), and the explicit human-preference gate.
 It never outputs source paths, song metadata, candidate identity, PCM
 samples, window envelopes or hashes. Invalid CLI arguments are redacted
@@ -81,7 +82,7 @@ and prints no JSON. Argument errors fail **2** with no JSON.
 signals for RMS-matched bass/high-content shift, gain-only invariance,
 stereo, multiple anonymized candidates, silent comparisons, sample-format
 mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
-non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
+non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, matched-RMS midrange depletion,\nmidrange time reordering, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
 
