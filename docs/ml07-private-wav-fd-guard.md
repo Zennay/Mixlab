@@ -23,9 +23,11 @@ quality CLI's path-stat/open race until its integration owner adopts it.
 - The bounded pre-data walk also rejects duplicate `fmt ` chunks and
   contradictory PCM format declarations: channels (1–2), 16-bit sample
   width, 8–96kHz sample rate, `block_align == channels * 2` and
-  `byte_rate == rate * block_align`. It accepts coherent classic PCM and
-  supported WAVE_FORMAT_EXTENSIBLE PCM16 with its canonical layout. This
-  catches otherwise player-dependent byte-rate/alignment confusion.
+  `byte_rate == rate * block_align`. Supported WAVE_FORMAT_EXTENSIBLE
+  PCM16 must also declare a nontruncated >=22-byte extension, exactly
+  16 valid bits, a PCM subtype GUID and a speaker mask with the correct
+  channel count (or zero when unspecified). This catches otherwise
+  player-dependent bit-precision and channel-layout ambiguity.
 - Python `wave` must recognize uncompressed PCM16, 1–2 channels, 8–96 kHz,
   1–2,000,000 frames with an **exact integral-frame data chunk** at the actual
   `data` offset. Legal odd-size padded `JUNK`/metadata chunks remain supported
@@ -83,7 +85,9 @@ The optional group mode accepts **one baseline and 1..7 candidates**, and
 keeps all 2..8 regular descriptors open concurrently until they have passed
 file-identity checks. It verifies every admitted header before decoding
 **any** source, enforces an aggregate **8,000,000-frame** scan budget and
-identical sample rate, channel count and frame count, then streams all PCM
+identical sample rate, channel count and frame count **and compatible
+speaker positions** (legacy mono = center, legacy stereo = L/R; an explicit
+Extensible mask must match), then streams all PCM
 in <=4096-frame chunks. Missing, symlink, FIFO and malformed sources fail
 closed. An A/B candidate naming the same inode as another source is refused,
 including a different hardlink to the same WAV.
