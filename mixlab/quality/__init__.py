@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 import wave
 
-from .private_source import open_verified_private_pcm16
+from .private_source import open_verified_private_pcm16, private_path_identity
 
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
@@ -563,6 +563,12 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
+    # Capture all source identities once for the entire comparison. Each
+    # individual scan already uses a verified fd; this additional cheap
+    # path-level check catches earlier inputs replaced after their scan
+    # while later candidates are being processed.
+    all_paths = (baseline, *candidates)
+    initial_identities = tuple(private_path_identity(p) for p in all_paths)
     base, base_digest, base_windows, _, _, _, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
@@ -682,6 +688,11 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "requires_human_review": True,
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
         })
+    # Do not publish a result if any baseline or candidate changed at any
+    # point during the multi-input job, even *after* its own PCM scan.
+    # These identifiers stay private and are not attached to the report.
+    if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
+        raise ValueError("Private WAV input changed during quality comparison")
     return {
         "schema_version": 1,
         "purpose": "technical_preflight_not_musical_quality",
