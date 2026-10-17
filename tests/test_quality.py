@@ -833,7 +833,7 @@ class QualityTests(unittest.TestCase):
         label = b"source-label"
         metadata = b"LIST" + len(label).to_bytes(4, "little") + label
         if len(label) % 2:
-            metadata += b"\\x00"
+            metadata += bytes([0])
         junk = b"JUNK" + (4).to_bytes(4, "little") + b"ABCD"
         variants = (
             riff_with_extra(metadata),
