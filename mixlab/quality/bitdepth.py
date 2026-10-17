@@ -115,10 +115,17 @@ def _scan(source):
             "evidenced": evidenced,
             "active_windows": len(windows[channel]),
             "eligible_samples": eligible[channel],
+            "low_byte_zero_samples": trailing_zero[channel],
             "low_byte_zero_fraction": round(trailing_zero[channel] / eligible[channel], 6)
             if evidenced else None,
         })
     return output
+
+
+def _coarse_loss(base, candidate):
+    """Compare exact integer counts, never presentation-rounded fractions."""
+    return (20 * base["low_byte_zero_samples"] <= 7 * base["eligible_samples"]
+            and 200 * candidate["low_byte_zero_samples"] >= 199 * candidate["eligible_samples"])
 
 
 def inspect_ab(baseline, candidates):
@@ -159,8 +166,7 @@ def inspect_ab(baseline, candidates):
                     per_channel.append(None)
                 else:
                     per_channel.append(
-                        base["low_byte_zero_fraction"] <= BASELINE_MAX_ZERO_FRACTION
-                        and current["low_byte_zero_fraction"] >= CANDIDATE_MIN_ZERO_FRACTION
+                        _coarse_loss(base, current)
                     )
             status = True if True in per_channel else (
                 False if all(v is False for v in per_channel) else None
