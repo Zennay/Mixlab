@@ -150,6 +150,22 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.assertEqual([p.read_bytes() for p in (
             self.dev_dir / "clip-00.wav", self.eva_dir / "clip-00.wav")], before)
 
+
+    def test_full_fifty_source_budget_remains_admitted_and_anonymous(self):
+        # End-to-end scale at the documented maximum: 40 development tracks,
+        # ten externally pinned evaluation tracks, and real PCM for all.
+        for i in range(2, 40):
+            self.dev["tracks"].append(self._track("dev", i, 100 + i))
+        report = self.audit()
+        self.assertEqual(report["development_track_count"], 40)
+        self.assertEqual(report["evaluation_track_count"], 10)
+        self.assertFalse(report["milestone_pass"])
+
+    def test_fifty_one_sources_fail_closed_even_if_each_manifest_is_valid(self):
+        for i in range(2, 41):
+            self.dev["tracks"].append(self._track("dev", i, 100 + i))
+        self.rejected()
+
     def test_exact_wav_reused_across_libraries_fails(self):
         wav = self.dev_dir / "clip-00.wav"
         shutil.copyfile(self.eva_dir / "clip-00.wav", wav)
