@@ -21,6 +21,11 @@ _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
 MAX_REVIEW_HTML_BYTES = 1024 * 1024
 MAX_PUBLIC_RECEIPT_BYTES = 8192
+# Worst-case per-file limits alone permit 120 separate 32MiB inputs.
+# Cap the whole pack *before* any PCM scans so a large private benchmark
+# cannot monopolize a constrained shared worker.
+MAX_REVIEW_PACK_BYTES = 512 * 1024 * 1024
+MAX_REVIEW_PACK_FRAMES = 100_000_000
 # Review pages are often passed to listeners as static files. Static
 # resource references other than the expected A/B audio can phone home,
 # reveal the listener identity or compromise offline study conditions.
@@ -203,6 +208,7 @@ def inspect_review_pack(
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("Review input must be a real directory, not a symlink")
     groups: dict[str, dict[str, Path]] = {}
+    total_wav_bytes = 0
     for entry in directory.iterdir():
         # The review directory may be served to a listener. Reject leaked
         # answer keys, manifests, downloads or other unexpected assets, even
@@ -218,6 +224,9 @@ def inspect_review_pack(
             raise ValueError("Review directory contains an unexpected WAV filename")
         if entry.is_symlink() or not entry.is_file():
             raise ValueError("Review WAV must be a regular file, not a symlink")
+        total_wav_bytes += entry.stat().st_size
+        if total_wav_bytes > MAX_REVIEW_PACK_BYTES:
+            raise ValueError("Review WAV inventory exceeds total byte budget")
         trial_id, _, label = match.groups()
         labels = groups.setdefault(trial_id, {})
         if label in labels:
@@ -229,6 +238,19 @@ def inspect_review_pack(
         raise ValueError("Review directory contains no trial WAV pairs")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
+    # Headers are cheap to read. Bound the total *declared* frame workload
+    # before expensive sample-level diagnostics. scan_wav still independently
+    # verifies every declared frame and rejects truncated input.
+    total_frames = 0
+    try:
+        for labels in groups.values():
+            for path in labels.values():
+                with wave.open(str(path), "rb") as src:
+                    total_frames += src.getnframes()
+                if total_frames > MAX_REVIEW_PACK_FRAMES:
+                    raise ValueError("Review WAV inventory exceeds total frame budget")
+    except (wave.Error, EOFError) as exc:
+        raise ValueError("Invalid review WAV header") from exc
     expected_pack_id = _read_public_receipt_id(directory, len(groups)) if require_receipt else None
     page_links_verified = _verify_public_review_page(
         directory, groups, require_generated_html=require_generated_html,
