@@ -135,6 +135,53 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
         finally:
             path.write_bytes(original)
 
+    def test_duplicate_pair_candidate_cannot_double_count_blind_trials(self):
+        # Construct a fully internally consistent forged pack: fresh
+        # SHA-bound answer key, matching receipt/evidence, and byte-identical
+        # review WAVs. The second trial has a different ID but the *same*
+        # pair and candidate family, which would overweight one result.
+        import hashlib
+        import shutil
+        key_path = self.pack / "private" / "answer-key.json"
+        evidence_path = self.pack / "private" / "evidence.json"
+        receipt_path = self.pack / "receipt.json"
+        paths = (key_path, evidence_path, receipt_path)
+        originals = {path: path.read_bytes() for path in paths}
+        clone_id = "trial-004"
+        copies = [self.pack / "review" / f"{clone_id}-{label}.wav"
+                  for label in ("A", "B")]
+        try:
+            key = json.loads(originals[key_path])
+            clone = dict(key[0])
+            source_id = clone["trial"]
+            clone["trial"] = clone_id
+            key.append(clone)
+            evidence = json.loads(originals[evidence_path])
+            receipt = json.loads(originals[receipt_path])
+            identity = {
+                "manifest": evidence["manifest_sha256"],
+                "answers": key,
+                "outputs": [row["output_sha256"] for row in evidence["renders"]],
+            }
+            pack_id = hashlib.sha256(
+                json.dumps(identity, sort_keys=True).encode()).hexdigest()
+            evidence["pack_id"] = receipt["pack_id"] = pack_id
+            receipt["trial_count"] = len(key)
+            key_path.write_text(json.dumps(key), encoding="utf-8")
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            for label, destination in zip(("A", "B"), copies):
+                shutil.copyfile(
+                    self.pack / "review" / f"{source_id}-{label}.wav",
+                    destination)
+            with self.assertRaisesRegex(ValueError, "Duplicate candidate"):
+                verify_pack(self.pack)
+        finally:
+            for path in paths:
+                path.write_bytes(originals[path])
+            for copied in copies:
+                copied.unlink(missing_ok=True)
+
     def test_public_receipt_and_private_evidence_bind_same_manifest_and_schema(self):
         # Otherwise a displayed pack receipt can claim a different source
         # manifest from the private identity still used for pack-id hashing.

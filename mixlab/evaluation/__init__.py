@@ -63,12 +63,24 @@ def verify_pack(root):
             raise ValueError("Duplicate render identity")
         render_by_pair[pair,family] = row
     trials = {}
+    candidate_trials = set()
     for row in key:
         tid = row.get("trial")
         if not isinstance(tid, str) or not re.fullmatch(r"trial-[0-9]{3}", tid) or tid in trials:
             raise ValueError("Invalid or duplicate trial")
         if row.get("A") == row.get("B") or sum(row.get(label) == "baseline" for label in ("A","B")) != 1:
             raise ValueError("Trial must compare baseline with one candidate")
+        # Different trial IDs must not disguise a repeated selection of the
+        # same candidate for the same pair: otherwise one render can receive
+        # multiple independent-looking preference votes in the pilot.
+        candidate = row["B"] if row["A"] == "baseline" else row["A"]
+        pair = row.get("pair")
+        if not isinstance(pair, str) or not isinstance(candidate, str):
+            raise ValueError("Invalid pair or candidate")
+        selection = (pair, candidate)
+        if selection in candidate_trials:
+            raise ValueError("Duplicate candidate trial identity")
+        candidate_trials.add(selection)
         for label in ("A","B"):
             reference = render_by_pair.get((row.get("pair"),row[label]))
             if reference is None:
