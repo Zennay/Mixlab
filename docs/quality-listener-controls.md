@@ -121,3 +121,25 @@ restrictive `pattern`, preselected A/B options, misleading `label`,
 The select's empty placeholder is the only option allowed an explicit
 `value=""`; all four substantive options must be unselected without any
 extra attributes. Generated official markup remains the positive fixture.
+
+## Real offline PCM16 source binding (hosted browser only)
+
+The independent browser smoke now also creates **ten deterministic private
+PCM16 WAV files** (five neutral trials × A/B; mono A and stereo B, 8 kHz,
+0.4 seconds). It opens the official local review page using `file:` in actual
+headless Chromium and explicitly loads every HTML audio source despite the
+intended `preload="none"` behaviour of real listening sessions.
+
+An asynchronous result is published only after all ten audio elements report
+valid finite duration, a local `file:` source and a non-error metadata-ready
+state. A separate fresh Chrome profile is used after deleting one WAV, and
+again after replacing it with malformed RIFF bytes: these **negative controls
+must fail**. This distinguishes working local audio source references from
+merely having ten superficially valid `<audio controls>` elements.
+
+Important evidence limit: `loadedmetadata` establishes media recognition
+and declared duration, **not** that every PCM frame was decoded, sound was
+played to real output hardware, signal continuity was perfect or a human
+could hear a good transition. The existing bounded PCM scanner and human
+listening study remain mandatory. Fixtures are generated in a disposable
+temporary folder and are never committed or uploaded as media.
