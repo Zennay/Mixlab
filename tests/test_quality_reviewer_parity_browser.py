@@ -1,7 +1,8 @@
 """Headless Chromium reviewer-code parity, using only synthetic offline HTML.
 
-Tests both the vulnerable canonical generator and the proposed guarded
-input. The instrumented page is disposable and never distributed to listeners.
+Tests the canonical generator in either state (unrepaired or patched), plus
+the proposed guarded input. A future upstream repair must not break these
+quality tests. The instrumented page is disposable and never distributed.
 """
 import base64
 import json
@@ -56,7 +57,7 @@ _SCRIPT = r"""
   }
   // The original generated HTML is supposed to demonstrate the defect;
   // proposed guarded HTML must refuse the invalid identities.
-  const expectedGuarded = document.documentElement.dataset.guarded === 'yes';
+  const expectedGuarded = input.hasAttribute('pattern');
   const failures = observed.filter(r => expectedGuarded ? (r.valid || r.exported)
                                                         : (!r.valid || !r.exported));
   const success =
@@ -82,15 +83,13 @@ class ReviewerParityBrowserTests(unittest.TestCase):
                     page = root / ("guarded.html" if guarded else "current.html")
                     write_review(page, ["trial-001"], "a" * 64)
                     html = page.read_text(encoding="utf-8")
-                    if guarded:
+                    if guarded and 'name="reviewer" required pattern="' + BROWSER_PATTERN + '"' not in html:
+                        self.assertIn('name="reviewer" required maxlength="40"', html)
                         html = html.replace(
                             'name="reviewer" required maxlength="40"',
                             'name="reviewer" required pattern="' + BROWSER_PATTERN +
-                            '" maxlength="40"',
-                            1,
+                            '" maxlength="40"', 1,
                         )
-                        html = html.replace('<html lang="en">',
-                                            '<html lang="en" data-guarded="yes">', 1)
                     self.assertIn("</html>", html)
                     page.write_text(html.replace(
                         "</html>", "<script>" + _SCRIPT + "</script></html>"
@@ -224,15 +223,19 @@ class ReviewerParityBrowserTests(unittest.TestCase):
     if (captured.length !== previous + 1) return null;
     return captured[captured.length - 1];
   };
+  const guarded = input.hasAttribute('pattern');
   const invalid = submit('listener 01');
   const valid = submit('listener-01');
   const toBase64 = value => btoa(unescape(encodeURIComponent(value)));
-  if (!invalid || !valid) {
+  // Current production accepts invalid identities. After the owner fixes
+  // native HTML validation, that same browser submission MUST be blocked.
+  if (!valid || Boolean(invalid) === guarded) {
     document.documentElement.dataset.mixlabEndToEnd = 'fail';
     return;
   }
   document.documentElement.dataset.mixlabEndToEnd = 'pass';
-  document.documentElement.dataset.invalidRating64 = toBase64(invalid);
+  document.documentElement.dataset.reviewerGateState = guarded ? 'guarded' : 'unguarded';
+  document.documentElement.dataset.invalidRating64 = invalid ? toBase64(invalid) : '';
   document.documentElement.dataset.validRating64 = toBase64(valid);
 })();
 """
@@ -266,15 +269,22 @@ class ReviewerParityBrowserTests(unittest.TestCase):
                 self.assertTrue(all(r["preference"] == "Tie" for r in payload["ratings"]))
                 return payload
 
-            invalid = extract("data-invalid-rating64")
+            gate = re.search(r'data-reviewer-gate-state="(guarded|unguarded)"', result.stdout)
+            self.assertIsNotNone(gate, "expected explicit browser gate state")
             valid = extract("data-valid-rating64")
-            self.assertEqual(invalid["reviewer"], "listener 01")
             self.assertEqual(valid["reviewer"], "listener-01")
             broken_path, good_path = root / "invalid.json", root / "valid.json"
-            broken_path.write_text(json.dumps(invalid), encoding="utf-8")
             good_path.write_text(json.dumps(valid), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "Invalid reviewer pseudonym"):
-                aggregate(pack, [broken_path])
+            if gate.group(1) == "guarded":
+                # The future fixed generator must prevent an unusable export.
+                self.assertIn('data-invalid-rating64=""', result.stdout)
+            else:
+                # Until then, prove that a completed browser session is lost.
+                invalid = extract("data-invalid-rating64")
+                self.assertEqual(invalid["reviewer"], "listener 01")
+                broken_path.write_text(json.dumps(invalid), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Invalid reviewer pseudonym"):
+                    aggregate(pack, [broken_path])
             accepted = aggregate(pack, [good_path])
             self.assertEqual(accepted["reviewers"], 1)
             self.assertEqual(accepted["trials"], 3)
