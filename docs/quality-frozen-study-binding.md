@@ -8,7 +8,9 @@ This isolated, standard-library QA gate checks **private pinned metadata consist
 2. The public receipt and private evidence must carry that same ID. Forging both copies no longer passes this optional QA check, even though the legacy pack_id remains unchanged.
 3. The existing private verify_pack validates every real PCM16 review WAV checksum against the frozen render records and answer key.
 4. Every frozen study pair maps to exactly one A/B trial and two recorded render families (baseline plus one preselected candidate); source hashes, source BPM and recipe family must agree with the preregistered rows, and no extra or duplicated pair may appear.
-5. The result includes only anonymous counts and explicit false claims for rights validation, original audio authentication, human preferences and milestone success.
+5. A valid frozen *protocol* also requires a strict integer `max_track_uses` (1–4), an actual track-use count within that limit, balanced candidate-family assignment (max difference 1 across bass_swap/echo_exit/hard_cut), one stable source hash per track ID and no source SHA reused under a different track ID. These gates execute before private PCM scanning and reject even self-consistently rehashed, otherwise plausible malformed studies.
+6. The result includes only anonymous counts and explicit false claims for rights validation, original audio authentication, human preferences and milestone success.
+
 
 Usage (private environment; supply the ID from your separately retained preregistration):
 
