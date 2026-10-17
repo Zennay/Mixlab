@@ -25,8 +25,23 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Compile precision source and regressions
         run: python3 -m compileall -q mixlab/quality/precision.py tests/test_quality_precision.py
-      - name: Run bounded original synthetic precision probes
-        run: python3 -m unittest discover -s tests -p "test_quality_precision.py" -v
+      - name: Run synthetic precision probes under a measured memory budget
+        shell: bash
+        run: |
+          /usr/bin/time -v -o precision-resources.txt python3 -m unittest discover -s tests -p "test_quality_precision.py" -v
+          grep 'Maximum resident set size' precision-resources.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          record = Path("precision-resources.txt").read_text()
+          match = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)", record)
+          if not match:
+              raise SystemExit("precision peak memory evidence missing")
+          rss = int(match.group(1))
+          print(f"precision synthetic peak RSS: {rss} KiB; CI admission cap: 196608 KiB")
+          if rss > 196608:
+              raise SystemExit("precision memory budget exceeded")
+          PY
       - name: Run current canonical quality and privacy regressions
         run: |
           python3 -m unittest discover -s tests -p "test_quality.py" -v
