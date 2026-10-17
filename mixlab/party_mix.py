@@ -10,7 +10,8 @@ import argparse
 import json
 from pathlib import Path
 
-from .session import _private_project_dir, make_session
+from .cueprep import _read_spec
+from .session import _manual_cues_present, _private_project_dir, make_session
 from .set_export import _unique_pairs, _valid_destination, export_set
 
 
@@ -31,6 +32,25 @@ def render_party_mix(manifest, session_directory, output_wav, transitions,
     _valid_destination(output, session_dir)
     if output.is_relative_to(session_dir) or session_dir.is_relative_to(output):
         raise ValueError("The output WAV must be outside the private session directory")
+    # Catch an impossible playlist before decoding any potentially expensive
+    # local files. Final frame/hash admission still belongs to set_export.
+    declared = _read_spec(source)
+    _manual_cues_present(declared)
+    pairs = declared.get("pairs")
+    by_id = {}
+    for pair in pairs:
+        pid = pair.get("id")
+        if not isinstance(pid, str) or pid in by_id:
+            raise ValueError("Manifest has duplicate or invalid transition IDs")
+        by_id[pid] = pair
+    previous = None
+    for pid, _family in selected:
+        pair = by_id.get(pid)
+        if pair is None:
+            raise ValueError("Selected pair is not in the source manifest")
+        if previous is not None and pair.get("a") != previous:
+            raise ValueError("Selected pairs do not form an outgoing-to-incoming song route")
+        previous = pair.get("b")
     # Full Studio must render every pair in order to satisfy user selections.
     studio_page = make_session(source, session_dir, suggestions=suggestions,
                                timeout_seconds=timeout_seconds)
