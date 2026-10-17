@@ -99,7 +99,21 @@ def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
             "informative": informative, "distinct": [len(x) for x in distinct],
             "grids": grids, "region_grids": region_grids,
             "region_info": region_info,
-            "region_distinct": [[len(x) for x in row] for row in region_distinct]}
+            "region_distinct": [[len(x) for x in row] for row in region_distinct],
+            # Internal-only: never emitted in the anonymous public JSON.
+            "_source_identity": _identity(after)}
+
+
+def _identity(metadata: os.stat_result) -> tuple[int, ...]:
+    """Bounded metadata receipt; neither PCM nor path is disclosed."""
+    return (metadata.st_dev, metadata.st_ino, metadata.st_size,
+            metadata.st_mtime_ns, metadata.st_ctime_ns)
+
+def _assert_source_identity(path: str | Path, expected: tuple[int, ...]) -> None:
+    """Fail closed if either private source changed/replaced during the pair scan."""
+    current = os.stat(path, follow_symlinks=False)
+    if not stat.S_ISREG(current.st_mode) or _identity(current) != expected:
+        raise ValueError("private WAV replaced or modified during comparison")
 
 
 def _precision_grid_loss(reference: dict, candidate: dict, an: int, bn: int) -> bool:
@@ -121,6 +135,12 @@ def compare_precision(baseline: str | Path, candidate: str | Path,
     b = _scan(candidate, chunk_frames=chunk_frames)
     if any(a[key] != b[key] for key in ("rate", "channels", "frames")):
         raise ValueError("incomparable WAV format/duration")
+    # Each scan's own fstat guard is necessary but not sufficient. A baseline
+    # could be replaced while the candidate is being read, yielding a mixed
+    # comparison that looks authoritative. Revalidate both paths after BOTH
+    # complete scans, including inode changes and newly inserted symlinks.
+    _assert_source_identity(baseline, a["_source_identity"])
+    _assert_source_identity(candidate, b["_source_identity"])
     decisions = []
     for ch in range(a["channels"]):
         an, bn = a["informative"][ch], b["informative"][ch]
