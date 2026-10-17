@@ -174,8 +174,15 @@ def compare_precision(baseline: str | Path, candidate: str | Path,
                          if outcome is True else [])}
 
 
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    """Never echo private command-line operands in parser error messages."""
+
+    def error(self, message: str) -> None:
+        self.exit(3, "MixLab precision: invalid arguments\\n".replace("\\n", "\n"))
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = _PrivateArgumentParser(
         description="Private, bounded PCM16 A/B precision-loss screen")
     parser.add_argument("baseline", metavar="BASELINE.wav")
     parser.add_argument("candidate", metavar="CANDIDATE.wav")
