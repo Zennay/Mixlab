@@ -407,10 +407,20 @@ def compare_spectral_balance(
     }
 
 
+_PUBLIC_METRIC_FIELDS = (
+    "sample_rate", "channels", "frames", "rms_dbfs",
+    "lowpass_180_ratio", "midpass_180_2500_ratio",
+    "highpass_2500_ratio",
+)
+
+
 def _public_metrics(metrics: dict) -> dict:
+    """Closed allowlist: future private metric fields cannot leak by default."""
     return {
-        k: round(v, 6) if k.endswith("_ratio") and v is not None else v
-        for k, v in metrics.items() if not k.startswith("_")
+        key: round(metrics[key], 6)
+        if key.endswith("_ratio") and metrics[key] is not None
+        else metrics[key]
+        for key in _PUBLIC_METRIC_FIELDS
     }
 
 
