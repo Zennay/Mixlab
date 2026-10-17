@@ -223,6 +223,10 @@ first PCM decode**, across baseline **plus every candidate**:
 - Combined declared PCM frame count must be at most **8,000,000 frames**,
   verified by bounded RIFF header parsing on the same safe regular-file
   descriptor wrapper. This checks only WAV metadata, not audio PCM samples.
+- Individual declared frame counts must also fall within **1–2,000,000**,
+  and every candidate must match the baseline's **channel count, sample
+  rate and exact frame count**, all before the baseline is PCM-decoded.
+  Previously these mismatches were only rejected after costly scans.
 - After all header probes the complete input identity set must still equal
   its pre-admission snapshot; the existing per-file and end-of-comparison
   identity checks remain active.
@@ -234,7 +238,8 @@ first PCM decode**, across baseline **plus every candidate**:
 - The new `tests/test_batch_budget.py` suite checks early byte/frame
   rejection without PCM scanning, exact inclusive budget acceptance,
   twenty small candidates, repeated inputs, changing inputs during the
-  header admission and path-redacted budget failure messages.
+  header admission, path-redacted budget failure messages, and per-file
+  frame/channel/rate compatibility before decoding.
 
 This is best-effort filesystem admission, not a promise of precise CPU time,
 thread isolation, atomic snapshots or listener preference. No private source
