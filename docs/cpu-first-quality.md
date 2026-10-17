@@ -411,3 +411,25 @@ confounds**; it is not beat detection, downbeat/phrase synchronization,
 DJ phrase compatibility or a quality winner. A deliberate anticipation,
 pickup or soft fade may have different first-prominent-sample times
 without being defective. Listening with permitted music remains essential.
+
+
+### Stereo channel-swap identity in blind A/B comparisons
+
+An exact left/right channel reversal produces different **interleaved PCM**
+bytes, so ordinary duplicate-content checks miss it even though no
+different music or transition was rendered. The bounded streaming scanner
+now computes a **second, private stereo-swap fingerprint** from only one
+4096-frame read chunk at a time. If a candidate is byte-for-byte equal
+to the baseline (or an earlier candidate) **after exchanging its L/R
+samples**, it emits
+`stereo_channel_swapped_pcm_inspect_for_reused_audio` and
+`stereo_swapped_pcm_of` with only a neutral baseline/candidate ID.
+Mono inputs and exact duplicate stereo/dual-mono inputs retain their
+existing classifications. Hashes, content samples, source paths and
+A/B answer assignments are not exported.
+
+A reversed stereo field can itself be an intended creative decision:
+this is a **review-for-independent-transition** warning, not proof of
+plagiarism, a listening preference or an overall DJ quality score.
+The extra scan uses bounded RAM, no model, no audio edits and no
+private-data uploads.
