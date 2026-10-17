@@ -176,6 +176,31 @@ class LocalDCQualityTests(unittest.TestCase):
         self.alt.write_bytes(content)
         self._assert_riff_rejected_before_pcm()
 
+    def test_cli_help_exits_zero_without_private_files(self):
+        for flags in (["--help"], ["-h"], ["--batch", "--help"]):
+            with self.subTest(flags=flags):
+                done = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.local_dc", *flags],
+                    text=True, capture_output=True, timeout=15,
+                )
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stderr, "")
+                self.assertIn("--strict", done.stdout)
+                self.assertIn("--batch", done.stdout)
+                self.assertNotIn(str(self.tmp.name), done.stdout)
+
+    def test_cli_help_does_not_echo_private_argument_values(self):
+        marker = str(Path(self.tmp.name) / "UNIQUE_PRIVATE_HELP_MARKER.wav")
+        done = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.local_dc",
+             marker, "--invalid=" + marker, "--help"],
+            text=True, capture_output=True, timeout=15,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, "")
+        self.assertNotIn(marker, done.stdout)
+        self.assertNotIn(marker, done.stderr)
+
     def test_extensible_invalid_metadata_cli_never_echoes_path(self):
         _wav(self.base)
         self._make_extensible(self.alt)
