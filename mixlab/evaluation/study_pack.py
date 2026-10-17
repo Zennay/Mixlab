@@ -84,7 +84,7 @@ def build(manifest_path, study_path, destination, seed=None):
         write_review(review / "index.html", cards, pack_id)
         dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
                                      "render_count": len(evidence), "status": "rendered-not-listener-validated",
-                                     "manifest_sha256": manifest_sha, "study_id": study["study_id"]})
+                                     "manifest_sha256": manifest_sha})
         verify_pack(root)
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
@@ -94,6 +94,35 @@ def build(manifest_path, study_path, destination, seed=None):
         raise ValueError("Destination appeared during rendering; packs are never overwritten")
     os.rename(root, final)
     return final / "receipt.json"
+
+
+def verify_study_pack(pack, study_path):
+    """Check a pack against an independently pinned frozen study file.
+
+    The study_id string in private evidence is descriptive and editable; this
+    check instead re-derives the binding from the verified study itself: same
+    pair order, same source recordings and only baseline versus the one
+    preselected family per trial. It is a consistency check, not a signature.
+    """
+    study = verify_study(study_path)
+    _receipt, evidence, trials = verify_pack(pack)
+    if evidence.get("study_id") != study["study_id"]:
+        raise ValueError("Pack was not rendered from this frozen study")
+    if len(trials) != len(study["pairs"]):
+        raise ValueError("Pack trial count differs from the frozen study")
+    renders = {}
+    for row in evidence["renders"]:
+        renders.setdefault(row.get("study_pair"), []).append(row)
+    for number, entry in enumerate(study["pairs"], 1):
+        trial = trials.get(f"trial-{number:03d}")
+        expected = {"baseline", entry["candidate_family"]}
+        rows = renders.get(entry["pair_id"], [])
+        if (trial is None or {trial["A"], trial["B"]} != expected or
+                {row["family"] for row in rows} != expected or len(rows) != 2 or
+                any(row["pair"] != trial["pair"] or
+                    row["source_hashes"] != [entry["a_sha256"], entry["b_sha256"]] for row in rows)):
+            raise ValueError(f"Pack does not match frozen study for {entry['pair_id']}")
+    return study["study_id"]
 
 
 def main(argv=None):

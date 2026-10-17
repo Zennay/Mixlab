@@ -12,7 +12,8 @@ from mixlab.cli import digest, dump
 from mixlab.engine import write_wav
 from mixlab.evaluation import aggregate, verify_pack
 from mixlab.evaluation.study import freeze, write_exclusive
-from mixlab.evaluation.study_pack import build, main
+from mixlab.evaluation.study_pack import build, main, verify_study_pack
+from mixlab.quality.pack import inspect_review_pack
 
 KEYS = ["C major", "G major", "A minor", "F# major", "D minor", "E minor"]
 
@@ -57,12 +58,40 @@ class StudyPackTests(unittest.TestCase):
         receipt, evidence, trials = verify_pack(self.pack)
         self.assertEqual(receipt["trial_count"], 5)
         self.assertEqual(receipt["render_count"], 10)
-        self.assertEqual(receipt["study_id"], self.study_doc["study_id"])
+        self.assertNotIn("study_id", receipt)  # public receipt keeps the canonical fields
         self.assertEqual(evidence["study_id"], self.study_doc["study_id"])
         for number, entry in enumerate(self.study_doc["pairs"], 1):
             trial = trials[f"trial-{number:03d}"]
             self.assertEqual({trial["A"], trial["B"]}, {"baseline", entry["candidate_family"]})
         self.assertEqual(sorted(p.name for p in (self.pack / "review").iterdir())[-1], "trial-005-B.wav")
+
+    def test_public_review_preflight_accepts_the_pack(self):
+        report = inspect_review_pack(self.pack / "review", require_generated_html=True,
+                                     require_receipt=True)
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_pinned_study_binds_pack_content(self):
+        self.assertEqual(verify_study_pack(self.pack, self.study), self.study_doc["study_id"])
+        # A forged study_id that matches another genuine study is rejected.
+        other = self.root / "other-study.json"
+        if not other.exists():
+            write_exclusive(other, freeze(self.root / "candidates.json", 5, 12))
+        with self.assertRaises(ValueError):
+            verify_study_pack(self.pack, other)
+        other_pairs = [(p["a"], p["b"], p["candidate_family"]) for p in json.loads(other.read_text())["pairs"]]
+        self.assertNotEqual(other_pairs, [(p["a"], p["b"], p["candidate_family"])
+                                          for p in self.study_doc["pairs"]])
+        # Rewriting the private study_id to the other study's id does not help either.
+        evidence_path = self.pack / "private" / "evidence.json"
+        original = evidence_path.read_text()
+        try:
+            evidence = json.loads(original)
+            evidence["study_id"] = json.loads(other.read_text())["study_id"]
+            evidence_path.write_text(json.dumps(evidence))
+            with self.assertRaises(ValueError):
+                verify_study_pack(self.pack, other)
+        finally:
+            evidence_path.write_text(original)
 
     def test_existing_aggregation_accepts_the_pack(self):
         _, _, trials = verify_pack(self.pack)
