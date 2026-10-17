@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 import wave
 
-from .riff import verify_private_pcm16_header
+from .private_source import open_verified_private_pcm16
 
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
@@ -89,15 +89,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     if not isinstance(window_ms, int) or isinstance(window_ms, bool) or not 20 <= window_ms <= 1000:
         raise ValueError("window_ms must be an integer between 20 and 1000")
     path = Path(path)
-    if path.stat().st_size > MAX_SOURCE_BYTES:
-        raise ValueError("WAV exceeds the 32 MiB screening limit")
-    # wave.open tolerates malformed byte-rate/block-align fields and may
-    # silently drop partial stereo frames. Validate headers separately
-    # before computing anonymous metrics, while allowing private metadata.
-    verify_private_pcm16_header(path)
 
     try:
-        with wave.open(str(path), "rb") as src:
+        # One nonblocking regular-file descriptor is used for RIFF header
+        # validation and PCM reads. No pathname re-open between checks.
+        with open_verified_private_pcm16(path, max_bytes=MAX_SOURCE_BYTES) as src:
             channels, sample_width, rate, nframes, compression, _ = src.getparams()
             if compression != "NONE" or sample_width != 2 or channels not in (1, 2):
                 raise ValueError("Only uncompressed PCM16 mono/stereo WAV is supported")
