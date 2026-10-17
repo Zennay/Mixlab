@@ -1,0 +1,53 @@
+name: MixLab ML-07 frozen ballot integrity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tests/test_quality_frozen_ballot_integrity.py"
+      - "docs/quality-frozen-ballot-integrity.md"
+      - ".github/workflows/ml07-frozen-ballot-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ml07-ballot-integrity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-evaluator-synthetic-ballot-contract:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout exact triggering source without token persistence
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert revision and install stdlib Python
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Real PCM and ratings admission matrix under 192 MiB address-space cap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile tests/test_quality_frozen_ballot_integrity.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_frozen_ballot_integrity.py' -v
