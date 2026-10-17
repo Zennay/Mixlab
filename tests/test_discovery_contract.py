@@ -32,6 +32,8 @@ class CompanionDiscoveryContractTests(unittest.TestCase):
             "test_fold_down_windows.py",
             "test_fold_down_oracle.py",
             "test_mono_playback_level.py",
+            "test_dc_pair_shift.py",
+            "test_dc_window_shift.py",
         }
         selected = {path.name for path in tests_dir.glob(pattern)}
         self.assertTrue(expected <= selected, "ML-07 test omitted from companion CI: " +
