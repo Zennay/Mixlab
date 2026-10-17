@@ -111,78 +111,132 @@ def _unchanged(record):
         raise ValueError("Private PCM source changed")
 
 
+
+MAX_BATCH_CANDIDATES = 7
+MAX_BATCH_TOTAL_FRAMES = 8_000_000
+
+
+def _validate_group(records):
+    """Validate all source identities, shapes and group budget before PCM."""
+    if not 2 <= len(records) <= MAX_BATCH_CANDIDATES + 1:
+        raise ValueError("Private A/B group size out of bounds")
+    original_shape = records[0][3:]
+    if any(item[3:] != original_shape for item in records[1:]):
+        raise ValueError("Private A/B sample rates or frame counts differ")
+    if original_shape[1] * len(records) > MAX_BATCH_TOTAL_FRAMES:
+        raise ValueError("Private A/B frame budget exceeded")
+    identities = [(rec[2][0], rec[2][1]) for rec in records]
+    if len(set(identities)) != len(identities):
+        raise ValueError("Private A/B sources must be distinct regular files")
+
+
+def _measure_open_pair(a, b):
+    """Measure a pair of admitted open PCM descriptors at their PCM offsets."""
+    rate, frames = a[3], a[4]
+    window_frames = max(1, rate * WINDOW_MS // 1000)
+    sum_sq = [[0, 0], [0, 0]]
+    count = 0
+    active_windows = 0
+    active_streak_frames = 0
+    longest_active_streak_frames = 0
+    consecutive_shift_frames = 0
+    longest_shift_frames = 0
+    max_shift = 0.0
+    warned = False
+    remaining = frames
+    while remaining:
+        take = min(remaining, BLOCK_FRAMES)
+        left, right = a[1].read(take * 4), b[1].read(take * 4)
+        if len(left) != take * 4 or len(right) != take * 4:
+            raise ValueError("Private PCM payload incomplete")
+        # Framewise streaming; at most two 4096-frame input buffers.
+        for (l0, r0), (l1, r1) in zip(struct.iter_unpack("<hh", left),
+                                        struct.iter_unpack("<hh", right)):
+            sum_sq[0][0] += l0 * l0
+            sum_sq[0][1] += r0 * r0
+            sum_sq[1][0] += l1 * l1
+            sum_sq[1][1] += r1 * r1
+            count += 1
+            if count == window_frames:
+                floor = (MIN_ACTIVE_RMS * 32768) ** 2 * count
+                if all(value >= floor for pair in sum_sq for value in pair):
+                    active_windows += 1
+                    active_streak_frames += count
+                    longest_active_streak_frames = max(longest_active_streak_frames, active_streak_frames)
+                    db_a = 10 * math.log10(sum_sq[0][0] / sum_sq[0][1])
+                    db_b = 10 * math.log10(sum_sq[1][0] / sum_sq[1][1])
+                    delta = abs(db_b - db_a)
+                    max_shift = max(max_shift, delta)
+                    if delta >= WARN_SHIFT_DB:
+                        consecutive_shift_frames += count
+                        longest_shift_frames = max(longest_shift_frames, consecutive_shift_frames)
+                        warned |= consecutive_shift_frames * 1000 >= WARN_PERSIST_MS * rate
+                    else:
+                        consecutive_shift_frames = 0
+                else:
+                    active_streak_frames = 0
+                    consecutive_shift_frames = 0
+                sum_sq = [[0, 0], [0, 0]]
+                count = 0
+        remaining -= take
+    # Remainder <250ms is deliberately non-decisive, never counted as 1 second.
+    _unchanged(a)
+    _unchanged(b)
+    # Distinguish insufficient evidence from a conclusive negative result.
+    enough_active_audio = longest_active_streak_frames * 1000 >= WARN_PERSIST_MS * rate
+    status = ("insufficient_active_audio" if not enough_active_audio else
+              "review_pan_balance" if warned else "no_sustained_pan_bias_detected")
+    return {
+        "schema_version": 1,
+        "format": {"sample_rate": rate, "frames": frames, "channels": 2},
+        "active_windows": active_windows,
+        "longest_continuous_active_ms": round(longest_active_streak_frames * 1000 / rate),
+        "evidence_status": status,
+        "max_pan_balance_delta_db": round(max_shift, 3) if active_windows else None,
+        "longest_sustained_shift_ms": round(longest_shift_frames * 1000 / rate),
+        "stereo_pan_confound_review": bool(warned) if enough_active_audio else None,
+        "interpretation": "technical_screen_only_not_musical_preference",
+    }
+
+
 def inspect(baseline, candidate):
-    """Return anonymous technical balance diagnostics for equally long stereo WAVs."""
+    """Return anonymous technical balance diagnostics for one A/B pair."""
     with ExitStack() as stack:
         a = _admit(baseline, stack)
         b = _admit(candidate, stack)
-        if _identity(os.fstat(a[1].fileno()))[:2] == _identity(os.fstat(b[1].fileno()))[:2]:
-            raise ValueError("A/B sources must be distinct files")
-        if a[3:] != b[3:]:
-            raise ValueError("A/B sample rate or duration differs")
-        rate, frames = a[3], a[4]
-        window_frames = max(1, rate * WINDOW_MS // 1000)
-        sum_sq = [[0, 0], [0, 0]]
-        count = 0
-        active_windows = 0
-        active_streak_frames = 0
-        longest_active_streak_frames = 0
-        consecutive_shift_frames = 0
-        longest_shift_frames = 0
-        max_shift = 0.0
-        warned = False
-        remaining = frames
-        while remaining:
-            take = min(remaining, BLOCK_FRAMES)
-            left, right = a[1].read(take * 4), b[1].read(take * 4)
-            if len(left) != take * 4 or len(right) != take * 4:
-                raise ValueError("Private PCM payload incomplete")
-            # Framewise streaming; at most two 4096-frame input buffers.
-            for (l0, r0), (l1, r1) in zip(struct.iter_unpack("<hh", left),
-                                            struct.iter_unpack("<hh", right)):
-                sum_sq[0][0] += l0 * l0
-                sum_sq[0][1] += r0 * r0
-                sum_sq[1][0] += l1 * l1
-                sum_sq[1][1] += r1 * r1
-                count += 1
-                if count == window_frames:
-                    floor = (MIN_ACTIVE_RMS * 32768) ** 2 * count
-                    if all(value >= floor for pair in sum_sq for value in pair):
-                        active_windows += 1
-                        active_streak_frames += count
-                        longest_active_streak_frames = max(longest_active_streak_frames, active_streak_frames)
-                        db_a = 10 * math.log10(sum_sq[0][0] / sum_sq[0][1])
-                        db_b = 10 * math.log10(sum_sq[1][0] / sum_sq[1][1])
-                        delta = abs(db_b - db_a)
-                        max_shift = max(max_shift, delta)
-                        if delta >= WARN_SHIFT_DB:
-                            consecutive_shift_frames += count
-                            longest_shift_frames = max(longest_shift_frames, consecutive_shift_frames)
-                            warned |= consecutive_shift_frames * 1000 >= WARN_PERSIST_MS * rate
-                        else:
-                            consecutive_shift_frames = 0
-                    else:
-                        active_streak_frames = 0
-                        consecutive_shift_frames = 0
-                    sum_sq = [[0, 0], [0, 0]]
-                    count = 0
-            remaining -= take
-        # Remainder <250ms is deliberately non-decisive, never counted as 1 second.
-        _unchanged(a)
-        _unchanged(b)
-        # Distinguish insufficient evidence from a conclusive negative result.
-        enough_active_audio = longest_active_streak_frames * 1000 >= WARN_PERSIST_MS * rate
-        status = ("insufficient_active_audio" if not enough_active_audio else
-                  "review_pan_balance" if warned else "no_sustained_pan_bias_detected")
+        _validate_group((a, b))
+        return _measure_open_pair(a, b)
+
+
+def inspect_batch(baseline, candidates):
+    """Fail-closed A/B comparisons sharing one pinned baseline descriptor.
+
+    All inputs are checked for shape/aliasing and aggregate frame budget before
+    any PCM payload is decoded. Neither names nor source hashes are reported.
+    """
+    if not isinstance(candidates, (tuple, list)) or not 1 <= len(candidates) <= MAX_BATCH_CANDIDATES:
+        raise ValueError("Private A/B candidate count out of bounds")
+    with ExitStack() as stack:
+        records = [_admit(baseline, stack)]
+        records.extend(_admit(candidate, stack) for candidate in candidates)
+        _validate_group(records)
+        responses = []
+        for index, candidate in enumerate(records[1:], start=1):
+            # Baseline FD remains pinned for the entire multi-candidate scan.
+            records[0][1].seek(44)
+            candidate[1].seek(44)
+            metrics = _measure_open_pair(records[0], candidate)
+            responses.append({"candidate_id": f"candidate-{index:02d}", "metrics": metrics})
+        # A previously checked source may be replaced while a later candidate
+        # is running; check EVERY original descriptor and path at group end.
+        for record in records:
+            _unchanged(record)
         return {
             "schema_version": 1,
-            "format": {"sample_rate": rate, "frames": frames, "channels": 2},
-            "active_windows": active_windows,
-            "longest_continuous_active_ms": round(longest_active_streak_frames * 1000 / rate),
-            "evidence_status": status,
-            "max_pan_balance_delta_db": round(max_shift, 3) if active_windows else None,
-            "longest_sustained_shift_ms": round(longest_shift_frames * 1000 / rate),
-            "stereo_pan_confound_review": bool(warned) if enough_active_audio else None,
+            "format": {"sample_rate": records[0][3], "frames": records[0][4], "channels": 2},
+            "candidate_count": len(responses),
+            "total_source_frames": records[0][4] * len(records),
+            "candidates": responses,
             "interpretation": "technical_screen_only_not_musical_preference",
         }
 
@@ -198,17 +252,22 @@ class _PrivateArgumentParser(argparse.ArgumentParser):
 def main(argv=None):
     parser = _PrivateArgumentParser(description="Offline anonymous stereo pan A/B screen")
     parser.add_argument("baseline")
-    parser.add_argument("candidate")
+    parser.add_argument("candidate", nargs="+",
+                        help="One candidate for pair mode, 2..7 for group mode")
     parser.add_argument("--fail-on-review", action="store_true",
                         help="Exit 3 on technical review or insufficient evidence")
     args = parser.parse_args(argv)
     try:
-        result = inspect(args.baseline, args.candidate)
+        if len(args.candidate) == 1:
+            result = inspect(args.baseline, args.candidate[0])
+            review = result["stereo_pan_confound_review"] is not False
+        else:
+            result = inspect_batch(args.baseline, args.candidate)
+            review = any(row["metrics"]["stereo_pan_confound_review"] is not False
+                         for row in result["candidates"])
         print(json.dumps(result, sort_keys=True))
         # Optional automation gate; never silently label absent evidence clean.
-        if args.fail_on_review and result["stereo_pan_confound_review"] is not False:
-            return 3
-        return 0
+        return 3 if args.fail_on_review and review else 0
     except (OSError, ValueError, OverflowError, struct.error, ZeroDivisionError):
         print("Stereo pan preflight rejected private input", file=sys.stderr)
         return 2
