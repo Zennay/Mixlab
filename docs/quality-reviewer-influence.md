@@ -84,6 +84,35 @@ The GitHub-hosted workflow runs exact trigger SHA code on Python
 music, network service, production VPS CPU, queue/worker, personal
 reviewer identities or other worker branch is touched.
 
+## Confirmed exact pinned ML-05 producer integration
+
+The hosted workflow checks out genuine independent [ML-05 PR #71](https://github.com/Zennay/Mixlab/pull/71)
+at immutable commit `e512d8fc2eae79efe765dc9a523105fad68a196f`
+into a throwaway workspace. It copies only this self-contained QA
+module and the already-merged frozen study binding so the actual
+original study producer, frozen pack, ten real procedural PCM outputs,
+and original official `aggregate()` all execute without altering
+the owner's branch.
+
+Both Python **3.13 and 3.14** were tested end-to-end:
+
+- **Three synthetic reviewers**: five candidate choices, three
+  candidate/two baseline choices, and five baseline choices. The
+  genuine `aggregate()` sees **8/15 candidate clicks**; omitting the
+  candidate-only reviewer flips candidate preference to **3/10**,
+  making the review gate return an anonymous methodological HOLD.
+- **Five synthetic reviewers**: every reviewer chooses candidate
+  on every one of five trials, all **25/25** candidate clicks.
+  Deleting each whole reviewer leaves a 100% candidate vote fraction,
+  so the omission *sensitivity* screen is clear. The report **still
+  always has `milestone_pass=false`**, and does not establish human
+  preference or musical quality.
+
+This integration uses actual checksum-bound PCM scans, not a mocked
+validator. Only GitHub-hosted workers process synthetic recordings,
+with a 192MiB virtual-memory budget. Its source music is procedural,
+and no actual people have listened.
+
 ## Known limits and handoff
 
 Files in symlinked *ancestor* directories are addressed separately
