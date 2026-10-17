@@ -60,3 +60,37 @@ This is **synthetic DSP/quality QA only**. No private music, human preference
 ratings, sample-rate pitch proof or authorization for publication is claimed.
 M1 remains open, including real rights-safe A/B listening and independent
 audit. No VPS workload has been added while memory/swap pressure is high.
+
+## Private WAV format integrity (additional ML-07 improvement)
+
+The direct `scan_wav` / `compare_wavs` quality commands previously relied
+only on Python `wave.open` to interpret the PCM16 header. That reader may
+tolerate a bogus `byte_rate`/`block_align`, a partial stereo data frame, or
+a malformed RIFF chunk extent. A preflight could have reported legitimate
+technical metrics for a recording whose playback interpretation differs in
+another audio client.
+
+The new `mixlab/quality/riff.py` checks the private WAVE container **before
+PCM decoding**: RIFF/WAVE identity and declared bounds; sane unique `fmt`;
+PCM16 mono/stereo and 8–96 kHz; arithmetic consistency for bit depth,
+channel block alignment and byte rate; valid optional `fmt` extension size;
+and integral PCM frames within the declared RIFF boundary. Only chunk headers
+and 16–18 bytes of format metadata are read. Unknown private metadata chunks
+are skipped using RIFF padding rules, never copied to the report. Private
+trailing data outside the declared RIFF is deliberately still tolerated for
+the existing metadata-insensitive PCM fingerprint contract. This is **not**
+a general-purpose WAV verifier, authoring tool, nor permission to ship that
+metadata inside public listener packs: `quality.pack` continues to enforce
+the stricter canonical metadata-free public-WAV contract.
+
+`tests/test_private_riff.py` adds deterministic positive and adversarial
+cases for valid mono/stereo, private metadata before/after PCM, forged
+byte rate, block alignment, bit depth, partial-frame truncation, invalid
+RIFF extents, duplicate/misordered `fmt`/`data` chunks, legitimate optional
+`fmt` extension and corrupt extension size, and sanitized strict/default
+CLI failures without source paths. The existing public pack and blind-rating
+code are untouched.
+
+Exact-head quality Actions proof must include both
+`test_stereo_polarity.py` and `test_private_riff.py` via the companion
+suite. Do not promote the draft PR on a CI run for an earlier SHA.
