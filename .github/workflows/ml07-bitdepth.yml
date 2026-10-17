@@ -1,0 +1,45 @@
+name: ML-07 bounded PCM resolution A/B verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mixlab/quality/bitdepth.py'
+      - 'tests/test_quality_bitdepth.py'
+      - 'tests/test_quality_bitdepth_stress.py'
+      - 'docs/quality-effective-bitdepth.md'
+      - '.github/workflows/ml07-bitdepth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pcm-resolution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.13', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # pinned v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Exact SHA plus synthetic quality and privacy suite
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python --version
+          python -m compileall -q mixlab/quality/bitdepth.py tests/test_quality_bitdepth.py tests/test_quality_bitdepth_stress.py
+          ulimit -v 196608
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_bitdepth.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_bitdepth_stress.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
