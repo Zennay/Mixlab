@@ -82,3 +82,28 @@ are still necessary for M1 milestone claims.
 
 Automated regressions use only synthetic HTML generated via
 `mixlab.cli.write_review` and never require copyrighted audio or a VPS render.
+
+## Hosted real-browser smoke (synthetic)
+
+`tests/test_quality_listener_browser.py` provides a complementary browser
+execution check. On a GitHub-hosted Ubuntu runner with preinstalled Chromium
+or Google Chrome, it opens a **generated local, original five-trial HTML page**
+and uses isolated in-page test instrumentation to exercise the real DOM:
+
+- A required but blank rating must block `form.requestSubmit()`.
+- With all five ratings selected, `A`, `B`, `Tie`, `Both unusable`, and
+  `A` must serialize to the correct trial IDs and frozen synthetic pack ID.
+- The generated script must export the correct `schema_version` and anonymous
+  reviewer code, update its status announcement and expose ten A/B controls.
+- The synthetic harness intercepts download clicks and Blob generation;
+  it does not upload audio, create real reviewer ratings or open network
+  endpoints. Browser execution uses a bounded 35-second process and a
+  disposable isolated profile, *only* on hosted CI, not the swap-constrained VPS.
+
+The JavaScript instrumentation is added **only to a temporary synthetic
+fixture**; it is never part of the review UI and never weakens the static
+generated-asset equality gate. This proves basic runtime browser form/export
+behavior in one headless engine. It is **not** independent human usability,
+a multi-browser/screen-reader/keyboard audit, listener preference evidence or
+a release authorization. Run a separate manual, rights-safe listener study
+before any M1 preference claims.
