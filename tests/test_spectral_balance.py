@@ -430,6 +430,51 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertIn("mid_temporal_spectral_shift_inspect", row["warnings"])
         self.assertIsInstance(row["temporal_mid_proxy_mismatch_fraction"], float)
 
+    def test_disjoint_audio_halves_do_not_appear_spectrally_comparable(self):
+        make_segmented_wav(self.base, [100] * 4 + [0] * 4)
+        make_segmented_wav(self.other, [0] * 4 + [100] * 4)
+        report = self.report()
+        row = report["candidates"][0]
+        self.assertAlmostEqual(0, row["low_proxy_delta_db"], delta=0.5)
+        self.assertEqual(1.0, row["temporal_audibility_mismatch_fraction"])
+        self.assertIn("temporal_audibility_alignment_inspect", row["warnings"])
+        self.assertIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+        for band in ("low", "mid", "high"):
+            self.assertIsNone(row["temporal_" + band + "_proxy_mismatch_fraction"])
+        self.assertNotIn("_spans", json.dumps(report))
+        self.assertNotIn(str(self.dir), json.dumps(report))
+
+    def test_equal_aligned_partial_silence_has_enough_coverage(self):
+        make_segmented_wav(self.base, [100] * 4 + [0] * 4)
+        make_segmented_wav(self.other, [100] * 4 + [0] * 4)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.0, row["temporal_audibility_mismatch_fraction"])
+        self.assertNotIn("temporal_audibility_alignment_inspect", row["warnings"])
+        self.assertNotIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+        self.assertEqual(0.0, row["temporal_low_proxy_mismatch_fraction"])
+
+    def test_sparse_same_span_audio_cannot_claim_temporal_spectral_proof(self):
+        make_segmented_wav(self.base, [100] + [0] * 7)
+        make_segmented_wav(self.other, [100] + [0] * 7)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.0, row["temporal_audibility_mismatch_fraction"])
+        self.assertIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+        for band in ("low", "mid", "high"):
+            self.assertIsNone(row["temporal_" + band + "_proxy_mismatch_fraction"])
+
+    def test_one_changed_audible_span_reports_alignment_not_coordinates(self):
+        make_segmented_wav(self.base, [100] * 5 + [0] * 3, channels=2)
+        make_segmented_wav(self.other, [100] * 4 + [0] * 4, channels=2)
+        report = self.report()
+        row = report["candidates"][0]
+        self.assertEqual(0.125, row["temporal_audibility_mismatch_fraction"])
+        self.assertIn("temporal_audibility_alignment_inspect", row["warnings"])
+        self.assertNotIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+        self.assertNotIn("span_energy", json.dumps(report))
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
     def test_one_short_spectral_change_does_not_trigger_persistent_bias(self):
         make_segmented_wav(self.base, [100] * 8)
         make_segmented_wav(self.other, [5000] + [100] * 7)
