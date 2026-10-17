@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 import statistics
 from typing import Protocol
+from types import MappingProxyType
 from ..ingest import digest, inspect_wav, number, pcm_blocks
 
 VERSION = "energy-onset-v2"
@@ -151,13 +152,38 @@ class ManualProvider:
         number(first_beat, "first beat", 0, 250)
         if not isinstance(annotator, str) or not annotator.strip():
             raise ValueError("Manual annotations need an annotator")
-        if key is not None and key not in {f"{n} {mode}" for n in
+        if key is not None and (not isinstance(key, str) or key not in {
+                f"{n} {mode}" for n in
                 ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
-                for mode in ("major", "minor")}:
+                for mode in ("major", "minor")}):
             raise ValueError("Unsupported manual key")
-        self.config = dict(bpm=bpm, first_beat=first_beat, downbeats=tuple(downbeats),
-                           phrases=tuple(phrases), key=key, annotator=annotator)
-        self.version = "manual-v1-" + hashlib.sha256(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
+        def admitted_points(points, label):
+            # Do not consume arbitrary iterators, string characters or huge
+            # inputs before an audio file is inspected; the cache also caps
+            # serialized beat grids. These values are part of the version ID.
+            if not isinstance(points, (tuple, list)) or len(points) > 10000:
+                raise ValueError("Invalid manual annotation sequence")
+            previous = -1.
+            for point in points:
+                number(point, label, 0, 250)
+                if point <= previous:
+                    raise ValueError("Annotations must increase strictly")
+                beat = (point - first_beat) * bpm / 60
+                if beat < -1e-6 or abs(beat - round(beat)) > .02:
+                    raise ValueError("Annotation is not on the declared beatgrid")
+                previous = point
+            return tuple(points)
+        downbeats = admitted_points(downbeats, "downbeats")
+        phrases = admitted_points(phrases, "phrases")
+        if not set(phrases).issubset(downbeats):
+            raise ValueError("Phrase starts must be confirmed downbeats")
+        config = dict(bpm=bpm, first_beat=first_beat, downbeats=downbeats,
+                      phrases=phrases, key=key, annotator=annotator)
+        self.version = "manual-v1-" + hashlib.sha256(
+            json.dumps(config, sort_keys=True).encode()).hexdigest()
+        # A post-construction edit must never silently reuse a prior
+        # config-addressed cache/version as a different manual annotation.
+        self.config = MappingProxyType(config)
 
     def analyze(self, path):
         info = inspect_wav(path)
