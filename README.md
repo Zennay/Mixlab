@@ -44,7 +44,7 @@ nummers, selecteer handmatig de A/B-startmomenten en download de keuze-JSON.
 Rond vervolgens af en maak optioneel direct één volledig tweetrack-WAV:
 
 ~~~bash
-python3 -m mixlab.interactive_session finish /private/mixlab-project-01 /private/mixlab-cue-selections.json \\
+python3 -m mixlab.interactive_session finish /private/mixlab-project-01 /private/mixlab-cue-selections.json \
   --pair pair-001 --full-song --full-song-family bass_swap
 ~~~
 
