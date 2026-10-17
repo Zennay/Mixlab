@@ -243,10 +243,13 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
 
     def test_legal_nonzero_offsets_and_negative_gain_are_allowed(self):
-        self.edit("private/evidence.json", lambda doc: (
-            doc["renders"][0]["recipe"].__setitem__("a_start", 0.1),
-            doc["renders"][0]["recipe"].__setitem__("b_start", 0.3),
-            doc["renders"][0]["recipe"].__setitem__("gain_db", -12.0)))
+        # A legal offset/gain change is fine only when *both* sides of the
+        # blinded pair retain the same physical comparison recipe.
+        self.edit("private/evidence.json", lambda doc: [
+            (row["recipe"].__setitem__("a_start", 0.1),
+             row["recipe"].__setitem__("b_start", 0.3),
+             row["recipe"].__setitem__("gain_db", -12.0))
+            for row in doc["renders"][:2]])
         self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
 
     def test_forged_render_beats_types_and_range_detected(self):
