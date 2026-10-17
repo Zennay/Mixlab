@@ -177,6 +177,35 @@ def _object(value, name):
     return value
 
 
+def _preflight_pair_schema(pairs, track_ids):
+    """Reject manifest recipe mistakes before private WAV/hash inspections.
+
+    Format compatibility, true length and rights still require per-file
+    validation later; this only checks facts already present in the JSON.
+    """
+    if not isinstance(pairs, list) or not 1 <= len(pairs) <= 10:
+        raise ValueError("Register 1–10 pairs")
+    seen = set()
+    for pair in pairs:
+        _object(pair, "pair")
+        pid = _identifier(pair.get("id"), "pair id")
+        if pid in seen:
+            raise ValueError("Duplicate pair id")
+        seen.add(pid)
+        a_id = _identifier(pair.get("a"), "pair a")
+        b_id = _identifier(pair.get("b"), "pair b")
+        if a_id not in track_ids or b_id not in track_ids or a_id == b_id:
+            raise ValueError("Pair needs distinct registered tracks")
+        bpm = number(pair.get("bpm"), "pair bpm", 30, 300)
+        beats = pair.get("beats", 8)
+        if type(beats) is not int or not 1 <= beats <= 64:
+            raise ValueError("beats must be an integer from 1 to 64")
+        if beats * 60 / bpm > 120:
+            raise ValueError("Transition exceeds duration budget")
+        number(pair.get("a_start", 0), "a_start", 0, 250)
+        number(pair.get("b_start", 0), "b_start", 0, 250)
+
+
 def _pairs(pairs, tracks):
     if not isinstance(pairs, list) or not 1 <= len(pairs) <= 10:
         raise ValueError("Register 1–10 pairs")
@@ -361,6 +390,8 @@ def validate_library(manifest_path):
         recording = track.get("recording_id", tid)
         _identifier(recording, "recording id")
         prepared.append((track, tid, path, sha, partition, recording))
+
+    _preflight_pair_schema(manifest.get("pairs"), seen_ids)
 
     for track, tid, path, sha, partition, recording in prepared:
         info, observed_sha = inspect_wav_and_digest(path)
