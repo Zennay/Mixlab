@@ -167,6 +167,27 @@ def make_stereo_levels_wav(path, levels, *, rate=48000):
         out.writeframes(samples.tobytes())
 
 
+def make_two_band_stereo_phase_wav(
+    path, *, bass_right_sign=1, treble_right_sign=1, bass_gain=3000, treble_gain=9000
+):
+    """Synthetic same-energy 100Hz and 5kHz tones with independent R phase."""
+    samples = array("h")
+    for frame in range(12000):
+        bass = bass_gain * math.sin(2 * math.pi * 100 * frame / 48000)
+        treble = treble_gain * math.sin(2 * math.pi * 5000 * frame / 48000)
+        samples.extend((
+            int(bass + treble),
+            int(bass_right_sign * bass + treble_right_sign * treble),
+        ))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -547,6 +568,88 @@ class SpectralBalanceTests(unittest.TestCase):
         make_wav(self.base, freq=1000, channels=2)
         make_wav(self.other, freq=1000, channels=2)
         self.assertNotIn("stereo_channel_near_silence_inspect", self.report()["candidates"][0]["warnings"])
+
+    def test_bass_mono_loss_hidden_by_loud_treble_passes_broadband_fold(self):
+        make_two_band_stereo_phase_wav(self.base, bass_right_sign=1)
+        make_two_band_stereo_phase_wav(self.other, bass_right_sign=-1)
+        report = self.report()
+        row = report["candidates"][0]
+        self.assertAlmostEqual(0, row["rms_delta_db_vs_baseline"], delta=0.04)
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertFalse(row["stereo_high_band_mono_fold_cancellation_risk"])
+        self.assertTrue(row["stereo_low_band_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_low_band_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertFalse(any("spectral_balance_shift_inspect" in w for w in row["warnings"]))
+        serialized = json.dumps(report, allow_nan=False)
+        self.assertNotIn("_mono_fold_bands", serialized)
+        self.assertNotIn(str(self.dir), serialized)
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_treble_mono_loss_hidden_by_loud_bass_is_detected(self):
+        make_two_band_stereo_phase_wav(
+            self.base, bass_gain=9000, treble_gain=3000
+        )
+        make_two_band_stereo_phase_wav(
+            self.other, treble_right_sign=-1, bass_gain=9000, treble_gain=3000
+        )
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertTrue(row["stereo_high_band_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_high_band_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_identical_hidden_bass_cancellation_still_requires_review(self):
+        make_two_band_stereo_phase_wav(self.base, bass_right_sign=-1)
+        make_two_band_stereo_phase_wav(self.other, bass_right_sign=-1)
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_low_band_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_low_band_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_band_mono_fold_risk_is_symmetric_in_ab_direction(self):
+        make_two_band_stereo_phase_wav(self.base, bass_right_sign=-1)
+        make_two_band_stereo_phase_wav(self.other)
+        left = self.report()["candidates"][0]
+        right = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        for band in ("low", "mid", "high"):
+            self.assertEqual(
+                left["stereo_" + band + "_band_mono_fold_cancellation_risk"],
+                right["stereo_" + band + "_band_mono_fold_cancellation_risk"],
+            )
+
+    def test_band_fold_warns_only_for_meaningful_band_energy(self):
+        make_two_band_stereo_phase_wav(
+            self.base, bass_gain=100, treble_gain=10000
+        )
+        make_two_band_stereo_phase_wav(
+            self.other, bass_right_sign=-1, bass_gain=100, treble_gain=10000
+        )
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_low_band_mono_fold_cancellation_risk"])
+        self.assertFalse(row["stereo_high_band_mono_fold_cancellation_risk"])
+        self.assertNotIn("stereo_low_band_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_band_fold_is_gain_invariant_and_mono_not_applicable(self):
+        make_two_band_stereo_phase_wav(self.base, bass_right_sign=-1)
+        make_two_band_stereo_phase_wav(
+            self.other, bass_right_sign=-1, bass_gain=2400, treble_gain=7200
+        )
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_low_band_mono_fold_cancellation_risk"])
+        make_wav(self.base, gain=8000)
+        make_wav(self.other, gain=8000)
+        mono = self.report()["candidates"][0]
+        self.assertFalse(any("band_mono_fold" in key for key in mono))
+        self.assertFalse(any("band_mono_fold" in warning for warning in mono["warnings"]))
+
+    def test_band_fold_risk_does_not_change_with_read_block_size(self):
+        make_two_band_stereo_phase_wav(self.base)
+        make_two_band_stereo_phase_wav(self.other, bass_right_sign=-1)
+        original = self.report()
+        for read_size in (1, 257, 4096, 8191):
+            with self.subTest(read_size=read_size), patch.object(spectral, "READ_FRAMES", read_size):
+                self.assertEqual(original, self.report())
 
     def test_stereo_polarity_flip_detects_mono_cancellation_despite_equal_energy(self):
         make_stereo_polarity_wav(self.base)
