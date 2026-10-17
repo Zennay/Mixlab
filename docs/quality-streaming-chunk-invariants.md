@@ -19,7 +19,7 @@ Blind preference and lawful real-media access are still missing.
 - Position one isolated 10,000-count sample at frames 4094, 4095, 4096 and
   4097, in both mono and stereo, verifying the native click counter, frames
   and position-invariant peak/adjacent-step/near-clipping metrics.
-- Place a 480-frame all-channel zero gap at multiple 4096-boundary offsets;
+- Repeat impulse detection at 8, 16, 48 and 96 kHz (mono/stereo)\n  to protect sample-addressed scanning independently of sample rate.\n- Place a 480-frame all-channel zero gap at multiple 4096-boundary offsets;
   verify a >=60 ms *interior* PCM dropout is flagged, but not misidentified
   as a >=200 ms coarse-window gap.
 - Place the same dropout in the left channel while the right remains clearly
@@ -28,7 +28,7 @@ Blind preference and lawful real-media access are still missing.
 - Compare identical PCM in two different valid RIFF containers (with/without
   JUNK) and verify private PCM digests, window samples and public metrics
   are identical. Private digests are **not printed**.
-- Check A/B candidate warnings retain an isolated impulse; verify JSON does
+- Verify a public blind-review WAV with extra RIFF JUNK metadata is refused\n  even when the internal diagnostic reader can decode that PCM unchanged.\n- Check A/B candidate warnings retain an isolated impulse; verify JSON does
   not contain fixture locations or source bytes.
 - Refuse a declared PCM16 WAV whose actual data is truncated.
 
