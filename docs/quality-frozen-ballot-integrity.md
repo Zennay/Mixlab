@@ -20,7 +20,7 @@ The extra integration matrix proves that **all three rating-consuming gates**
 reject: a different pack ID, reviewer pseudonyms that the ingest grammar
 refuses, case-insensitive duplicate reviewers, boolean schema versions, a
 missing trial, a duplicated trial, a foreign trial and invalid preferences.
-The same input with a repeated ballot file path is also rejected. The
+The same input with a repeated ballot file path is also rejected. Four further raw JSON corruptions (trailing second document, duplicate object key, nonfinite JSON token and invalid UTF-8) plus a symlinked ballot path are independently rejected by each of the three rating-consuming gates. The
 pre-rating screen deliberately remains able to inspect the unchanged frozen
 answer key: it must never be misinterpreted as post-rating admission.
 
