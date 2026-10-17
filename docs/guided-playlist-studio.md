@@ -64,6 +64,36 @@ python3 -m mixlab.set_composer render \
   /private/mixlab-party.wav
 ~~~
 
+## Extra: laat MixLab overgangsideeën uit echte PCM-energie voorstellen
+
+Als je de **manueel gecontroleerde eerste downbeat van ieder nummer**
+invult, kun je in dezelfde opdracht meteen een privé ideeënboard laten
+maken:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --beats 16 --ideas
+~~~
+
+Deze optie gebruikt de bestaande energie-analyse op lokale WAV-data.
+Naast de gewone Studio en Set Composer wordt dan
+`/private/mixlab-playlist-01/sources/transition-ideas.html` aangemaakt.
+Open het bestand, vergelijk handmatige cues met de energievoorstellen
+en download jouw **expliciet goedgekeurde** keuzeplan.
+
+Het bord kiest geen definitieve overgang en verandert geen bronmanifest
+zonder de aparte `mixlab.idea_board apply`-opdracht. Bekijk de
+[volledige Idea Board-workflow](transition-idea-board.md) om de
+goedgekeurde cues veilig in een **nieuwe** Studio te renderen.
+
+`--ideas` vereist genormaliseerde audio en kan daarom niet met
+`--manifest-only` worden gecombineerd. Bij `--resume --ideas`
+worden de eerder gecontroleerde downbeats uit je bestaande manifest
+opnieuw gebruikt; er wordt niets stilzwijgend geïnterpreteerd.
+
 ## Plannen bewaren en later verder renderen
 
 Je kunt de handmatige songvolgorde, bronrechten, BPM en overgangscues eerst
