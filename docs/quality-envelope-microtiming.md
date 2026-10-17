@@ -37,7 +37,12 @@ confidently zero-lag aligned triggers
 `stereo_differential_timing_shift_risk: true` and a generic inspection warning.
 Both confidently zero-lag channels yield `false`; a simultaneous shift of
 both channels, mono input, missing channel evidence or otherwise ambiguous
-result is `null`, not a claim of stereo correctness. Channel names, waveform
+result is `null`, not a claim of stereo correctness. If pooled global/regional
+checks both appear clean but stereo timing evidence is `null`, emit a generic
+`stereo_channel_alignment_inconclusive_inspect` warning rather than a silent
+false clean. In particular, a full left/right channel exchange preserves
+pooled energy exactly but can change spatial listening conditions; strict CLI
+mode then fails pending manual review. Channel names, waveform
 samples, exact timing, positions and correlations remain internal. This
 supplements (not replaces) stereo spectral/polarity review and is not calibrated
 interchannel phase delay measurement.
