@@ -13,7 +13,9 @@ models, downloads or uploads.
 
 Only private, locally authorized PCM16 uncompressed mono/stereo WAV sources
 are accepted. Read caps match ML-07: <=32 MiB, <=2,000,000 frames, rate
-8–96 kHz, at most 60 candidates. Each source is opened as one no-follow,
+8–96 kHz, **at most 8 candidates and 8,000,000 aggregate frames across
+baseline plus candidates**. Each candidate's remaining frame allowance is
+checked from its WAV header *before* streaming any PCM. Each source is opened as one no-follow,
 nonblocking file descriptor (where supported), must be a regular file, and is
 checked for size/inode/timestamp change before closing. PCM is read in blocks
 of 4096 frames, with O(channels) filter state and no waveform retention.
