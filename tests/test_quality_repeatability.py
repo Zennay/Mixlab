@@ -392,10 +392,52 @@ class RepeatabilityTests(unittest.TestCase):
                     writer.writeframesraw(full)
                 writer.writeframesraw(b"\x00" * (tail * 4))
         self.assertTrue(verify_repeatability(self.a, self.b)["repeatable_pcm"])
+
+        # Also exercise the *receipt-bound* full-capacity path rather than
+        # measuring memory only for the bare PCM comparator. These declared
+        # input hashes are synthetic fixture claims, not provenance evidence.
+        import hashlib
+        with self.a.open("rb") as raw_a:
+            output_a = hashlib.file_digest(raw_a, "sha256").hexdigest()
+        with self.b.open("rb") as raw_b:
+            output_b = hashlib.file_digest(raw_b, "sha256").hexdigest()
+        fixture = {
+            "schema_version": 1,
+            "engine_version": "synthetic-capacity-check-v1",
+            "recipe": {"family": "baseline", "bpm": 120, "beats": 1},
+            "sample_rate": 48000,
+            "channels": 2,
+            "frames": frames,
+            "duration_seconds": frames / 48000,
+            "gain_linear": 1,
+            "start_frames": {"a": 0, "b": 0},
+            "alignment_source": "synthetic-only",
+            "tempo_source": "synthetic-only",
+            "sources": [{"sha256": "a" * 64}, {"sha256": "b" * 64}],
+        }
+        receipt_a = dict(fixture, output_sha256=output_a)
+        receipt_b = dict(fixture, output_sha256=output_b)
+        before = verify_repeatability(self.a, self.b,
+                                      receipts=(receipt_a, receipt_b))
+        self.assertTrue(before["repeatable_pcm"])
+        self.assertTrue(before["render_receipts_consistent"])
+
         with self.b.open("r+b") as f:
             f.seek(-4, os.SEEK_END)
             f.write(b"\x01\x00\x00\x00")
         self.assertFalse(verify_repeatability(self.a, self.b)["repeatable_pcm"])
+        # A stale digest is an admission error, not a usable A/B verdict.
+        with self.assertRaises(RepeatabilityError):
+            verify_repeatability(self.a, self.b,
+                                 receipts=(receipt_a, receipt_b))
+        with self.b.open("rb") as raw_b:
+            updated_b = hashlib.file_digest(raw_b, "sha256").hexdigest()
+        updated_receipt = dict(receipt_b, output_sha256=updated_b)
+        after = verify_repeatability(self.a, self.b,
+                                     receipts=(receipt_a, updated_receipt))
+        self.assertFalse(after["repeatable_pcm"])
+        self.assertTrue(after["technical_review_required"])
+        self.assertTrue(after["render_receipts_consistent"])
 
     def test_short_pcm_is_not_silently_accepted(self):
         self.b.write_bytes(self.b.read_bytes()[:-128])
