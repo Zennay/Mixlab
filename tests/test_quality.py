@@ -1207,6 +1207,58 @@ class QualityTests(unittest.TestCase):
         self.assertNotIn(str(self.root), json.dumps(receipts))
         self.assertEqual(before, [p.read_bytes() for p in sources])
 
+    def test_isolated_click_under_severe_jump_limit_across_pcm_read_boundary(self):
+        # A one-frame click at 9k surrounded by zeros has ~27% full-scale
+        # adjacent jumps, so the older 50%-FS splice alarm misses it.
+        silence = [0] * 8000
+        silence[4095] = 9000  # Middle frame falls at a 4096-frame boundary.
+        wav(self.candidate, silence)
+        report = compare_wavs(self.base, [self.candidate])
+        candidate = report["candidates"][0]
+        metrics = candidate["metrics"]
+        self.assertEqual(0, metrics["severe_adjacent_jump_count"])
+        self.assertFalse(metrics["severe_sample_discontinuity_risk"])
+        self.assertEqual(1, metrics["isolated_sample_impulse_count"])
+        self.assertTrue(metrics["isolated_sample_impulse_risk"])
+        self.assertIn("isolated_sample_impulse_inspect_for_clicks", candidate["warnings"])
+        self.assertNotIn("isolated_sample_impulse_inspect_for_clicks",
+                         report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("9000", json.dumps(report))
+
+    def test_isolated_impulse_threshold_stereo_channels_and_stable_signals(self):
+        # The exact 8191/8192 boundary and single right-channel glitches.
+        stereo = self.root / "isolated-stereo.wav"
+        values = [0] * (8000 * 2)
+        values[4095 * 2 + 1] = 8191
+        wav(stereo, values, channels=2)
+        metrics = scan_wav(stereo)
+        self.assertEqual(0, metrics["isolated_sample_impulse_count"])
+        values[4095 * 2 + 1] = -8192
+        wav(stereo, values, channels=2)
+        metrics = scan_wav(stereo)
+        self.assertEqual(1, metrics["isolated_sample_impulse_count"])
+        values[4095 * 2] = 9000
+        wav(stereo, values, channels=2)
+        self.assertEqual(2, scan_wav(stereo)["isolated_sample_impulse_count"])
+        # Widened impulse or adjacent active samples: not one-sample clicks.
+        values[4096 * 2] = 9000
+        values[4096 * 2 + 1] = 9000
+        wav(stereo, values, channels=2)
+        self.assertFalse(scan_wav(stereo)["isolated_sample_impulse_risk"])
+        clean = [int(9000 * math.sin(i * .008)) for i in range(8000)]
+        wav(self.candidate, clean)
+        self.assertFalse(scan_wav(self.candidate)["isolated_sample_impulse_risk"])
+        # Baselines receive precisely the same diagnostics as candidates.
+        mono = [0] * 8000
+        mono[3072] = 10000
+        wav(self.base, mono)
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("isolated_sample_impulse_inspect_for_clicks",
+                      report["baseline_warnings"])
+        self.assertNotIn("isolated_sample_impulse_inspect_for_clicks",
+                         report["candidates"][0]["warnings"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
