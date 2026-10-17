@@ -26,6 +26,34 @@ A shipped generator revision must match itself exactly and be re-reviewed.
 
 The HTML pattern is [A-Za-z0-9][A-Za-z0-9_\-]{0,39}; the escaped hyphen matters for modern browser UnicodeSets v-mode regex. This is only a STATIC field check. It does not execute JavaScript or prove browser validation, screen-reader accessibility, identity independence, rights, audio or actual preference. It does NOT replace inspect_review_pack(require_generated_html=True, require_receipt=True) or the composed PR #84 gate.
 
+## Merge-safe regression strategy
+
+The QA suite no longer assumes that the official generator stays broken.
+It measures the output of `mixlab.cli.write_review()` on the tested SHA:
+
+- **Unrepaired generator:** standalone parity returns HOLD and the real browser
+  still exports an invalid reviewer ID, which the real aggregator refuses.
+- **Repaired generator:** standalone parity returns PASS, Chromium blocks the
+  invalid ID before export, and a valid pseudonym still completes the normal
+  offline JSON flow.
+- A separate Python test monkeypatches only the *test invocation* of the
+  canonical generator to simulate the upstream HTML pattern repair. The
+  guarded output passes, but an injected JavaScript vote substitution HOLDs.
+
+The 300+ candidate Chromium matrix compares native `input.checkValidity()`
+after browser value normalization with **both** the QA regex and the actual
+`mixlab.evaluation.aggregate()` reviewer admission logic. For the matrix
+only, the frozen pack and PCM/receipt checks are mocked: this isolates the
+Python pseudonym contract and does not claim hundreds of full-pack renders.
+A **separate** synthetic integration test uses the real MixLab renderer, real
+offline Chromium JSON export and real aggregator with unmocked pack/audio
+integrity checks. None of these tests counts as an independent human listener.
+
+Current commit evidence lives on draft PR #85; it can be integrated
+independently of owner-controlled CLI changes once review/claim rules permit.
+Future changes to the HTML template or reviewer grammar require exact-SHA CI
+revalidation, not a claim based on this development fixture.
+
 ## Integration ownership and repair
 
 The shared mixlab.cli.write_review() and mixlab.evaluation.aggregate() belong to other scopes. This PR intentionally does not edit them.
