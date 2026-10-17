@@ -93,6 +93,35 @@ def _scan(source):
     # A 100 ms bucket with >=32 high-level samples is only a diagnostic;
     # stronger sustained occupancy is required before a conclusive result.
     window_counts = [{} for _ in range(channels)]
+    # Private time-aligned window summaries; fixed-size active histograms are
+    # recycled every 100ms, so no PCM or unbounded per-window histograms stay
+    # in memory. The summaries never enter public JSON.
+    window_profiles = [{} for _ in range(channels)]
+    current_window = None
+    region_eligible = [0] * channels
+    region_hist2 = [[0] * 4 for _ in range(channels)]
+    region_hist4 = [[0] * 16 for _ in range(channels)]
+    region_hist8 = [[0] * 256 for _ in range(channels)]
+
+    def finish_region(w):
+        if w is None:
+            return
+        start = (w * rate + 9) // 10
+        end = ((w + 1) * rate + 9) // 10
+        if end > frames:
+            return  # A partial trailing interval is not 100ms evidence.
+        for channel in range(channels):
+            count = region_eligible[channel]
+            if count >= 32 and 100 * count >= MIN_WINDOW_ACTIVE_PERCENT * (end - start):
+                window_profiles[channel][w] = {
+                    "eligible_samples": count,
+                    "dominant_residue_counts": {
+                        "2": max(region_hist2[channel]),
+                        "4": max(region_hist4[channel]),
+                        "8": max(region_hist8[channel]),
+                    },
+                }
+
     frame_offset = 0
     remaining = frames
     while remaining:
@@ -106,6 +135,13 @@ def _scan(source):
             values.byteswap()
         for position in range(take):
             window_index = (frame_offset + position) * 10 // rate
+            if current_window != window_index:
+                finish_region(current_window)
+                current_window = window_index
+                region_eligible = [0] * channels
+                region_hist2 = [[0] * 4 for _ in range(channels)]
+                region_hist4 = [[0] * 16 for _ in range(channels)]
+                region_hist8 = [[0] * 256 for _ in range(channels)]
             for channel in range(channels):
                 value = values[position * channels + channel]
                 if abs(value) >= ACTIVE_ABS:
@@ -114,12 +150,18 @@ def _scan(source):
                     low_byte_histogram[channel][residue] += 1
                     low_nibble_histogram[channel][residue & 15] += 1
                     low_two_histogram[channel][residue & 3] += 1
+                    region_eligible[channel] += 1
+                    region_hist2[channel][residue & 3] += 1
+                    region_hist4[channel][residue & 15] += 1
+                    region_hist8[channel][residue] += 1
                     if residue == 0:
                         trailing_zero[channel] += 1
                     counts = window_counts[channel]
                     counts[window_index] = counts.get(window_index, 0) + 1
         frame_offset += take
         remaining -= take
+    finish_region(current_window)
+    source["_private_window_profiles"] = window_profiles
     output = []
     for channel in range(channels):
         present = {w for w, count in window_counts[channel].items() if count >= 32}
@@ -189,6 +231,24 @@ def _baseline_diverse(base):
     return 20 * dominant <= 7 * base["eligible_samples"]
 
 
+def _regional_coarse_loss(base_source, candidate_source, channel):
+    """Return a sustained 400ms candidate-specific quantization contrast."""
+    before = base_source["_private_window_profiles"][channel]
+    after = candidate_source["_private_window_profiles"][channel]
+    previous = None
+    consecutive = 0
+    for index in sorted(before.keys() & after.keys()):
+        if _coarse_loss(before[index], after[index]):
+            consecutive = consecutive + 1 if previous is not None and index == previous + 1 else 1
+            if consecutive >= MIN_ACTIVE_WINDOWS:
+                return True
+            previous = index
+        else:
+            consecutive = 0
+            previous = None
+    return False
+
+
 def inspect_ab(baseline, candidates):
     """Screen high-level PCM low-byte collapse vs baseline, per channel.
 
@@ -229,10 +289,11 @@ def inspect_ab(baseline, candidates):
         comparisons = []
         for index, candidate in enumerate(results[1:], start=1):
             per_channel = []
-            for base, current in zip(results[0], candidate):
+            for channel, (base, current) in enumerate(zip(results[0], candidate)):
                 if not base["evidenced"] or not current["evidenced"]:
                     per_channel.append(None)
-                elif _coarse_loss(base, current):
+                elif (_coarse_loss(base, current)
+                      or _regional_coarse_loss(sources[0], sources[index], channel)):
                     # Further candidate-specific loss can still be detected
                     # even if the reference is already less than full precision.
                     per_channel.append(True)
@@ -250,7 +311,7 @@ def inspect_ab(baseline, candidates):
                 "per_channel_review": per_channel,
             })
         return {
-            "metric": "pcm16_multi_resolution_lattice_vs_baseline_v3",
+            "metric": "pcm16_multi_resolution_lattice_vs_baseline_v4",
             "technical_proxy_only": True,
             "channels": shape[0],
             "sample_rate": shape[1],
