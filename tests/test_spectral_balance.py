@@ -138,6 +138,34 @@ class SpectralBalanceTests(unittest.TestCase):
         row = self.report()["candidates"][0]
         self.assertIn("high_spectral_balance_shift_inspect", row["warnings"])
 
+    def test_stereo_near_silent_channel_is_not_false_clean(self):
+        make_wav(self.base, freq=1000, channels=2)
+        make_stereo_split_wav(self.other, left_hz=0, right_hz=1000)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_channel_near_silence_inspect", row["warnings"])
+        self.assertNotIn(str(self.other), json.dumps(row))
+        # Reversal must also warn: a broken baseline invalidates a blind
+        # comparison even when the candidate's two channels are healthy.
+        make_stereo_split_wav(self.base, left_hz=0, right_hz=1000)
+        make_wav(self.other, freq=1000, channels=2)
+        self.assertIn("stereo_channel_near_silence_inspect", self.report()["candidates"][0]["warnings"])
+
+    def test_identical_one_channel_loss_is_still_inspect_not_clean(self):
+        make_stereo_split_wav(self.base, left_hz=0, right_hz=1000)
+        make_stereo_split_wav(self.other, left_hz=0, right_hz=1000)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_channel_near_silence_inspect", row["warnings"])
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_regular_stereo_and_mono_do_not_get_channel_silence_warning(self):
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_channel_near_silence_inspect", row["warnings"])
+        make_wav(self.base, freq=1000, channels=2)
+        make_wav(self.other, freq=1000, channels=2)
+        self.assertNotIn("stereo_channel_near_silence_inspect", self.report()["candidates"][0]["warnings"])
+
     def test_channel_swapped_stereo_can_hide_all_global_spectral_changes(self):
         make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
         make_stereo_split_wav(self.other, left_hz=5000, right_hz=100)
