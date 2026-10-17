@@ -74,6 +74,12 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
     sample_peak = 0
     interpolated_peak = 0.0
     intersample_over_count = 0
+    # The short finite interpolation kernel attenuates signals near Nyquist.
+    # A high-amplitude sign reversal can hide an analog over even when the
+    # interpolated estimate stays below full-scale. This conservative guard
+    # reports UNCERTAINTY, never a measured or proven over.
+    rapid_near_ceiling_crossings = 0
+    previous_frame = None
     # Scan every phase, not just areas with sample peaks close to full-scale.
     while seen < nframes:
         want = min(4096, nframes - seen)
@@ -87,6 +93,14 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         for offset in range(0, len(values), channels):
             frame = tuple(values[offset:offset + channels])
             sample_peak = max(sample_peak, *(abs(v) for v in frame))
+            if previous_frame is not None:
+                for ch in range(channels):
+                    prev, current = previous_frame[ch], frame[ch]
+                    if (prev * current < 0
+                            and max(abs(prev), abs(current)) >= 31130
+                            and min(abs(prev), abs(current)) >= 18023):
+                        rapid_near_ceiling_crossings += 1
+            previous_frame = frame
             history.append(frame)
             if len(history) == 8:
                 # Ring indices 3 and 4 bracket the fractional reconstruction.
@@ -104,6 +118,12 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "intersample_overs_estimated": intersample_over_count,
         "screen_evaluable": nframes >= 8,
         "intersample_over_risk": bool(intersample_over_count),
+        "high_frequency_near_ceiling_ambiguity_risk": bool(rapid_near_ceiling_crossings),
+        "high_frequency_near_ceiling_crossings": rapid_near_ceiling_crossings,
+        "technical_review_required": (
+            nframes < 8 or bool(intersample_over_count) or
+            bool(rapid_near_ceiling_crossings)
+        ),
     }
 
 
@@ -165,8 +185,8 @@ def main(argv=None) -> int:
     except (OSError, ValueError, EOFError, wave.Error, OverflowError):
         parser.exit(3, "intersample preflight: invalid or unreadable WAV (details withheld)\n")
     print(json.dumps(report, sort_keys=True, allow_nan=False))
-    if args.fail_on_risk and (report["baseline"]["intersample_over_risk"] or
-                              any(c["intersample_over_risk"] for c in report["candidates"])):
+    if args.fail_on_risk and (report["baseline"]["technical_review_required"] or
+                              any(c["technical_review_required"] for c in report["candidates"])):
         return 2
     return 0
 
