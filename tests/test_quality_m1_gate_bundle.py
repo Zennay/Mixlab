@@ -598,7 +598,8 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertNotIn(str(self.fixture.root), str(error.exception))
         self.assertNotIn("canary", str(error.exception))
 
-    def _duplicate_real_wavs_across_frozen_pairs(self, *, same_pair_only=False):
+    def _duplicate_real_wavs_across_frozen_pairs(self, *, same_pair_only=False,
+                                                 different_container=False):
         """Resign a genuine checksum-consistent pack containing reused audio.
 
         No source hash, renderer code, or independent validator is mocked.
@@ -628,6 +629,18 @@ class RealPCMEndToEndTests(unittest.TestCase):
         source = self.fixture.pack / "review" / f"{src['trial']}-{src_label}.wav"
         target = self.fixture.pack / "review" / f"{dst['trial']}-{dst_label}.wav"
         target.write_bytes(source.read_bytes())
+        if different_container:
+            self.assertFalse(same_pair_only)
+            # Same PCM, but a different valid RIFF file checksum. The
+            # ancillary chunk is outside the 'data' frames. Old raw SHA
+            # comparison misses this; the official PCM scanner must not.
+            original = bytearray(target.read_bytes())
+            self.assertEqual(original[:4], b"RIFF")
+            extra = b"JUNK" + (4).to_bytes(4, "little") + b"ML07"
+            old_size = int.from_bytes(original[4:8], "little")
+            original[4:8] = (old_size + len(extra)).to_bytes(4, "little")
+            target.write_bytes(original + extra)
+            self.assertNotEqual(target.read_bytes(), source.read_bytes())
         render = next(row for row in evidence["renders"]
                       if row["pair"] == dst["pair"]
                       and row["family"] == dst[dst_label])
@@ -661,6 +674,28 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertIs(report["milestone_pass"], False)
         self.assertNotIn(str(self.fixture.root), json.dumps(report))
         self.assertNotIn(self.fixture.pinned, json.dumps(report))
+
+    def test_same_pcm_different_wav_container_requires_cross_pair_hold(self):
+        # A source pair does not become independent because someone prepends
+        # or appends benign RIFF chunks and re-signs the byte-level receipt.
+        self._duplicate_real_wavs_across_frozen_pairs(different_container=True)
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        result = self.bundle()
+        self.assertTrue(result["cross_pair_duplicate_render_review"])
+        self.assertIn("identical-render-across-frozen-pairs",
+                      result["review_reasons"])
+        self.assertEqual(result["technical_screen"], "REVIEW_REQUIRED")
+        self.assertNotIn(str(self.fixture.root), json.dumps(result))
+        self.assertIs(result["milestone_pass"], False)
+
+    def test_same_pcm_reuse_detected_via_private_stdin(self):
+        self._duplicate_real_wavs_across_frozen_pairs(different_container=True)
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        result = self._stdin_cli(self._private_request())
+        self.assertEqual(result.returncode, 3, result.stderr.decode())
+        report = json.loads(result.stdout)
+        self.assertTrue(report["cross_pair_duplicate_render_review"])
+        self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
 
     def test_identical_candidate_and_baseline_same_pair_does_not_invent_cross_pair_reuse(self):
         self._duplicate_real_wavs_across_frozen_pairs(same_pair_only=True)
