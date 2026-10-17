@@ -20,9 +20,12 @@ Run on **two independently generated files** from the same expected render:
 - Without --strict, admitted mismatches produce JSON and exit 0.
 - --help provides static usage without opening a source.
 
-The public JSON reports only schema version, yes/no PCM equality, source-independence
-and format checks, a technical-review flag and the constant reminder that human
-preference testing remains necessary. Private audio bytes, audio fingerprints, hashes,
+The public JSON reports only schema version, yes/no PCM equality, **distinct
+output-file inode verification**, format checks, a technical-review flag and
+the constant reminder that human preference testing remains necessary. The
+explicit `independent_render_executions_proven: false` prevents a two-file
+comparison from being misread as proof that two independent renders actually
+occurred: the producer must separately establish that execution history. Private audio bytes, audio fingerprints, hashes,
 filenames, paths and listening keys are not emitted.
 
 ## Bounds and safety
