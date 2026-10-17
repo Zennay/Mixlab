@@ -392,6 +392,34 @@ class RepeatabilityTests(unittest.TestCase):
                     verify_repeatability(one, two, receipts=pair)
         self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
 
+    def test_two_equal_receipts_cannot_spoof_typed_wav_metadata_or_family(self):
+        # Python considers bool == 1 and integral floats == ints. A signed
+        # renderer receipt must retain exact JSON schema types, even when
+        # both receipts carry the same wrong metadata.
+        import copy
+        one, two, original_a, original_b = self._render_fixture_with_receipts()
+        mutate_both = (
+            lambda r: r.__setitem__("schema_version", True),
+            lambda r: r.__setitem__("schema_version", 1.0),
+            lambda r: r.__setitem__("channels", True),
+            lambda r: r.__setitem__("channels", 1.0),
+            lambda r: r.__setitem__("sample_rate", 8000.0),
+            lambda r: r.__setitem__("frames", 4000.0),
+            lambda r: r["recipe"].__setitem__("family", "invented_unregistered_dsp"),
+        )
+        for index, mutation in enumerate(mutate_both):
+            with self.subTest(case=index):
+                left, right = copy.deepcopy(original_a), copy.deepcopy(original_b)
+                mutation(left)
+                mutation(right)
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=(left, right))
+        self.assertTrue(verify_repeatability(
+            one, two, receipts=(original_a, original_b)
+        )["render_receipts_consistent"])
+
     def test_untrusted_receipt_size_and_nesting_are_rejected_before_serialization(self):
         # JSON serialization *before* checking the 16KiB cap can allocate
         # arbitrarily large data on hostile private metadata. The validator
