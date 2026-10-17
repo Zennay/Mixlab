@@ -310,3 +310,31 @@ mono sign inversion, earlier-candidate reuse, one-sample differences,
 nonrepresentable signed minimum, unmodified inputs and privacy. The
 existing `test_private_source_fd.py` asserts scanner reads remain
 bounded to 4096 frames with all fingerprints enabled.
+
+
+## Multi-window RMS preflight readiness (technical only)
+
+The legacy `level_comparable_for_blind_ab` flag means **only** that
+whole-file RMS values differ by no more than the configured threshold
+(default 1.5 dB). A pair can pass it while most aligned 100-ms windows
+differ strongly, a common loudness/timing confound for blinded listeners.
+Treating that single legacy field as complete A/B readiness is unsafe.
+
+The additional `rms_and_window_level_preflight_pass` boolean now requires
+**all** of: finite non-silent whole-file RMS on both sides, the existing
+RMS threshold, at least three **audible aligned RMS windows**, and no
+sustained >=9 dB short-window level discrepancy in >=25% of audible
+windows. The original per-window mismatch fraction and warning remain
+unchanged, as does the backwards-compatible RMS-only field; short clips
+or unusually large `window_ms` settings cannot claim sufficient
+short-term evidence from a single window. The new gate requires no
+second audio scan, stores no extra envelope, and never asserts LUFS
+equality or musical preference. It is a **conservative technical
+check** for human inspection, not an automatic review/release decision.
+
+`tests/test_level_preflight_gate.py` exercises equal-level success,
+the masked equal-whole-RMS/different-temporal-energy failure, uniform
+6 dB mismatch, insufficient 1-window evidence, short 100-ms clips,
+fully silent candidate, anonymized output and existing field
+compatibility. Even a passing technical gate does not override
+M1 rights, licensed-audio, DJ or >=3-human-blind-listener requirements.
