@@ -54,6 +54,13 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
             elif mode == "tail-210ms-quiet":
                 # Canonical >=200ms A/B trailing-silence confound.
                 left = right = (0 if i >= frames - round(rate * .21) else v)
+            elif mode == "interior-60ms-silence":
+                left = right = (0 if frames // 2 <= i < frames // 2 + rate * 60 // 1000 else v)
+            elif mode == "interior-60ms-right-dropout":
+                left = v
+                right = (0 if frames // 2 <= i < frames // 2 + rate * 60 // 1000 else v)
+            elif mode == "single-impulse":
+                left = right = 16000 if i == 4000 else v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -272,6 +279,39 @@ class RelativeMonoTests(unittest.TestCase):
         ])
         self.assertTrue(result["human_preference_test_required"])
         self.assertFalse(result["milestone_pass"])
+
+    def test_short_interior_stereo_silence_is_not_a_clean_candidate(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="interior-60ms-silence")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(canonical["metrics"]["short_interior_pcm_dropout_risk"])
+        self.assertTrue(canonical["level_comparable_for_blind_ab"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
+
+    def test_short_one_channel_dropout_is_not_a_clean_candidate(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="interior-60ms-right-dropout")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(canonical["metrics"]["short_interior_stereo_channel_dropout_risk"])
+        self.assertTrue(canonical["level_comparable_for_blind_ab"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_isolated_pcm_impulse_requires_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="single-impulse")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(canonical["metrics"]["isolated_sample_impulse_risk"])
+        self.assertFalse(canonical["metrics"]["severe_sample_discontinuity_risk"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
