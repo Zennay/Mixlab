@@ -138,6 +138,21 @@ class StreamingChunkInvariants(unittest.TestCase):
         self.assertFalse(report["contains_source_paths_or_audio"])
         self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_public_review_rejects_extra_riff_metadata_before_pcm_scan(self):
+        from mixlab.quality.pack import inspect_review_pack
+
+        review = self.root / "review"
+        review.mkdir()
+        _write(review / "trial-001-A.wav", 2, [(4000, 4000)] * 8000)
+        _write(review / "trial-001-B.wav", 2, [(4000, 4000)] * 8000,
+               extra_chunk=True)
+        # Internal scanner allows a valid JUNK chunk because it diagnoses
+        # PCM, but the *public* listener pack must refuse it: textual RIFF
+        # metadata can leak artist/variant identities during blind review.
+        self.assertEqual(scan_wav(review / "trial-001-B.wav")["frames"], 8000)
+        with self.assertRaises(ValueError):
+            inspect_review_pack(review)
+
     def test_truncated_declared_wav_never_pretends_valid(self):
         sample = self._make("truncated.wav", 1)
         data = sample.read_bytes()
