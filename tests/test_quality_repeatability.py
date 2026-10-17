@@ -44,7 +44,8 @@ class RepeatabilityTests(unittest.TestCase):
         report = verify_repeatability(self.a, self.b)
         self.assertEqual(
             {"schema_version": 1, "repeatable_pcm": True,
-             "independent_sources_verified": True,
+             "distinct_output_files_verified": True,
+             "independent_render_executions_proven": False,
              "format_and_frame_count_verified": True,
              "technical_review_required": False,
              "human_preference_test_required": True}, report
@@ -52,6 +53,7 @@ class RepeatabilityTests(unittest.TestCase):
         self.assertNotIn(str(self.root), json.dumps(report))
         self.assertNotIn("hash", json.dumps(report).lower())
         self.assertNotIn("score", json.dumps(report).lower())
+        self.assertFalse(report["independent_render_executions_proven"])
 
     def test_same_filename_or_hardlink_refused(self):
         with self.assertRaises(RepeatabilityError):
