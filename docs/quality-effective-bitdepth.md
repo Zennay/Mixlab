@@ -42,7 +42,11 @@ Sparse 20ms-in-100ms pulses and separated islands of three active windows
 must abstain even if global sample totals or global RMS look conclusive.
 A candidate-specific warning requires baseline dominant low-byte fraction <=0.35
 and candidate dominant fraction >=0.995 on at least one evidenced channel;
-exact integer counts, not rounded display fractions, decide the result. These conservative
+exact integer counts, not rounded display fractions, decide the result.
+**If the baseline channel itself has insufficient PCM diversity (>35% of
+eligible samples in one residue bin), that channel must abstain** rather than
+report a clean candidate. This avoids treating two equally damaged inputs
+as proof that the blind listening stimulus is technically comparable. These conservative
 thresholds deliberately permit false negatives: this method does not reliably
 identify 16-to-12-bit conversion, dithered 8-bit data or lossy codec artifacts.
 Intentional bit-restricted synthesizers, waveforms with coarse amplitude grids
@@ -53,8 +57,11 @@ source rights, gain history and blind playback before attributing cause.
 - **true**: at least one evidenced channel shows that specific contrast;
   human inspection of the candidate is warranted.
 - **false**: both channels (or the one mono channel) have sufficient eligible
-  evidence and the contrast was not found; **not a certification** of quality.
-- **null**: evidence is insufficient for a definitive negative result.
+  sustained evidence **and a sufficiently diverse baseline** and the contrast
+  was not found; **not a certification** of quality.
+- **null**: evidence is insufficient for a definitive negative result, including
+  a sparse or discontinuous signal, a quiet channel or an already degraded
+  baseline; strict mode rejects this as inconclusive.
 
 Normal CLI exit is 0 for valid PCM irrespective of tri-state; `--strict`
 exits 3 on *any* true or null candidate and 2 on input errors. CLI options,
@@ -72,6 +79,18 @@ The companion tests reject 8×1,000,001-frame matching sources **before a single
 PCM read** and reject an over-32MiB sparse input. Both Python 3.13/3.14 use
 the exact immutable checkout with a 192MiB virtual memory cap and RSS logging.
 The stress test is GitHub-hosted only: no production VPS load or imported music.
+
+## Actual M1 engine integration (rights-free fixtures)
+
+The focused suite now invokes the real `mixlab.engine.render` on
+`FAMILY_NAMES` using original generated stereo PCM, checking all supported
+transition families against a separately rendered baseline, the path-private
+no-false-alarm result, and SHA-256 file integrity *after* read-only screening.
+A separate real hard-cut renderer output is quantized to 8-bit steps with a
+**fixed nonzero residue**, saved into a distinct local corruption fixture and
+shown to trigger the Python API **and** strict CLI exit 3 while its unmodified
+candidate stays clear. This proves technical source-to-renderer integration,
+not preference from real tracks or human listening.
 
 ## Release boundary
 
