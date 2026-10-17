@@ -205,7 +205,7 @@ class BrowserFormTests(unittest.TestCase):
         for scenario in ("missing", "corrupt"):
             if scenario == "corrupt":
                 # Present but structurally undecodable audio must also fail.
-                missing.write_bytes(b"RIFF" + b"\\x00" * 36)
+                missing.write_bytes(b"RIFF" + b"\x00" * 36)
             new_command = [
                 "--user-data-dir=" + str(self.root / f"pcm-chrome-negative-{scenario}")
                 if arg.startswith("--user-data-dir=") else arg
@@ -217,7 +217,7 @@ class BrowserFormTests(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 self.fail("negative offline Chrome WAV check timed out")
             self.assertEqual(bad.returncode, 0, "Chromium negative media smoke crashed")
-            bad_marker = re.search(r'<html\\b[^>]*data-mixlab-audio-check="([^"]+)"',
+            bad_marker = re.search(r'<html\b[^>]*data-mixlab-audio-check="([^"]+)"',
                                    bad.stdout, flags=re.IGNORECASE)
             self.assertIsNotNone(bad_marker, "negative PCM decoder result missing")
             self.assertEqual(bad_marker.group(1), "fail",
