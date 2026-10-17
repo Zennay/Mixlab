@@ -48,6 +48,67 @@ class LocalDCQualityTests(unittest.TestCase):
         self.base = Path(self.tmp.name) / "baseline.wav"
         self.alt = Path(self.tmp.name) / "candidate.wav"
 
+    def test_same_path_pair_rejected(self):
+        _wav(self.base)
+        with self.assertRaisesRegex(ValueError, "distinct regular files"):
+            local_dc.inspect(self.base, self.base)
+
+    @unittest.skipUnless(hasattr(os, "link"), "Hardlinks unavailable")
+    def test_hardlink_pair_rejected(self):
+        _wav(self.base)
+        os.link(self.base, self.alt)
+        with self.assertRaisesRegex(ValueError, "distinct regular files"):
+            local_dc.inspect(self.base, self.alt)
+
+    def test_independent_identical_byte_copies_remain_admissible(self):
+        _wav(self.base)
+        self.alt.write_bytes(self.base.read_bytes())
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+
+    def test_one_second_exact_positive_threshold(self):
+        _wav(self.base, duration=1)
+        _wav(self.alt, duration=1, offsets=[[3400] * RATE])
+        report = local_dc.inspect(self.base, self.alt)
+        self.assertEqual(report["complete_windows"], 4)
+        self.assertIs(report["candidate_excess_bias_warning"][0], True)
+
+    def test_one_window_shorter_than_one_second_is_unknown(self):
+        _wav(self.base, duration=.75)
+        _wav(self.alt, duration=.75, offsets=[[3400] * (3 * RATE // 4)])
+        self.assertIsNone(local_dc.inspect(self.base, self.alt)["warning"])
+
+    def test_frame_mismatch_rejected(self):
+        _wav(self.base, duration=1)
+        _wav(self.alt, duration=2)
+        with self.assertRaisesRegex(ValueError, "identical shape"):
+            local_dc.inspect(self.base, self.alt)
+
+    def test_upper_boundary_two_million_stereo_frames(self):
+        # Rights-free raw constant PCM: test the real input limit, not a mocked
+        # nframes or a small fixture with patched MAX_SOURCE_FRAMES.
+        def write_constant(path, frames):
+            with wave.open(str(path), "wb") as writer:
+                writer.setnchannels(2)
+                writer.setsampwidth(2)
+                writer.setframerate(96000)
+                chunk = struct.pack("<hh", 0, 0) * 4096
+                complete, tail = divmod(frames, 4096)
+                for _ in range(complete):
+                    writer.writeframesraw(chunk)
+                if tail:
+                    writer.writeframesraw(chunk[:tail * 4])
+                writer.writeframes(b"")
+        write_constant(self.base, local_dc.MAX_SOURCE_FRAMES)
+        write_constant(self.alt, local_dc.MAX_SOURCE_FRAMES)
+        report = local_dc.inspect(self.base, self.alt)
+        self.assertEqual(report["frames"], 2_000_000)
+        self.assertEqual(report["channels"], 2)
+        self.assertEqual(report["sample_rate"], 96000)
+        self.assertIs(report["warning"], False)
+        write_constant(self.alt, local_dc.MAX_SOURCE_FRAMES + 1)
+        with self.assertRaisesRegex(ValueError, "frame/rate bounds"):
+            local_dc.inspect(self.base, self.alt)
+
     def test_negative_sustained_dc_offset(self):
         _wav(self.base)
         _wav(self.alt, offsets=[_offset_sections([-3400] * 4)])
