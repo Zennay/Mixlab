@@ -107,6 +107,20 @@ def _read_votes(path: Path) -> tuple[dict, tuple[bytes, tuple[int, ...]]]:
     return vote, snapshot
 
 
+def _captured_absolute_path(value) -> Path:
+    """Capture each trusted built-in pathname once, before any private scan.
+
+    An arbitrary PathLike could execute user code or raise a source-bearing
+    RuntimeError from __fspath__; a relative path could change its target
+    when another component modifies cwd during aggregate(). Neither is
+    acceptable in the private reviewer gate.
+    """
+    if type(value) not in (str, type(Path("."))):
+        _fail()
+    path = Path(value)
+    return path if path.is_absolute() else Path.cwd() / path
+
+
 def inspect_listener_sides(pack_path, rating_paths) -> dict:
     """Flag aggregate and within-reviewer A/B response patterns, never IDs.
 
@@ -119,8 +133,8 @@ def inspect_listener_sides(pack_path, rating_paths) -> dict:
             or not 1 <= len(rating_paths) <= _MAX_REVIEWERS):
         _fail()
     try:
-        paths = [Path(os.fspath(item)) for item in rating_paths]
-        pack = Path(os.fspath(pack_path))
+        paths = [_captured_absolute_path(item) for item in rating_paths]
+        pack = _captured_absolute_path(pack_path)
         # No aliasing the same file under two input paths.
         if len(set(map(str, paths))) != len(paths):
             _fail()
@@ -159,7 +173,7 @@ def inspect_listener_sides(pack_path, rating_paths) -> dict:
             if _read_snapshot(path) != snapshot:
                 _fail()
     except (OSError, ValueError, KeyError, TypeError, IndexError,
-            OverflowError, RecursionError) as exc:
+            OverflowError, RecursionError) :
         raise ListenerPositionError(_ERROR) from None
 
     decisive = side_counts["A"] + side_counts["B"]
