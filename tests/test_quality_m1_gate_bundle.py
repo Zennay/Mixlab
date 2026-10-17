@@ -88,7 +88,7 @@ class PureM1ReportContract(unittest.TestCase):
             (0, "study_pack_metadata_consistent_with_pinned_id", False),
             (0, "milestone_pass", True),
             (2, "milestone_pass", True),
-            (4, "schema_version", 99),
+            (4, "schema_version", 99),\n            (4, "schema_version", True),\n            (0, "schema_version", True),
             (3, "audio_confounds_reported", "false"),
             (4, "official_audio_confounds_reported", None),
         ):
@@ -195,6 +195,46 @@ class RealPCMEndToEndTests(unittest.TestCase):
                 inspect_real_m1_gate_bundle(
                     self.fixture.study, self.fixture.pack, self.fixture.pinned,
                     [self.ballots[0]] * 3)
+
+    def test_real_cli_runs_private_checks_and_never_approves_m1(self):
+        result = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.m1_gate_bundle",
+            str(self.fixture.study), str(self.fixture.pack),
+            *map(str, self.ballots), "--expected-study-id", self.fixture.pinned,
+        ], capture_output=True, text=True, timeout=45)
+        self.assertIn(result.returncode, (0, 3), result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["reviewer_file_count"], 3)
+        self.assertEqual(len(payload["mandatory_gates_executed"]), 5)
+        self.assertIs(payload["milestone_pass"], False)
+        self.assertNotIn(str(self.fixture.root), result.stdout + result.stderr)
+
+    def test_symlinked_ancestor_is_refused_before_any_private_pcm_scan(self):
+        from pathlib import Path
+        alias = Path(self.fixture.root) / "SECRET-ALIAS-TO-PRIVATE"
+        alias.symlink_to(Path(self.fixture.study).parent, target_is_directory=True)
+        redirected = alias / Path(self.fixture.study).name
+        with mock.patch(
+            "mixlab.quality.m1_gate_bundle.verify_study_pack_binding",
+            side_effect=AssertionError("Symlink must fail before PCM")):
+            with self.assertRaises(M1GateBundleError) as error:
+                inspect_real_m1_gate_bundle(
+                    redirected, self.fixture.pack, self.fixture.pinned, self.ballots)
+        self.assertNotIn("SECRET-ALIAS", str(error.exception))
+
+    def test_fifo_ballot_is_refused_without_blocking(self):
+        import os
+        from pathlib import Path
+        fifo = Path(self.fixture.root) / "SECRET-UNBOUNDED-RATING-PIPE"
+        os.mkfifo(fifo)
+        with mock.patch(
+            "mixlab.quality.m1_gate_bundle.verify_study_pack_binding",
+            side_effect=AssertionError("FIFO must fail before PCM")):
+            with self.assertRaises(M1GateBundleError) as error:
+                inspect_real_m1_gate_bundle(
+                    self.fixture.study, self.fixture.pack, self.fixture.pinned,
+                    [fifo, *self.ballots[1:]])
+        self.assertNotIn("SECRET-UNBOUNDED", str(error.exception))
 
 
 class DefensiveCLI(unittest.TestCase):
