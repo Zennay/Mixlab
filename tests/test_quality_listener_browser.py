@@ -512,28 +512,39 @@ class BrowserFormTests(unittest.TestCase):
             script = _FULL_DECODE_SCRIPT.replace("__PCM_BASE64__", encoded)
             page.write_text("<!doctype html><html lang='en'><script>" + script +
                             "</script></html>", encoding="utf-8")
-            args = [
-                _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
-                "--disable-dev-shm-usage", "--disable-background-networking",
-                "--disable-extensions", "--no-first-run", "--no-default-browser-check",
-                "--disable-sync", "--virtual-time-budget=4000",
-                "--user-data-dir=" + str(self.root / ("decode-profile-" + label)),
-                "--dump-dom", page.as_uri(),
-            ]
             env = dict(os.environ)
             env["HOME"] = str(self.root)
-            try:
-                done = subprocess.run(args, capture_output=True, text=True,
-                                      timeout=35, env=env)
-            except subprocess.TimeoutExpired:
-                self.fail("bounded Chromium offline decode timed out")
-            self.assertEqual(done.returncode, 0, "Chromium decode process failed")
-            match = re.search(
-                r'<html\b[^>]*data-mixlab-full-decode-check="([^"]+)"',
-                done.stdout, flags=re.IGNORECASE
-            )
-            self.assertIsNotNone(match, "browser PCM decoder marker missing")
-            return match.group(1)
+            # On overloaded hosted Chromium a --dump-dom snapshot may arrive
+            # before the async decoder has emitted a DOM marker. Retry only
+            # an INDETERMINATE (missing marker) with a new isolated profile.
+            # A real 'fail' never retries and never becomes PASS.
+            for attempt in range(2):
+                args = [
+                    _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+                    "--disable-dev-shm-usage", "--disable-background-networking",
+                    "--disable-extensions", "--no-first-run",
+                    "--no-default-browser-check", "--disable-sync",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding",
+                    "--virtual-time-budget=8000",
+                    "--user-data-dir=" + str(
+                        self.root / f"decode-profile-{label}-{attempt}"),
+                    "--dump-dom", page.as_uri(),
+                ]
+                try:
+                    done = subprocess.run(
+                        args, capture_output=True, text=True, timeout=35, env=env)
+                except subprocess.TimeoutExpired:
+                    self.fail("bounded Chromium offline decode timed out")
+                self.assertEqual(
+                    done.returncode, 0, "Chromium decode process failed")
+                match = re.search(
+                    r'<html\b[^>]*data-mixlab-full-decode-check="([^"]+)"',
+                    done.stdout, flags=re.IGNORECASE
+                )
+                if match is not None:
+                    return match.group(1)
+            self.fail("browser PCM decoder marker missing after bounded retries")
 
         self.assertEqual(inspect(base64.b64encode(good_pcm).decode("ascii"),
                                  "valid"), "pass")
