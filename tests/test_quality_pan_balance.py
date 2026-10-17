@@ -280,6 +280,40 @@ class PanBalanceTests(unittest.TestCase):
                 pan_balance.inspect(alias / "original.wav", self.b)
         self.assertEqual(len(os.listdir("/proc/self/fd")), initial)
 
+    def test_strict_cli_review_exit_codes_do_not_claim_insufficient_audio_clean(self):
+        wav(self.a)
+        base = [sys.executable, "-m", "mixlab.quality.pan_balance",
+                str(self.a), str(self.b)]
+        # Safe identical pan, despite changed global gain.
+        wav(self.b, left=2000, right=2000)
+        clean = subprocess.run(base + ["--fail-on-review"],
+                               capture_output=True, text=True)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(json.loads(clean.stdout)["evidence_status"],
+                         "no_sustained_pan_bias_detected")
+        # Measured sustained pan defect: nonzero only with the opt-in flag.
+        wav(self.b, left=8000, right=2000)
+        reviewed = subprocess.run(base + ["--fail-on-review"],
+                                  capture_output=True, text=True)
+        self.assertEqual(reviewed.returncode, 3)
+        self.assertTrue(json.loads(reviewed.stdout)["stereo_pan_confound_review"])
+        default = subprocess.run(base, capture_output=True, text=True)
+        self.assertEqual(default.returncode, 0)
+        # An insufficient sample must not silently become an acceptance.
+        wav(self.a, frames=6000)
+        wav(self.b, frames=6000)
+        unknown = subprocess.run(base + ["--fail-on-review"],
+                                 capture_output=True, text=True)
+        self.assertEqual(unknown.returncode, 3)
+        self.assertIsNone(json.loads(unknown.stdout)["stereo_pan_confound_review"])
+        # Corrupt or missing private audio: code 2, never reveal source paths.
+        self.b.unlink()
+        invalid = subprocess.run(base + ["--fail-on-review"],
+                                 capture_output=True, text=True)
+        self.assertEqual(invalid.returncode, 2)
+        for receipt in (clean, reviewed, default, unknown, invalid):
+            self.assertNotIn(str(self.root), receipt.stdout + receipt.stderr)
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
