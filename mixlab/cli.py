@@ -12,6 +12,7 @@ import shutil
 from .engine import FAMILY_NAMES, write_wav
 from .ingest import validate_library
 from .dsp import render
+from .loudness import match_group, measure as measure_loudness
 from .models import Recipe
 
 
@@ -55,7 +56,7 @@ def fixture(destination):
     return root / "library.json"
 
 
-def benchmark(manifest_path, destination, seed=None):
+def benchmark(manifest_path, destination, seed=None, loudness_match=True):
     manifest, tracks = validate_library(manifest_path)
     root = Path(destination)
     root.mkdir(parents=True, exist_ok=False)
@@ -81,6 +82,21 @@ def benchmark(manifest_path, destination, seed=None):
             evidence.append({"pair": pair["id"], "family": family,
                              "recipe": asdict(recipe), "metrics": metrics,
                              "source_hashes": [a["sha256"], b["sha256"]], "output_sha256": digest(path)})
+        if loudness_match:
+            # Attenuate every family of this pair to its quietest member, so A/B
+            # preference is not "louder sounds better". output_sha256 then names
+            # the exact listening file; render_sha256 keeps the unmatched render.
+            matched = match_group(outputs, private)
+            for row in evidence[-len(FAMILY_NAMES):]:
+                member = matched["members"][row["family"]]
+                outputs[row["family"]] = member["path"]
+                row["render_sha256"] = row["output_sha256"]
+                row["output_sha256"] = digest(member["path"])
+                row["loudness"] = {"method": matched["method"], "policy": matched["policy"],
+                                   "target_lufs": matched["target_lufs"], "gain_db": member["gain_db"],
+                                   "before_lufs": member["before"]["integrated_lufs"],
+                                   "after_lufs": member["after"]["integrated_lufs"],
+                                   "after_sample_peak_dbfs": member["after"]["sample_peak_dbfs"]}
         families = [f for f in FAMILY_NAMES if f != "baseline"]
         rng.shuffle(families)
         for family in families:
@@ -99,7 +115,10 @@ def benchmark(manifest_path, destination, seed=None):
     dump(private / "evidence.json", {"schema_version": 1, "kind": manifest.get("purpose", "development-pilot"),
                                       "manifest_sha256": digest(manifest_path), "renders": evidence,
                                       "pack_id": pack_id, "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random"},
-                                      "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
+                                      "loudness_matching": "bs1770-4-attenuate-to-quietest-per-pair" if loudness_match else "none",
+                                      "limitations": [("loudness-matched by integrated BS.1770-4; sample peak, not true peak"
+                                                       if loudness_match else "not loudness-normalized"),
+                                                      "manual beatgrid", "no listening-quality claim"]})
     write_review(review / "index.html", cards, pack_id)
     dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
                                  "render_count": len(evidence), "status": "rendered-not-listener-validated",
@@ -134,6 +153,10 @@ def main():
     p.add_argument("manifest")
     p.add_argument("destination")
     p.add_argument("--seed", type=int, help="For reproducible smoke tests only; omit in listener studies")
+    p.add_argument("--no-loudness-match", action="store_true",
+                   help="Package unmatched renders (regression/diagnostics only; reintroduces a loudness confound)")
+    p = sub.add_parser("loudness", help="Measure BS.1770-4 integrated loudness of PCM16 WAVs")
+    p.add_argument("wavs", nargs="+")
     args = parser.parse_args()
     try:
         if args.command == "fixture":
@@ -141,8 +164,21 @@ def main():
         elif args.command == "validate":
             manifest, _ = validate_library(args.manifest)
             print(json.dumps({"valid": True, "tracks": len(manifest["tracks"]), "pairs": len(manifest["pairs"])}))
+        elif args.command == "loudness":
+            results = []
+            for index, path in enumerate(args.wavs, start=1):
+                try:
+                    result = measure_loudness(path)
+                except OSError as exc:
+                    # Never echo private source locations into job logs.
+                    parser.exit(2, f"MixLab loudness: input {index} unreadable ({type(exc).__name__})\n")
+                except ValueError as exc:
+                    parser.exit(2, f"MixLab loudness: input {index}: {exc}\n")
+                result.pop("sha256")
+                results.append(result)
+            print(json.dumps(results, indent=2, allow_nan=False))
         else:
-            print(benchmark(args.manifest, args.destination, args.seed))
+            print(benchmark(args.manifest, args.destination, args.seed, not args.no_loudness_match))
     except (ValueError, OSError, KeyError, TypeError) as exc:
         parser.exit(2, f"MixLab: {exc}\n")
 

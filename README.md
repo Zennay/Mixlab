@@ -2,7 +2,7 @@
 
 An offline AI-DJ research project: understand track segments, discover surprising combinations, render real transitions and eventually build full sets around context and an energy journey.
 
-**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. This first slice uses manually aligned, equal-tempo excerpts; regular-tempo beat proposals and manual annotation providers are implemented, but automatic downbeat/phrase/key analysis, stems, discovery and set planning remain future work.
+**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. This first slice uses manually aligned, equal-tempo excerpts; regular-tempo beat proposals, heuristic key proposals and manual annotation providers are implemented, but automatic downbeat/phrase analysis, validated key accuracy on real audio, stems, discovery and set planning remain future work.
 
 - [Notion project](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
 - [Current handoff](https://app.notion.com/p/3e79e19ac95581f4bf15c26a833da642)
@@ -16,10 +16,11 @@ An offline AI-DJ research project: understand track segments, discover surprisin
 - Validated, checksum-bound local audio manifests with explicit permission declarations.
 - Deterministic PCM16 mono/stereo renderer: equal-power baseline, bass swap, echo exit and hard cut.
 - Peak, RMS, clipping, DC offset and sample-jump diagnostics; identical render length and common gain across recipes.
+- Streaming ITU-R BS.1770-4 integrated loudness and per-pair, attenuation-only loudness matching of every A/B listening file (`python3 -m mixlab loudness <wav>...`).
 - Original synthetic fixtures for reproducible infrastructure tests.
 - Neutral A/B audio filenames, a local listening page, separate answer key and downloadable ratings.
 - Strict streaming ingest with recording/PCM split-leakage checks and a JSON Schema.
-- Replaceable analysis provider, measured regular-tempo proposals, manual cue/key annotations, content-addressed private feature cache and beat-error evaluation.
+- Replaceable analysis provider, measured regular-tempo proposals, heuristic global-key proposals with MIREX key scoring, manual cue/key annotations, content-addressed private feature cache and beat-error evaluation.
 - Streaming transition renderer with exclusive complete-file publication, clipping rejection and post-PCM metrics.
 - Checksum-bound rating aggregation with duplicate/coverage validation and explicit volume confounds.
 - No runtime dependencies beyond Python 3.10+ standard library.
@@ -39,7 +40,7 @@ Use fresh output directories; existing packs are never overwritten. Open `review
 
 Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding and tempo stretching are not implemented. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
 
-The current pilot uses common gain, not matched perceived loudness; this is a known listening confound to fix before a milestone-quality benchmark. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
+Renders use common gain; `benchmark` then attenuates every family of a pair to the quietest family's BS.1770-4 integrated loudness before packaging, and aggregation re-measures the frozen listening files ([loudness decisions](docs/adr/loudness-matching.md)). This removes the whole-clip level confound only: true peak and short-term loudness inside the transition are not equalized. `--no-loudness-match` is for diagnostics only. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
 
 ## Local library manifest
 
@@ -52,10 +53,11 @@ Keep source media, derived stems, private renders, manifests with personal paths
 ```bash
 python3 -m mixlab.ingest /private/library/library.json
 python3 -m mixlab.analysis /private/library/clip.wav --cache /private/features
+python3 -m mixlab.analysis /private/library/clip.wav --cache /private/features --provider chroma-key
 python3 -m mixlab.evaluation /private/pack /private/ratings/listener-*.json
 ```
 
-The analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. It does not identify musical phrases, vocals or key automatically, and never silently overwrites manual rendering metadata. ManualProvider accepts verified downbeats/phrases/key; these stay labelled manual. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
+The analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. `--provider chroma-key` proposes one global key (with Camelot code, candidates and margin) from tonal spectral peaks and abstains on noise, percussion or ambiguity; it is validated on synthetic chords only. Phrases and vocals are not identified automatically, and never silently overwrites manual rendering metadata. ManualProvider accepts verified downbeats/phrases/key; these stay labelled manual. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
 
 ## Continue
 

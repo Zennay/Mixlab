@@ -8,6 +8,7 @@ from ..engine import FAMILY_NAMES
 from .json_admission import load_bounded_json as _load
 
 CHOICES = {"A", "B", "Tie", "Both unusable"}
+LOUDNESS_TOLERANCE_LU = 0.5
 
 
 # Reuse the independently validated, single-FD, regular-file-only admission
@@ -154,16 +155,25 @@ def aggregate(root, rating_paths):
     total = {key:sum(r[key] for r in summaries) for key in ("candidate","baseline","ties","both_unusable")}
     decisive = total["candidate"] + total["baseline"]
     # Re-scan the bound listening files instead of trusting editable metric JSON.
+    from ..loudness import measure
     from ..quality import compare_wavs
     confounds = []
     root = Path(root)
     for tid, trial in trials.items():
         base_label = "A" if trial["A"] == "baseline" else "B"
         other_label = "B" if base_label == "A" else "A"
-        result = compare_wavs(root/"review"/f"{tid}-{base_label}.wav",
-                              [root/"review"/f"{tid}-{other_label}.wav"])["candidates"][0]
-        if not result["level_comparable_for_blind_ab"] or result["warnings"]:
-            confounds.append({"trial":tid,"warnings":result["warnings"]})
+        base_wav, other_wav = root/"review"/f"{tid}-{base_label}.wav", root/"review"/f"{tid}-{other_label}.wav"
+        result = compare_wavs(base_wav, [other_wav])["candidates"][0]
+        # RMS is only a fallback hint; integrated loudness decides level comparability.
+        warnings = [w for w in result["warnings"] if w != "rms_level_mismatch_not_lufs"]
+        loudness = [measure(base_wav)["integrated_lufs"], measure(other_wav)["integrated_lufs"]]
+        delta = None if None in loudness else round(loudness[1] - loudness[0], 3)
+        if delta is None:
+            warnings.append("integrated_loudness_undefined")
+        elif abs(delta) > LOUDNESS_TOLERANCE_LU:
+            warnings.append("integrated_loudness_mismatch")
+        if warnings:
+            confounds.append({"trial":tid,"warnings":warnings,"loudness_delta_lu":delta})
     # The quality comparator re-opens the reviewed files after the original
     # freeze verification. A file changed during that second read must not
     # contribute to a seemingly valid private aggregate. Revalidate the
@@ -178,7 +188,7 @@ def aggregate(root, rating_paths):
     # A blanket conditional caution is therefore the only honest inference;
     # do not promote any report based solely on editable provenance labels.
     multiple_candidates = any(sum(p == row["pair"] for p,f in rows) > 1 for row in summaries)
-    limitations = ["RMS comparison is not perceptual loudness matching",
+    limitations = ["BS.1770-4 integrated loudness with sample peak; short-term loudness swings and true peak are not equalized",
                    "listener identities are pseudonyms, not independently verified",
                    "source permission declarations are not independently authenticated",
                    # This is a universal conditional caveat, not a claim that
