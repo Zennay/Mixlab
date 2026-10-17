@@ -138,12 +138,15 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
                 if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
                     raise ValueError("private WAV outside frame/rate bounds")
                 window_size = max(1, round(rate * WINDOW_MS / 1000))
-                phase_shift = window_size // PHASE_SHIFT_DIVISOR
-                means = []
-                shifted_means = []
-                sums = [0] * channels
-                shifted_sums = [0] * channels
-                used_window = used_shifted = processed = 0
+                # Four staggered 250-ms grids: 0, 62.5, 125, 187.5 ms.
+                # Frames are decoded only once; each grid holds sums and
+                # complete means, never raw audio or sample positions.
+                offsets = (0, window_size // 4, window_size // 2,
+                           (3 * window_size) // 4)
+                grids = [[] for _ in offsets]
+                sums = [[0] * channels for _ in offsets]
+                counts = [0] * len(offsets)
+                processed = 0
                 while processed < frames:
                     expected = min(CHUNK_FRAMES, frames - processed)
                     raw = wav.readframes(expected)
@@ -154,27 +157,20 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
                     if sys.byteorder != "little":
                         samples.byteswap()
                     for i in range(0, len(samples), channels):
-                        # One PCM pass updates both 250-ms grids; the second
-                        # begins halfway through a window and avoids missing
-                        # a sustained offset at an arbitrary boundary.
-                        in_shifted_grid = processed + i // channels >= phase_shift
-                        for c in range(channels):
-                            value = samples[i + c]
-                            sums[c] += value
-                            if in_shifted_grid:
-                                shifted_sums[c] += value
-                        used_window += 1
-                        if used_window == window_size:
-                            means.append(tuple(s / (window_size * 32768.0) for s in sums))
-                            sums = [0] * channels
-                            used_window = 0
-                        if in_shifted_grid:
-                            used_shifted += 1
-                            if used_shifted == window_size:
-                                shifted_means.append(tuple(s / (window_size * 32768.0)
-                                                           for s in shifted_sums))
-                                shifted_sums = [0] * channels
-                                used_shifted = 0
+                        frame_index = processed + i // channels
+                        for phase, offset in enumerate(offsets):
+                            if frame_index < offset:
+                                continue
+                            for c in range(channels):
+                                sums[phase][c] += samples[i + c]
+                            counts[phase] += 1
+                            if counts[phase] == window_size:
+                                grids[phase].append(
+                                    tuple(v / (window_size * 32768.0)
+                                          for v in sums[phase])
+                                )
+                                counts[phase] = 0
+                                sums[phase] = [0] * channels
                     processed += expected
             after = os.fstat(handle.fileno())
             if _identity(after) != _identity(before):
@@ -183,8 +179,9 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
         if not stat.S_ISREG(final.st_mode) or _identity(final) != _identity(before):
             raise ValueError("private WAV path changed during scanning")
         return {"_identity": _identity(before), "channels": channels, "sample_rate": rate, "frames": frames,
-                "window_count": len(means), "means": means,
-                "shifted_means": shifted_means}
+                "window_count": len(grids[0]), "means": grids[0],
+                "quarter_means": grids[1], "shifted_means": grids[2],
+                "three_quarter_means": grids[3]}
     except (OSError, EOFError, wave.Error, struct.error, OverflowError) as exc:
         raise ValueError("private WAV could not be safely inspected") from None
     finally:
@@ -206,19 +203,17 @@ def _run_state(flags: list[bool], *, enough_windows: bool) -> bool | None:
     return False
 
 
-def _phase_state(primary: list[bool], shifted: list[bool]) -> bool | None:
-    """Merge two full-window grids without treating a short grid as a defect.
+def _phase_state(*grids: list[bool]) -> bool | None:
+    """Combine full-window phase grids, requiring one complete second.
 
-    Both grids use the same 250-ms full-window threshold and four consecutive
-    windows. The shifted grid cannot produce a clear/unknown judgment until
-    it has at least four complete windows of its own; this preserves the
-    original 1-second clear result for exactly 1-second clean inputs.
+    Incomplete grids contribute no decision. A clean exactly-one-second
+    source remains conclusively clear from the original 0-ms phase alone.
     """
-    main = _run_state(primary, enough_windows=len(primary) >= MIN_SUSTAINED_WINDOWS)
-    if len(shifted) < MIN_SUSTAINED_WINDOWS:
-        return main
-    other = _run_state(shifted, enough_windows=True)
-    return True if True in (main, other) else (None if None in (main, other) else False)
+    states = [_run_state(flags, enough_windows=True)
+              for flags in grids if len(flags) >= MIN_SUSTAINED_WINDOWS]
+    if not states:
+        return None
+    return True if True in states else (None if None in states else False)
 
 
 def _verify_pair_source(source: str | os.PathLike[str], expected: tuple[int, ...]) -> None:
@@ -237,19 +232,20 @@ def _compare_scans(ref: dict, alt: dict) -> dict:
     n = ref["window_count"]
     baseline_states = []
     excess_states = []
+    phase_keys = ("means", "quarter_means", "shifted_means",
+                  "three_quarter_means")
     for c in range(ref["channels"]):
-        baseline_states.append(_phase_state(
-            [abs(row[c]) >= DC_THRESHOLD for row in ref["means"]],
-            [abs(row[c]) >= DC_THRESHOLD for row in ref["shifted_means"]],
-        ))
+        baseline_states.append(_phase_state(*(
+            [abs(row[c]) >= DC_THRESHOLD for row in ref[key]]
+            for key in phase_keys
+        )))
         def excess(rows_a: list, rows_b: list) -> list[bool]:
             return [abs(new[c]) >= DC_THRESHOLD and
                     abs(new[c] - old[c]) >= RELATIVE_THRESHOLD
                     for old, new in zip(rows_a, rows_b)]
-        excess_states.append(_phase_state(
-            excess(ref["means"], alt["means"]),
-            excess(ref["shifted_means"], alt["shifted_means"]),
-        ))
+        excess_states.append(_phase_state(*(
+            excess(ref[key], alt[key]) for key in phase_keys
+        )))
     all_states = baseline_states + excess_states
     warning = True if True in all_states else (None if None in all_states else False)
     return {
@@ -262,6 +258,8 @@ def _compare_scans(ref: dict, alt: dict) -> dict:
         "frames": ref["frames"],
         "window_ms": WINDOW_MS,
         "window_phase_shift_ms": WINDOW_MS // PHASE_SHIFT_DIVISOR,
+        "window_grid_offsets_ms": [0.0, WINDOW_MS / 4, WINDOW_MS / 2,
+                                   3 * WINDOW_MS / 4],
         "complete_windows": n,
         "thresholds": {"dc_fraction_full_scale": DC_THRESHOLD,
                        "relative_fraction_full_scale": RELATIVE_THRESHOLD,
@@ -395,6 +393,8 @@ def inspect_batch(baseline: str | os.PathLike[str],
         "candidates": details,
         "window_ms": WINDOW_MS,
         "window_phase_shift_ms": WINDOW_MS // PHASE_SHIFT_DIVISOR,
+        "window_grid_offsets_ms": [0.0, WINDOW_MS / 4, WINDOW_MS / 2,
+                                   3 * WINDOW_MS / 4],
         "complete_windows": ref["window_count"],
         "thresholds": baseline_result["thresholds"],
         "interpretation": "Technical DC confound only; not musical preference.",
