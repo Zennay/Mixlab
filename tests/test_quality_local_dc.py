@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 from pathlib import Path
@@ -20,13 +21,13 @@ RATE = 8000
 DURATION = 4
 
 
-def _wav(path: Path, *, channels=1, rate=RATE, duration=DURATION, offsets=None):
+def _wav(path: Path, *, channels=1, rate=RATE, duration=DURATION, offsets=None, amplitude=700):
     frames = int(rate * duration)
     if offsets is None:
         offsets = [[0] * frames for _ in range(channels)]
     pcm = bytearray()
     for i in range(frames):
-        sine = round(700 * math.sin(2 * math.pi * 440 * i / rate))
+        sine = round(amplitude * math.sin(2 * math.pi * 440 * i / rate))
         for c in range(channels):
             pcm += struct.pack("<h", sine + offsets[c][i])
     with wave.open(str(path), "wb") as dest:
@@ -46,6 +47,56 @@ class LocalDCQualityTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name) / "baseline.wav"
         self.alt = Path(self.tmp.name) / "candidate.wav"
+
+    def test_negative_sustained_dc_offset(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[_offset_sections([-3400] * 4)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["candidate_excess_bias_warning"][0], True)
+
+    def test_large_gain_change_without_dc_is_not_bias(self):
+        _wav(self.base, amplitude=700)
+        _wav(self.alt, amplitude=10000)
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+
+    def test_subthreshold_bias_does_not_flag(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[_offset_sections([700] * 4)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+
+    def test_comparison_preserves_private_file_bytes(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[_offset_sections([3400] * 4)])
+        original = [hashlib.sha256(p.read_bytes()).digest() for p in (self.base, self.alt)]
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+        after = [hashlib.sha256(p.read_bytes()).digest() for p in (self.base, self.alt)]
+        self.assertEqual(original, after)
+
+    def test_post_scan_baseline_symlink_swap_is_rejected(self):
+        _wav(self.base)
+        _wav(self.alt)
+        original = local_dc._scan_private_pcm
+        scans = 0
+        def swap_after_candidate(path):
+            nonlocal scans
+            result = original(path)
+            scans += 1
+            if scans == 2:
+                self.base.unlink()
+                self.base.symlink_to(self.alt)
+            return result
+        with mock.patch.object(local_dc, "_scan_private_pcm", swap_after_candidate):
+            with self.assertRaisesRegex(ValueError, "pair inspection"):
+                local_dc.inspect(self.base, self.alt)
+
+    def test_non_pcm16_width_rejected(self):
+        _wav(self.base)
+        with wave.open(str(self.alt), "wb") as out:
+            out.setnchannels(1)
+            out.setsampwidth(1)
+            out.setframerate(RATE)
+            out.writeframes(b"\x80" * (RATE * DURATION))
+        with self.assertRaisesRegex(ValueError, "PCM16"):
+            local_dc.inspect(self.base, self.alt)
 
     def test_identical_sources_are_negative(self):
         _wav(self.base)
