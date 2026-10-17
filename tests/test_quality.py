@@ -25,6 +25,15 @@ def wav(path, samples, *, rate=8000, channels=1, width=2):
         dst.writeframes(values.tobytes())
 
 
+def neutral_review_page(trials):
+    return "".join(
+        f'<fieldset data-trial="{trial}">'
+        f'<audio src="{trial}-A.wav"></audio>'
+        f'<audio src="{trial}-B.wav"></audio></fieldset>'
+        for trial in trials
+    )
+
+
 class QualityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -396,7 +405,7 @@ class QualityTests(unittest.TestCase):
         other[140] += 1
         wav(review / "trial-002-A.wav", self.samples)
         wav(review / "trial-002-B.wav", other)
-        (review / "index.html").write_text("<p>private blind-review UI</p>")
+        (review / "index.html").write_text(neutral_review_page(["trial-001", "trial-002"]))
         report = inspect_review_pack(review)
         self.assertEqual(2, report["trial_count"])
         self.assertEqual(1, report["warning_trial_count"])
@@ -404,6 +413,7 @@ class QualityTests(unittest.TestCase):
         self.assertIn("identical_pcm_between_A_and_B", report["trials"][0]["B"]["warnings"])
         self.assertFalse(report["trials"][1]["technical_warnings_present"])
         self.assertFalse(report["answer_key_opened"])
+        self.assertTrue(report["review_page_audio_links_verified"])
         self.assertTrue(report["human_preference_test_required"])
         serialized = json.dumps(report)
         self.assertNotIn(str(self.root), serialized)
@@ -458,7 +468,7 @@ class QualityTests(unittest.TestCase):
         review.mkdir()
         wav(review / "trial-001-A.wav", self.samples)
         wav(review / "trial-001-B.wav", [int(x / 2) for x in self.samples])
-        (review / "index.html").write_text("<p>blinded trial</p>")
+        (review / "index.html").write_text(neutral_review_page(["trial-001"]))
         self.assertEqual(1, inspect_review_pack(review)["trial_count"])
         secret = review / "answer-key.json"
         secret.write_text('{"trial-001": "baseline-A"}')
@@ -477,6 +487,30 @@ class QualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Review index"):
             inspect_review_pack(review)
 
+    def test_review_page_links_reject_wrong_swapped_or_external_audio(self):
+        review = self.root / "review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x / 2) for x in self.samples])
+        page = review / "index.html"
+        valid = neutral_review_page(["trial-001"])
+        page.write_text(valid)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        for wrong in (
+            valid.replace("trial-001-B.wav", "https://example.invalid/music.wav"),
+            valid.replace("trial-001-A.wav", "__temporary__")
+                 .replace("trial-001-B.wav", "trial-001-A.wav")
+                 .replace("__temporary__", "trial-001-B.wav"),
+            valid.replace('data-trial="trial-001"', 'data-trial="trial-002"'),
+            valid.replace('src="trial-001-B.wav"', 'src="trial-001-A.wav"'),
+        ):
+            with self.subTest(wrong=wrong):
+                page.write_text(wrong)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+        page.unlink()
+        self.assertFalse(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
@@ -493,6 +527,7 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(7, len(public_files))  # index.html and six WAVs.
         report = inspect_review_pack(output / "review")
         self.assertEqual(3, report["trial_count"])
+        self.assertTrue(report["review_page_audio_links_verified"])
         self.assertEqual(["trial-001", "trial-002", "trial-003"],
                          [trial["trial_id"] for trial in report["trials"]])
         self.assertFalse(report["answer_key_opened"])

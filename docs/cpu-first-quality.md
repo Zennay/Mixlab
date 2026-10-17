@@ -54,6 +54,13 @@ Unexpected files (especially `answer-key.json` / evidence / unapproved
 downloads), symlinks and nested directories cause a sanitized failure,
 rather than risking accidental publication of private trial assignments.
 The inspector does not read or copy hidden source/answer content.
+When the review directory includes `index.html`, the parser checks the
+actual audio player links and enclosing trial fieldsets against all local
+A/B WAVs in the canonical order. Missing, duplicated, swapped or remote audio
+sources and unmatched trial IDs fail closed with a sanitized error (exit 3).
+The review page is capped at 1 MiB; its text is never returned in JSON.
+Audio-only review folders without an index can still be checked, but
+`review_page_audio_links_verified` is then `false`, not a quality guarantee.
 
 By default it exits **0** with JSON regardless of nonfatal warnings.
 With `--fail-on-warnings`, it exits **2** when any review pair raises a
