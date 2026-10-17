@@ -605,7 +605,7 @@ class QualityTests(unittest.TestCase):
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
-        from mixlab.cli import benchmark, fixture
+        from mixlab.cli import benchmark, fixture, write_review
         fixture_root = self.root / "official-fixture"
         manifest = fixture(fixture_root)
         output = self.root / "official-benchmark"
@@ -618,6 +618,12 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(7, len(public_files))  # index.html and six WAVs.
         report = inspect_review_pack(output / "review")
         strict_page = inspect_review_pack(output / "review", require_generated_html=True)
+        bound = inspect_review_pack(output / "review", require_generated_html=True,
+                                    require_receipt=True)
+        self.assertFalse(report["public_receipt_pack_id_verified"])
+        self.assertTrue(bound["public_receipt_pack_id_verified"])
+        self.assertTrue(bound["official_generated_html_verified"])
+        self.assertEqual(report["trials"], bound["trials"])
         self.assertFalse(report["official_generated_html_verified"])
         self.assertTrue(strict_page["official_generated_html_verified"])
         self.assertEqual(3, strict_page["trial_count"])
@@ -663,6 +669,48 @@ class QualityTests(unittest.TestCase):
         self.assertTrue(json.loads(valid.stdout)["official_generated_html_verified"])
         strict = subprocess.run(args + ["--fail-on-warnings"], capture_output=True, text=True)
         self.assertEqual(2, strict.returncode)  # Repeated baseline across trials.
+        bound_cli = subprocess.run(args + ["--require-receipt"],
+                                   capture_output=True, text=True)
+        self.assertEqual(0, bound_cli.returncode)
+        self.assertTrue(json.loads(bound_cli.stdout)["public_receipt_pack_id_verified"])
+
+        # Even an *internally canonical* page with another valid 64-hex
+        # pack ID would produce ratings that the frozen receipt cannot bind.
+        forged_id = "0" * 64 if receipt["pack_id"] != "0" * 64 else "1" * 64
+        write_review(page, ["trial-001", "trial-002", "trial-003"], forged_id)
+        self.assertTrue(inspect_review_pack(output / "review", require_generated_html=True)[
+            "official_generated_html_verified"])
+        with self.assertRaisesRegex(ValueError, "pack ID differs"):
+            inspect_review_pack(output / "review", require_generated_html=True,
+                                require_receipt=True)
+        invalid = subprocess.run(args + ["--require-receipt"], capture_output=True, text=True)
+        self.assertEqual(3, invalid.returncode)
+        self.assertFalse(invalid.stdout)
+        self.assertNotIn(str(self.root), invalid.stderr)
+        page.write_text(trusted_html)
+
+        # Receipt trial count, symlink redirection and pathological input
+        # must fail before reading the *private* answer key.
+        receipt_bytes = receipt_path.read_bytes()
+        bad = dict(receipt)
+        bad["trial_count"] = 2
+        receipt_path.write_text(json.dumps(bad))
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            inspect_review_pack(output / "review", require_receipt=True)
+        receipt_path.write_text("[" * 1500 + "0" + "]" * 1500)
+        nested = subprocess.run(args + ["--require-receipt"], capture_output=True, text=True)
+        self.assertEqual(3, nested.returncode)
+        self.assertFalse(nested.stdout)
+        self.assertNotIn(str(self.root), nested.stderr)
+        self.assertNotIn("Traceback", nested.stderr)
+        receipt_path.unlink()
+        receipt_path.symlink_to(output / "private" / "answer-key.json")
+        with self.assertRaisesRegex(ValueError, "missing or linked"):
+            inspect_review_pack(output / "review", require_receipt=True)
+        receipt_path.unlink()
+        receipt_path.write_bytes(receipt_bytes)
+        self.assertTrue(inspect_review_pack(output / "review", require_receipt=True)[
+            "public_receipt_pack_id_verified"])
 
     def test_renderer_to_blind_review_quality_preflight_integration(self):
         # Exercise the actual streaming renderer, not only hand-built WAV
