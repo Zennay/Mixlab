@@ -117,6 +117,8 @@ def _candidate_gap(outgoing, incoming):
 
 def _build_pairs(source, proposals):
     """Return exact, reproducible alternatives, not guessed song metadata."""
+    if not isinstance(source, dict) or not isinstance(proposals, dict):
+        raise ValueError("Source and cue suggestions must be JSON objects")
     tracks = source.get("tracks")
     pairs = source.get("pairs")
     if (source.get("purpose") != "development-pilot"
@@ -212,6 +214,8 @@ def prepare_board(source_manifest, suggestions_file, output_html):
             raise ValueError("Private audio products must stay outside Git")
     source = _read_spec(source_path)
     ideas = _read_spec(ideas_path)
+    if not isinstance(ideas, dict):
+        raise ValueError("Energy suggestions must be a JSON object")
     if ideas.get("source_manifest_sha256") != digest(source_path):
         raise ValueError("Energy suggestions are stale or belong to another source")
     data = {"schema_version": 1, "source_manifest_sha256": digest(source_path),
@@ -239,6 +243,8 @@ def apply_board(source_manifest, suggestions_file, selection_file, new_source_ma
         if (folder / ".git").exists():
             raise ValueError("Cannot publish private music manifests to Git")
     source, ideas = _read_spec(source_path), _read_spec(ideas_path)
+    if not isinstance(ideas, dict):
+        raise ValueError("Energy suggestions must be a JSON object")
     if ideas.get("source_manifest_sha256") != digest(source_path):
         raise ValueError("Energy suggestions changed or are stale")
     current_pairs = _build_pairs(source, ideas)
