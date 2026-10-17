@@ -11,12 +11,12 @@ from mixlab.evaluation.json_admission import load_bounded_json
 from mixlab.quality.study_json_path_guard import inspect_pinned_study_json_paths
 from mixlab.quality import study_json_path_guard as gate
 
-from test_quality_study_binding import FrozenStudyBindingTests
+import test_quality_study_binding as fixture_module
 
 
 class PinnedJSONPathTests(unittest.TestCase):
     def setUp(self):
-        self.fx = FrozenStudyBindingTests(
+        self.fx = fixture_module.FrozenStudyBindingTests(
             "test_valid_five_pair_study_is_bound_to_actual_pcm_receipts"
         )
         self.fx.setUp()
