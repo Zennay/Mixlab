@@ -122,7 +122,6 @@ def benchmark(manifest_path, destination, seed=None, loudness_match=True):
     write_review(review / "index.html", cards, pack_id)
     dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
                                  "render_count": len(evidence), "status": "rendered-not-listener-validated",
-                                 "loudness_matched": bool(loudness_match),
                                  "manifest_sha256": digest(manifest_path)})
     return root / "receipt.json"
 

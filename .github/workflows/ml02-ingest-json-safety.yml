@@ -1,0 +1,37 @@
+name: MixLab ML-02 manifest JSON safety QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mixlab/ingest.py'
+      - 'tests/test_ingest_json_nesting.py'
+      - '.github/workflows/ml02-ingest-json-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mixlab/ingest.py'
+      - 'tests/test_ingest_json_nesting.py'
+      - '.github/workflows/ml02-ingest-json-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-manifest-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact triggering commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert tested source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile source and tests
+        run: python3 -m compileall -q mixlab/ingest.py tests/test_ingest.py tests/test_ingest_json_nesting.py
+      - name: Run full ingress and malformed-input regression
+        run: python3 -m unittest discover -s tests -p 'test_ingest*.py' -v
