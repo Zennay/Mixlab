@@ -300,5 +300,35 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         self.assertIs(row1["regional_timing_shift_risk"], True)
         self.assertIs(row2["regional_timing_shift_risk"], False)
 
+
+    def test_result_independent_of_read_chunk_sizes(self):
+        from unittest.mock import patch
+        samples = regional_pattern()
+        make_wav(self.base, samples)
+        make_wav(self.other, second_half_delayed(samples))
+        ref = compare_envelopes(self.base, [self.other])
+        for chunk in (1, 257, 4096, 8191):
+            with self.subTest(chunk=chunk):
+                with patch("mixlab.quality.alignment.READ_BLOCK_FRAMES", chunk):
+                    self.assertEqual(ref, compare_envelopes(self.base, [self.other]))
+
+    def test_stereo_region_drift_detected_after_a_clean_opening(self):
+        samples = regional_pattern()
+        stereo = [sample for x in samples for sample in (x, round(x * 0.5))]
+        shifted = second_half_delayed(samples)
+        other = [sample for x in shifted for sample in (x, round(x * 0.5))]
+        make_wav(self.base, stereo, channels=2)
+        make_wav(self.other, other, channels=2)
+        self.assertIs(self.row()["regional_timing_shift_risk"], True)
+
+    def test_short_or_flat_audio_cannot_claim_regional_clean(self):
+        make_wav(self.base, self.samples[:2400])
+        make_wav(self.other, self.samples[:2400])
+        self.assertIsNone(self.row()["regional_timing_shift_risk"])
+        long_flat = [2000] * 32000
+        make_wav(self.base, long_flat)
+        make_wav(self.other, long_flat)
+        self.assertIsNone(self.row()["regional_timing_shift_risk"])
+
 if __name__ == "__main__":
     unittest.main()
