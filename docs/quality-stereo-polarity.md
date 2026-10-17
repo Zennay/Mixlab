@@ -244,3 +244,39 @@ first PCM decode**, across baseline **plus every candidate**:
 This is best-effort filesystem admission, not a promise of precise CPU time,
 thread isolation, atomic snapshots or listener preference. No private source
 names, bytes, fingerprints or RIFF metadata are added to anonymous reports.
+
+## Exact shifted-PCM reuse under silent edge padding
+
+An A/B option can reuse **all** audible PCM samples but move the excerpt a
+few frames earlier or later, adding compensating fully-zero frames at its
+start/end so the published duration is identical. Raw PCM SHA-256 and
+previous stereo sign/swap fingerprints then differ, so the same source
+could misleadingly enter a supposedly novel comparison.
+
+The new private `mixlab/quality/pcm_identity.py` maintains a streaming
+SHA-256 of the **contiguous interleaved PCM sequence from the first to last
+nonzero whole frame**. It drops only *fully-zero* frames outside that span;
+any silence inside the span, mono/stereo channel contents, and every
+nonzero sample remain byte-exact. Its bounded implementation buffers no
+source audio or pending silence, only a zero-frame count; flushing occurs
+in at most **4096-frame** chunks. The digest is **never** included in JSON,
+logs or review packs, and totally silent clips yield no such identity.
+
+`compare_wavs` now issues the neutral
+`edge_silence_shifted_pcm_inspect_for_reused_audio` warning with
+`edge_silence_shifted_pcm_of` equal only to `baseline` or an anonymous
+earlier `candidate-NN` for distinct raw PCM with identical trimmed audio.
+Original raw duplicates and stereo transformations keep their existing
+separate warnings; no exact shift *amount*, start coordinate, original
+source identity, fingerprint or answer key is returned. A shifted clip
+may genuinely sound different because of timing, so this is an
+**inspection hint**, not an automatic invalidation or musical preference.
+
+Nine synthetic tests in `tests/test_edge_pcm_identity.py` cover stereo
+and mono padded time shifts, >4096-frame streaming boundaries, earlier
+candidate reuse, single-sample and interior-silence mismatch, full silence,
+raw duplicate distinction, private digest behavior and strict CLI
+anonymization. The existing same-inode/source-identity and batch budgets
+continue to gate all inputs. This does not detect time stretching,
+nonzero-value padding, pitch changes, partial edits or perceptual
+near-duplicates.
