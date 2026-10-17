@@ -11,6 +11,7 @@ from contextlib import ExitStack
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import stat
@@ -115,6 +116,25 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
             and all(c in "0123456789abcdef" for c in h)
             for h in (*source_hashes, output_hash)
         ):
+            raise RepeatabilityError(_ERROR)
+        # Two equally malformed receipts cannot establish even metadata
+        # consistency. Validate the ordinary numeric/structural contract
+        # before checking equality of its declared semantic fields.
+        def positive_number(value: object) -> bool:
+            return (type(value) in (float, int)
+                    and math.isfinite(value) and value > 0)
+
+        if (not isinstance(recipe.get("family"), str)
+                or not recipe["family"]
+                or not positive_number(recipe.get("bpm"))
+                or not positive_number(recipe.get("beats"))
+                or not positive_number(receipt.get("duration_seconds"))
+                or not positive_number(receipt.get("gain_linear"))
+                or any(type(positions.get(part)) is not int
+                       or positions[part] < 0 for part in ("a", "b"))
+                or any(not isinstance(receipt.get(part), str)
+                       or not receipt[part] for part in (
+                           "alignment_source", "tempo_source"))):
             raise RepeatabilityError(_ERROR)
         # Bind the semantic render contract; intentionally exclude the
         # output pathname, the output hash and block_frames. Block sizes may
