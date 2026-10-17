@@ -128,6 +128,20 @@ Matching the official template does **not** prove its JavaScript safe,
 replace human JS/CSP security review, establish listening preference or
 authorize publication of third-party music.
 
+A public receipt used for this opt-in check must not acquire hidden trial
+assignments, music source paths or arbitrary extra fields. Its accepted keys
+are exactly `schema_version`, `pack_id`, `trial_count`, and optional
+`render_count`, `status`, `manifest_sha256`. The optional fields, if
+provided, must have their documented bounded types: positive bounded
+integer render count, literal `rendered-not-listener-validated` status
+and 64-character lowercase hexadecimal manifest fingerprint. Duplicate
+JSON object keys are rejected instead of allowing parser-last-value
+ambiguity. Unknown fields (including even innocently added metadata) must
+be explicitly reviewed and kept out of a listener-visible receipt; preserve
+the existing private `evidence.json` and `answer-key.json` separately.
+This check is performed only with `--require-receipt` and does not prove
+the receipt is authentic, signed or safe to redistribute with licensed music.
+
 For an actual frozen listening pack, also set `--require-receipt`. This
 opt-in reads **only** the bounded regular `receipt.json` sibling of the
 public `review/` directory (maximum 8 KiB); it checks schema v1, the
