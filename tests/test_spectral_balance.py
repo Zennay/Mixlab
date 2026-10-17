@@ -831,6 +831,20 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("_fold_spans", json.dumps(self.report()))
         self.assertNotIn(str(self.dir), json.dumps(self.report()))
 
+    def test_disjoint_single_mono_cancellation_span_per_source_is_not_persistent(self):
+        make_stereo_polarity_segments(self.base, [-1] + [1] * 7)
+        make_stereo_polarity_segments(self.other, [1] * 7 + [-1])
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_mono_fold_cancellation_risk"])
+        self.assertNotIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_two_broadband_mono_cancellation_spans_in_one_source_still_warn(self):
+        make_stereo_polarity_segments(self.base, [-1, -1] + [1] * 6)
+        make_stereo_polarity_segments(self.other, [1] * 7 + [-1])
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_temporal_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+
     def test_same_temporally_antiphase_pair_remains_inspect_not_false_clean(self):
         make_stereo_polarity_segments(self.base, [1] * 4 + [-1] * 4)
         make_stereo_polarity_segments(self.other, [1] * 4 + [-1] * 4)
@@ -905,6 +919,20 @@ class SpectralBalanceTests(unittest.TestCase):
         row = self.report()["candidates"][0]
         self.assertFalse(row["stereo_temporal_channel_dropout_risk"])
         self.assertNotIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+
+    def test_one_disjoint_stereo_dropout_per_source_is_not_persistent(self):
+        make_stereo_window_dropout_wav(self.base, [1] + [0] * 7)
+        make_stereo_window_dropout_wav(self.other, [0] * 7 + [2])
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_channel_dropout_risk"])
+        self.assertNotIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+
+    def test_two_dropout_spans_in_one_track_remain_inspect_with_other_one_off(self):
+        make_stereo_window_dropout_wav(self.base, [1, 1] + [0] * 6)
+        make_stereo_window_dropout_wav(self.other, [0] * 7 + [2])
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_temporal_channel_dropout_risk"])
+        self.assertIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
 
     def test_two_stereo_channel_dropouts_are_flagged_even_in_baseline(self):
         make_stereo_window_dropout_wav(self.base, [2, 2] + [0] * 6)
