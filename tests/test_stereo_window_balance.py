@@ -83,6 +83,20 @@ class StereoWindowLevelConfoundTests(unittest.TestCase):
         self.assertTrue(row["stereo_window_channel_level_confound_risk"])
         self.assertGreaterEqual(row["stereo_window_channel_level_mismatch_fraction"], .4)
 
+    def test_partial_right_channel_mute_is_confound_only_when_sustained(self):
+        # A muted channel for two of ten windows is below the 25% policy.
+        # Three windows cross the policy even when aggregate RMS remains
+        # roughly level matched and channel source names stay private.
+        for windows, expected_risk in ((2, False), (3, True)):
+            with self.subTest(muted_windows=windows):
+                changed = list(self.frames)
+                for i in range(windows * 800):
+                    changed[i] = (changed[i][0], 0)
+                write_pcm(self.candidate, changed)
+                row = self.row()
+                self.assertEqual(expected_risk, row["stereo_window_channel_level_confound_risk"])
+                self.assertAlmostEqual(windows / 10, row["stereo_window_channel_level_mismatch_fraction"])
+
     def test_identical_stereo_remains_passed_without_exposing_envelopes(self):
         write_pcm(self.candidate, self.frames)
         row = self.row()
