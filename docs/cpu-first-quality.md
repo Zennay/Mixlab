@@ -201,6 +201,13 @@ human preference evidence.
   listener preference, true-peak measure, phase correction or guaranteed
   mono-compatibility score. Complete cancellation reports a null global loss
   with a true risk flag; mono files also use null where not applicable.
+- Repeated high-amplitude PCM plateaus can indicate **earlier clipping
+  followed by gain reduction** even when no current sample reaches -0.001 dBFS.
+  The streaming scanner counts runs of >=4 *exactly equal* consecutive samples
+  at >=72% full scale, including across 4096-frame chunk boundaries, on both
+  baseline and candidates. It is an **inspect-for-prior-limiting heuristic**,
+  not proof of clipped audio: deliberately flattened bass, square waves or
+  creative effects can legitimately trigger it. No automatic audio repair.
 - Unexpected adjacent-sample jumps >=50% full scale are counted, including
   across the internal 4096-frame read boundary, and receive a technical pop
   warning. DC offset exceeding 3% full scale on any channel receives an
