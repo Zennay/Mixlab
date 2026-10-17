@@ -78,6 +78,21 @@ from concurrent quality, DSP and evaluation owners and is not integrated into
 the shared CLI/pack code until an integration owner accepts it.
 
 
+## Optional fail-closed CLI automation
+
+The default CLI remains **descriptive** (exit 0 for a valid report, even if it includes a warning or an inconclusive null). For an opt-in QA gate:
+
+```sh
+python3 -m mixlab.quality.precision BASELINE.wav CANDIDATE.wav --fail-on-warnings --require-conclusive
+```
+
+- `--fail-on-warnings` returns **2** for detected technical inspection risk.
+- `--require-conclusive` returns **2** for insufficient PCM/stereo/regional evidence (null).
+- With both flags, either warning or inconclusive data rejects the gate.
+- Exit **3** means invalid arguments, malformed audio or incomparable WAVs.
+- Exit **0** means only that this heuristic did not flag its scoped issue; it is not M1 acceptance or a human-quality judgment.
+
+All valid modes print the same anonymous JSON; failure messages from argparse never echo private argument values or paths. Strict mode is opt-in, so existing report-only workflows keep their exit semantics.
 ## CI resource proof and adversarial regressions
 
 The PR-only GitHub-hosted workflow checks exact immutable source SHA,
