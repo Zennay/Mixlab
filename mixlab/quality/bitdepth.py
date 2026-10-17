@@ -289,6 +289,72 @@ def _aligned_active_evidence(base_source, candidate_source, channel):
     return False
 
 
+def _joint_sample_evidence(base_source, candidate_source):
+    """Read two source FDs together to require SAME-FRAME PCM activity.
+
+    Two WAVs can each be 50% active inside every 100ms window but take
+    alternating halves, yielding exactly ZERO audible overlapping samples.
+    Window-level intersection alone cannot establish A/B comparability.
+    This bounded second pass keeps at most two BLOCK_FRAMES PCM blocks.
+    """
+    channels, rate, frames = base_source["shape"]
+    left, right = base_source["reader"], candidate_source["reader"]
+    left.rewind()
+    right.rewind()
+    good = [False] * channels
+    streak = [0] * channels
+    simultaneous_in_streak = [0] * channels
+    joint_count = [0] * channels
+    active_window = None
+
+    def finalize_window(index):
+        if index is None:
+            return
+        start = (index * rate + 9) // 10
+        end = ((index + 1) * rate + 9) // 10
+        if end > frames:
+            return
+        for ch in range(channels):
+            if (100 * joint_count[ch] >=
+                    MIN_WINDOW_ACTIVE_PERCENT * (end - start)):
+                streak[ch] += 1
+                simultaneous_in_streak[ch] += joint_count[ch]
+                if (streak[ch] >= MIN_ACTIVE_WINDOWS and
+                        simultaneous_in_streak[ch] >= MIN_ELIGIBLE):
+                    good[ch] = True
+            else:
+                streak[ch] = 0
+                simultaneous_in_streak[ch] = 0
+
+    offset = 0
+    while offset < frames:
+        take = min(BLOCK_FRAMES, frames - offset)
+        left_data = left.readframes(take)
+        right_data = right.readframes(take)
+        expected = take * channels * 2
+        if len(left_data) != expected or len(right_data) != expected:
+            raise ValueError("truncated synchronized PCM read")
+        a, b = array("h"), array("h")
+        a.frombytes(left_data)
+        b.frombytes(right_data)
+        if sys.byteorder != "little":
+            a.byteswap()
+            b.byteswap()
+        for pos in range(take):
+            w = ((offset + pos) * 10) // rate
+            if w != active_window:
+                finalize_window(active_window)
+                active_window = w
+                joint_count = [0] * channels
+            for ch in range(channels):
+                at = pos * channels + ch
+                if abs(a[at]) >= ACTIVE_ABS and abs(b[at]) >= ACTIVE_ABS:
+                    joint_count[ch] += 1
+        offset += take
+    finalize_window(active_window)
+    return good
+
+
 def _regional_coarse_loss(base_source, candidate_source, channel):
     """Return a sustained 400ms candidate-specific quantization contrast."""
     before = base_source["_private_window_profiles"][channel]
@@ -359,6 +425,12 @@ def inspect_ab(baseline, candidates):
             if sum(s["shape"][2] for s in sources) > MAX_GROUP_FRAMES:
                 raise ValueError("A/B processing budget exceeded")
             results = [_scan(source) for source in sources]
+            # An additional bounded synchronous read proves PCM is present
+            # in BOTH sources on the same frames, not alternating half-windows.
+            joint_evidence = [
+                _joint_sample_evidence(sources[0], candidate)
+                for candidate in sources[1:]
+            ]
             # Check every earlier source *after* scanning the last member.
             for source in sources:
                 _, path_info, current_ancestors = _walk(source["path"])
@@ -374,7 +446,8 @@ def inspect_ab(baseline, candidates):
                 base_windows = sources[0]["_private_window_profiles"][channel]
                 candidate_windows = sources[index]["_private_window_profiles"][channel]
                 if (not base["evidenced"] or not current["evidenced"]
-                        or not _aligned_active_evidence(sources[0], sources[index], channel)):
+                        or not _aligned_active_evidence(sources[0], sources[index], channel)
+                        or not joint_evidence[index - 1][channel]):
                     # Independent sustained activity is NOT evidence that
                     # the two sources contain simultaneous comparable PCM.
                     per_channel.append(None)
@@ -402,7 +475,7 @@ def inspect_ab(baseline, candidates):
                 "per_channel_review": per_channel,
             })
         return {
-            "metric": "pcm16_aligned_multi_resolution_vs_baseline_v5",
+            "metric": "pcm16_sample_joint_multi_resolution_vs_baseline_v6",
             "technical_proxy_only": True,
             "channels": shape[0],
             "sample_rate": shape[1],
