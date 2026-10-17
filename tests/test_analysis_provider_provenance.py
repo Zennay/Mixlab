@@ -90,6 +90,10 @@ class ProviderProvenanceCacheTests(unittest.TestCase):
                            ("annotator", "different")):
             with self.subTest(key=key), self.assertRaises(TypeError):
                 provider.config[key] = value
+        for attr, value in (("config", {"bpm": 121}),
+                            ("version", "manual-v1-forged")):
+            with self.subTest(attr=attr), self.assertRaises(AttributeError):
+                setattr(provider, attr, value)
         self.assertEqual(provider.version, original_version)
         self.assertEqual(provider.config["bpm"], 120)
         self.assertEqual(first, analyze_cached(self.source, directory, provider))
