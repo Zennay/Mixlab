@@ -72,6 +72,8 @@ class FrozenStudyBindingTests(unittest.TestCase):
                                 "family": f,
                                 "source_hashes": [left, right],
                                 "recipe": {"family": f, "bpm": 120.0, "beats": 4,
+                                           "a_start": 0.0, "b_start": 0.0,
+                                           "gain_db": -6.0,
                                            "a_bpm": 120.0, "b_bpm": 120.0},
                                 "output_sha256": hashlib.sha256(wav.read_bytes()).hexdigest()})
 
@@ -174,6 +176,51 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertEqual(len(verify_pack(self.pack)[2]), 5)
         with self.assertRaisesRegex(ValueError, "do not match"):
             self.check()
+
+    def test_negative_forged_render_start_is_refused_before_pcm(self):
+        from unittest import mock
+        for field in ("a_start", "b_start"):
+            with self.subTest(field=field):
+                original = (self.private / "evidence.json").read_bytes()
+                try:
+                    self.edit("private/evidence.json", lambda doc:
+                              doc["renders"][0]["recipe"].__setitem__(field, -4.0))
+                    self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+                    with mock.patch("mixlab.quality.study_binding.verify_pack",
+                                    side_effect=AssertionError("PCM accessed")) as scanner:
+                        with self.assertRaisesRegex(ValueError, "do not match"):
+                            self.check()
+                        scanner.assert_not_called()
+                finally:
+                    (self.private / "evidence.json").write_bytes(original)
+
+    def test_forged_gain_outside_renderer_contract_refused(self):
+        original = (self.private / "evidence.json").read_bytes()
+        for gain in (12.0, -61.0, True, "6", None):
+            with self.subTest(gain=gain):
+                (self.private / "evidence.json").write_bytes(original)
+                self.edit("private/evidence.json", lambda doc:
+                          doc["renders"][0]["recipe"].__setitem__("gain_db", gain))
+                self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+                with self.assertRaisesRegex(ValueError, "do not match"):
+                    self.check()
+
+    def test_forged_non_numeric_or_missing_start_is_refused(self):
+        original = (self.private / "evidence.json").read_bytes()
+        for start in (True, "0", None, -0.25):
+            with self.subTest(start=start):
+                (self.private / "evidence.json").write_bytes(original)
+                self.edit("private/evidence.json", lambda doc:
+                          doc["renders"][0]["recipe"].__setitem__("a_start", start))
+                with self.assertRaisesRegex(ValueError, "do not match"):
+                    self.check()
+
+    def test_legal_nonzero_offsets_and_negative_gain_are_allowed(self):
+        self.edit("private/evidence.json", lambda doc: (
+            doc["renders"][0]["recipe"].__setitem__("a_start", 0.1),
+            doc["renders"][0]["recipe"].__setitem__("b_start", 0.3),
+            doc["renders"][0]["recipe"].__setitem__("gain_db", -12.0)))
+        self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
 
     def test_forged_render_beats_types_and_range_detected(self):
         original = (self.private / "evidence.json").read_bytes()
