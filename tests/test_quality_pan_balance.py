@@ -520,6 +520,94 @@ class PanBalanceTests(unittest.TestCase):
                              "insufficient_active_audio")
             self.assertNotIn(str(self.root), result.stdout + result.stderr)
 
+    def test_real_m1_renderer_transition_families_keep_balanced_stereo(self):
+        # This executes all actual M1 DSP families, not a WAV-header mock.
+        # Both rights-free inputs have identical left/right PCM so every
+        # renderer output must also have matching stereo-channel energy.
+        import math
+        from mixlab.engine import render, write_wav
+        from mixlab.models import FAMILY_NAMES, Recipe
+
+        rate = 8000
+        source_a = self.root / "private generated synth A.wav"
+        source_b = self.root / "private generated synth B.wav"
+        write_wav(source_a, rate, [
+            (v, v) for v in (0.07 * math.sin(i * 2 * math.pi * 180 / rate)
+                           for i in range(12000))
+        ])
+        write_wav(source_b, rate, [
+            (v, v) for v in (0.08 * math.sin(i * 2 * math.pi * 360 / rate)
+                           for i in range(12000))
+        ])
+        artifacts = []
+        for family in FAMILY_NAMES:
+            output = self.root / f"private rendered {family}.wav"
+            receipt = render(source_a, source_b, output,
+                             Recipe(family=family, bpm=60, beats=1))
+            self.assertEqual(receipt["frames"], rate)
+            artifacts.append((family, output))
+        families = [name for name, _ in artifacts]
+        self.assertIn("baseline", families)
+        baseline = next(path for name, path in artifacts if name == "baseline")
+        alternatives = [p for name, p in artifacts if name != "baseline"]
+        group = pan_balance.inspect_batch(baseline, alternatives)
+        self.assertEqual(group["candidate_count"], len(alternatives))
+        for row in group["candidates"]:
+            metrics = row["metrics"]
+            self.assertEqual(metrics["evidence_status"],
+                             "no_sustained_pan_bias_detected")
+            self.assertFalse(metrics["stereo_pan_confound_review"])
+            self.assertEqual(metrics["max_pan_balance_delta_db"], 0.0)
+        self.assertNotIn(str(self.root), json.dumps(group))
+        for _, output in artifacts:
+            self.assertTrue(output.exists())
+
+    def test_m1_renderer_signal_pan_mutation_is_rejected_by_preflight(self):
+        # Generate actual renderer output and introduce a *controlled* PCM
+        # corruption of channel gain to establish end-to-end detector value.
+        import math
+        from mixlab.engine import render, write_wav
+        from mixlab.models import Recipe
+
+        rate = 8000
+        source_a = self.root / "source A.wav"
+        source_b = self.root / "source B.wav"
+        source_a_samples = [
+            (value, value) for value in
+            (0.06 * math.sin(2 * math.pi * 120 * i / rate) for i in range(rate))
+        ]
+        source_b_samples = [
+            (value, value) for value in
+            (0.07 * math.sin(2 * math.pi * 240 * i / rate) for i in range(rate))
+        ]
+        write_wav(source_a, rate, source_a_samples)
+        write_wav(source_b, rate, source_b_samples)
+        baseline = self.root / "actual baseline.wav"
+        candidate = self.root / "actual candidate.wav"
+        render(source_a, source_b, baseline, Recipe(family="baseline", bpm=60, beats=1))
+        render(source_a, source_b, candidate, Recipe(family="hard_cut", bpm=60, beats=1))
+        before = pan_balance.inspect(baseline, candidate)
+        self.assertFalse(before["stereo_pan_confound_review"])
+        # Produce an independent, explicit mutated artifact (never alter a
+        # renderer original); scale L x2, R x0.5 without clipping.
+        mutated = self.root / "right-shifted defect.wav"
+        with wave.open(str(candidate), "rb") as source:
+            pcm = source.readframes(source.getnframes())
+        frames = list(struct.iter_unpack("<hh", pcm))
+        shifted = b"".join(struct.pack("<hh", left * 2, round(right / 2))
+                           for left, right in frames)
+        with wave.open(str(mutated), "wb") as output:
+            output.setnchannels(2)
+            output.setsampwidth(2)
+            output.setframerate(rate)
+            output.writeframes(shifted)
+        result = pan_balance.inspect_batch(baseline, [candidate, mutated])
+        self.assertFalse(result["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        self.assertTrue(result["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+        self.assertEqual(result["candidates"][1]["metrics"]["evidence_status"],
+                         "review_pan_balance")
+        self.assertNotIn(str(self.root), json.dumps(result))
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
