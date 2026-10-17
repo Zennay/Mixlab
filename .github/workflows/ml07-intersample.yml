@@ -5,6 +5,7 @@ on:
     paths:
       - "mixlab/quality/intersample.py"
       - "tests/test_quality_intersample.py"
+      - "tests/test_quality_intersample_stress.py"
       - "docs/quality-intersample.md"
       - ".github/workflows/ml07-intersample.yml"
 permissions:
@@ -24,9 +25,12 @@ jobs:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Compile isolated quality source and tests
-        run: python3 -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py
+        run: python3 -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py tests/test_quality_intersample_stress.py
       - name: Synthetic privacy, clipping and A/B admission regression with RSS
         run: |
           /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample.py' -v
+      - name: Maximum-frame 48kHz stereo resource proof (192 MiB RSS gate)
+        run: |
+          /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample_stress.py' -v
       - name: Existing offline preflight CLI privacy regression
         run: python3 -m unittest discover -s tests -p 'test_quality_cli_privacy.py' -v
