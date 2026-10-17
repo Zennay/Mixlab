@@ -56,7 +56,7 @@ class AnalyticSineOracleTests(unittest.TestCase):
                         else:
                             by_frequency[freq] = by_frequency.get(freq, 0) + 1
         self.assertGreaterEqual(checked, 300)
-        self.assertGreaterEqual(flagged / checked, 0.90)
+        self.assertGreaterEqual(flagged / checked, 0.99)
         # Do not assert 100%: finite FIR screens cannot guarantee it.
         # The exact count is evidence, not a standardized sensitivity claim.
         print(f"ML07 analytic sine oracle: eligible={checked}, flagged={flagged}, "
