@@ -1521,6 +1521,52 @@ class QualityTests(unittest.TestCase):
         self.assertEqual("baseline", row["duplicate_pcm_of"])
         self.assertIsNone(row["polarity_inverted_pcm_of"])
 
+    def test_stereo_channel_onset_skew_below_partial_dropout_fraction(self):
+        # 120ms of missing right-channel audio is less than 20% of a
+        # one-second clip and can evade the existing partial-loss metric.
+        baseline = self.root / "stereo-onset-reference.wav"
+        delayed = self.root / "stereo-onset-delayed.wav"
+        wav(baseline, [v for x in self.samples for v in (x, x)], channels=2)
+        wav(delayed, [v for i in range(8000)
+                      for v in (9000, 0 if i < 960 else 9000)], channels=2)
+        report = compare_wavs(baseline, [delayed])
+        row = report["candidates"][0]
+        metrics = row["metrics"]
+        self.assertFalse(metrics["partial_stereo_channel_loss_risk"])
+        self.assertFalse(metrics["stereo_channel_silence_risk"])
+        self.assertEqual(120.0, metrics["stereo_channel_onset_gap_ms"])
+        self.assertTrue(metrics["stereo_channel_onset_skew_risk"])
+        self.assertIn("stereo_channel_onset_skew_inspect", row["warnings"])
+        self.assertNotIn("stereo_channel_onset_skew_inspect", report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("sha256", json.dumps(report))
+        # Same check must apply to reference audio as well.
+        reversed_report = compare_wavs(delayed, [baseline])
+        self.assertIn("stereo_channel_onset_skew_inspect",
+                      reversed_report["baseline_warnings"])
+
+    def test_stereo_channel_onset_100ms_threshold_silence_and_mono(self):
+        stereo = self.root / "stereo-onset-threshold.wav"
+        for delayed_frames, expected in ((480, False), (792, False),
+                                         (800, True), (1000, True)):
+            wav(stereo, [v for i in range(8000)
+                         for v in (9000, 0 if i < delayed_frames else 9000)],
+                channels=2)
+            metrics = scan_wav(stereo)
+            with self.subTest(delayed_frames=delayed_frames):
+                self.assertEqual(delayed_frames / 8,
+                                 metrics["stereo_channel_onset_gap_ms"])
+                self.assertEqual(expected, metrics["stereo_channel_onset_skew_risk"])
+        wav(stereo, [v for i in range(8000) for v in (9000, 0)], channels=2)
+        metrics = scan_wav(stereo)
+        self.assertIsNone(metrics["stereo_channel_onset_gap_ms"])
+        self.assertFalse(metrics["stereo_channel_onset_skew_risk"])
+        wav(stereo, [0] * (8000 * 2), channels=2)
+        self.assertFalse(scan_wav(stereo)["stereo_channel_onset_skew_risk"])
+        mono = scan_wav(self.base)
+        self.assertIsNone(mono["stereo_channel_onset_gap_ms"])
+        self.assertFalse(mono["stereo_channel_onset_skew_risk"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)

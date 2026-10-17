@@ -32,6 +32,9 @@ EDGE_SILENCE_CONFOUND_MS = 200
 # Inspect the first >=5%-FS PCM sample, not a beat/downbeat prediction.
 PROMINENT_AUDIO_ABS_SAMPLE = 1638
 PROMINENT_ONSET_MISMATCH_MS = 75
+# A single stereo channel can arrive >=100ms after the other without
+# exceeding the existing 20% partial-channel-loss window threshold.
+STEREO_CHANNEL_ONSET_SKEW_MS = 100
 # Flag apparent stereo channel loss, not artistic panning: one channel
 # below -55 dBFS while the other is clearly active above -35 dBFS.
 ACTIVE_CHANNEL_RMS = 10 ** (-35 / 20)
@@ -120,6 +123,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             first_frame = None
             processed_frames = 0
             first_prominent_frame = None
+            first_prominent_frame_by_channel = [None] * channels
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
             window_mid_sum_squares = 0.0
@@ -216,6 +220,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     if (first_prominent_frame is None
                             and any(abs(sample) >= PROMINENT_AUDIO_ABS_SAMPLE for sample in frame)):
                         first_prominent_frame = processed_frames
+                    for channel_index, sample in enumerate(frame):
+                        if (first_prominent_frame_by_channel[channel_index] is None
+                                and abs(sample) >= PROMINENT_AUDIO_ABS_SAMPLE):
+                            first_prominent_frame_by_channel[channel_index] = processed_frames
                     processed_frames += 1
                     if all(abs(sample) <= QUIET_PCM_ABS_SAMPLE for sample in frame):
                         if seen_audible_frame:
@@ -274,6 +282,16 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     prominent_onset_ms = (
         round(1000 * first_prominent_frame / rate, 3)
         if first_prominent_frame is not None else None
+    )
+    stereo_channel_onset_gap_ms = None
+    if channels == 2 and all(frame is not None for frame in first_prominent_frame_by_channel):
+        stereo_channel_onset_gap_ms = round(
+            1000 * abs(first_prominent_frame_by_channel[0] - first_prominent_frame_by_channel[1])
+            / rate, 3
+        )
+    stereo_channel_onset_skew_risk = (
+        stereo_channel_onset_gap_ms is not None
+        and stereo_channel_onset_gap_ms >= STEREO_CHANNEL_ONSET_SKEW_MS
     )
     playback_start_peak = max(abs(sample) for sample in first_frame) / 32768
     playback_end_peak = max(abs(sample) for sample in previous) / 32768
@@ -338,6 +356,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "leading_silence_ms": leading_silence_ms,
         "trailing_silence_ms": trailing_silence_ms,
         "prominent_audio_onset_ms": prominent_onset_ms,
+        "stereo_channel_onset_gap_ms": stereo_channel_onset_gap_ms,
+        "stereo_channel_onset_skew_risk": stereo_channel_onset_skew_risk,
         "longest_interior_silent_gap_ms": interior_silent_gap_ms,
         "interior_silent_gap_risk": interior_silent_gap_ms >= INTERIOR_SILENT_GAP_WARNING_MS,
         "longest_interior_quiet_pcm_gap_ms": short_interior_quiet_gap_ms,
@@ -396,6 +416,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("stereo_silent_channel_inspect")
     if metrics["partial_stereo_channel_loss_risk"]:
         warnings.append("partial_stereo_channel_loss_inspect")
+    if metrics["stereo_channel_onset_skew_risk"]:
+        warnings.append("stereo_channel_onset_skew_inspect")
     if metrics["dc_offset_risk"]:
         warnings.append("dc_offset_inspect_for_headroom")
     if metrics["severe_sample_discontinuity_risk"]:

@@ -453,3 +453,24 @@ Whole-wave polarity inversion can be an intentional processing choice
 and may matter when blended with other signals. This is only a
 technical **reused-audio inspection warning**, not proof of musical
 equivalence, perceptual quality, ownership or a listening preference.
+
+
+### Late-onset left/right channel imbalance
+
+For stereo PCM16 only, the first sample of each channel reaching **5%
+full scale** is measured during the existing bounded read. If **both**
+channels become prominent but their first onsets differ by **>=100ms**,
+the report exposes `stereo_channel_onset_gap_ms` and
+`stereo_channel_onset_skew_risk` and warns
+`stereo_channel_onset_skew_inspect` on either baseline or candidate.
+This can catch a short missing-channel opening (<20% of audible RMS
+windows) that the sustained partial-channel-loss checker deliberately
+ignores. Mono, fully silent and indefinitely silent single-channel
+inputs report a null gap instead of inventing an onset time; the
+existing missing-channel warning continues to cover such cases.
+
+The 100ms threshold is a **human-inspection heuristic**, not a beatgrid
+measurement, downbeat synchronization, technical proof of an error or
+musical taste. An intentional stereo entrance or creative asymmetric
+fade may trigger it. The report never contains individual sample
+positions, signal waveforms, private source paths or listening answers.
