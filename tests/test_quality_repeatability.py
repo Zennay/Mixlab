@@ -100,6 +100,42 @@ class RepeatabilityTests(unittest.TestCase):
         self.assertEqual(4, len(calls))  # two 4096-frame slices, both files
         self.assertTrue(all(1 <= count <= CHUNK_FRAMES for count in calls))
 
+    def test_actual_m1_renderer_repeatability_across_transition_families(self):
+        # Exercise the integrated MixLab engine, not only synthetic WAV writer.
+        # Generated sine inputs are rights-safe and run locally in hosted CI.
+        import math
+        from mixlab.engine import FAMILY_NAMES, render, write_wav
+        from mixlab.models import Recipe
+
+        original_a = self.root / "render-input-A.wav"
+        original_b = self.root / "render-input-B.wav"
+        write_wav(original_a, 8000, [
+            (0.22 * math.sin(i * .11), 0.13 * math.cos(i * .05))
+            for i in range(8000)
+        ])
+        write_wav(original_b, 8000, [
+            (0.18 * math.cos(i * .09), 0.10 * math.sin(i * .07))
+            for i in range(8000)
+        ])
+        self.assertGreaterEqual(len(FAMILY_NAMES), 3)
+        for family in FAMILY_NAMES:
+            with self.subTest(family=family):
+                first = self.root / (family + "-render-1.wav")
+                second = self.root / (family + "-render-2.wav")
+                recipe = Recipe(family=family, beats=1)
+                render(original_a, original_b, first, recipe)
+                render(original_a, original_b, second, recipe)
+                result = verify_repeatability(first, second)
+                self.assertTrue(result["repeatable_pcm"])
+                self.assertFalse(result["technical_review_required"])
+                self.assertNotIn(str(self.root), json.dumps(result))
+        # A distinct valid render recipe should not pass as a repeat.
+        other = self.root / "different-recipe.wav"
+        render(original_a, original_b, other, Recipe(family="hard_cut", beats=1))
+        baseline = self.root / "baseline-render-1.wav"
+        self.assertTrue(baseline.exists())
+        self.assertFalse(verify_repeatability(baseline, other)["repeatable_pcm"])
+
     def test_full_two_million_frame_stereo_capacity_and_last_frame_integrity(self):
         # Exercise the actual 2M-frame/source ceiling, not only 8k-frame
         # fixtures. Generate two separate regular WAVs with bounded writes.
