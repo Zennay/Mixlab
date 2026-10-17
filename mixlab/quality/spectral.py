@@ -497,6 +497,10 @@ def compare_spectral_balance(
                     warnings.append("stereo_channel_level_balance_shift_inspect")
             else:
                 deltas["stereo_channel_level_balance_shift_risk"] = None
+                # A null ratio is *unknown*, not evidence of an unchanged
+                # pan. Even when both whole files are technically audible,
+                # one silent channel may make stereo placement undecidable.
+                warnings.append("stereo_channel_level_balance_unresolved_inspect")
 
             balanced_spans = changed_balance_spans = 0
             for reference_span, current_span in zip(
