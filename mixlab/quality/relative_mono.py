@@ -71,6 +71,24 @@ def assess(
             # numbers appear clean. Never echo the private match identifier.
             status = "non_independent_ab_audio"
             delta = None
+        elif any(
+                metrics.get(field) is True
+                for metrics in (baseline, candidate)
+                for field in (
+                    "interior_silent_gap_risk",
+                    "short_interior_pcm_dropout_risk",
+                    "short_interior_stereo_channel_dropout_risk",
+                    "isolated_sample_impulse_risk",
+                    "severe_sample_discontinuity_risk",
+                    "high_flat_top_plateau_risk",
+                )):
+            # The canonical reader already identifies missing PCM spans,
+            # stereo-channel dropouts, sharp sample clicks, and flat tops.
+            # A clean *mono fold-down* is not enough to admit a damaged
+            # A/B source, including a defective crossfade baseline.
+            # Emit only the category; not sample positions, audio or IDs.
+            status = "ab_audio_integrity_confound"
+            delta = None
         elif any(row.get(field) is True for field in (
                 "short_window_level_mismatch_risk",
                 "edge_silence_mismatch_risk",
