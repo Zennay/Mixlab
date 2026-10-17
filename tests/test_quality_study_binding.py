@@ -186,5 +186,33 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertNotIn(str(self.root), result.stdout)
 
 
+    def test_hash_consistent_but_nonstr_candidate_type_is_rejected_cleanly(self):
+        # Even a self-consistently hashed malformed study must raise an
+        # ordinary validation error, not an unhandled unhashable-list TypeError.
+        from mixlab.quality.study_binding import _verified_study
+        doc = json.loads(self.study.read_text(encoding="utf-8"))
+        doc["pairs"][0]["candidate_family"] = []
+        doc.pop("study_id")
+        recalc = _canonical_sha(doc)
+        doc["study_id"] = recalc
+        _write_json(self.study, doc)
+        with self.assertRaisesRegex(ValueError, "do not match"):
+            _verified_study(self.study, recalc)
+
+    def test_actual_pack_one_sided_study_id_replacement_is_rejected(self):
+        self.edit("receipt.json", lambda doc: doc.__setitem__("study_id", "f" * 64))
+        self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+        with self.assertRaisesRegex(ValueError, "do not match"):
+            self.check()
+
+    def test_actual_pack_recipe_family_mismatch_is_rejected(self):
+        self.edit("private/evidence.json", lambda doc:
+                  doc["renders"][0]["recipe"].__setitem__("family", "echo_exit"))
+        self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+        with self.assertRaisesRegex(ValueError, "do not match"):
+            self.check()
+
+
+
 if __name__ == "__main__":
     unittest.main()
