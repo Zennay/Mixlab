@@ -24,6 +24,12 @@ def verify_pack(root):
     renders = evidence.get("renders")
     if not isinstance(renders, list) or not renders:
         raise ValueError("Missing render evidence")
+    # A validated library contains no more than ten registered pairs.
+    # Current renderer produces one baseline and three variants (at most
+    # forty source renders and thirty blind trials). Bound both JSON arrays
+    # *before* hashing or opening any private listening audio.
+    if not 1 <= len(key) <= 30 or len(renders) > 40:
+        raise ValueError("Frozen pack trial/render budget exceeded")
     identity = {"manifest": evidence.get("manifest_sha256"), "answers": key,
                 "outputs": [r["output_sha256"] for r in renders]}
     pack_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()

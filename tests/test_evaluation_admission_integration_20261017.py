@@ -135,6 +135,39 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
         finally:
             path.write_bytes(original)
 
+    def test_pack_trials_and_render_lists_obey_registered_pair_budget(self):
+        # Library ingest admits at most 10 pairs; the renderer emits up to
+        # 3 blind candidates + baseline per pair. Prevent thousands of
+        # individually-hashed frozen WAVs from a forged small JSON envelope.
+        answer_path = self.pack / "private" / "answer-key.json"
+        evidence_path = self.pack / "private" / "evidence.json"
+        answers_raw, evidence_raw = answer_path.read_bytes(), evidence_path.read_bytes()
+        try:
+            answers = json.loads(answers_raw)
+            evidence = json.loads(evidence_raw)
+            oversize = [
+                (answer_path, answers * 11),  # >30 trial records
+                (evidence_path, {**evidence,
+                                 "renders": evidence["renders"] * 11}),  # >40
+            ]
+            for target, fake in oversize:
+                with self.subTest(target=target.name):
+                    target.write_text(json.dumps(fake), encoding="utf-8")
+                    try:
+                        with mock.patch(
+                            "mixlab.evaluation.inspect_wav_and_digest",
+                            side_effect=AssertionError("WAV was opened")
+                        ) as inspect:
+                            with self.assertRaisesRegex(ValueError, "budget"):
+                                verify_pack(self.pack)
+                            inspect.assert_not_called()
+                    finally:
+                        target.write_bytes(answers_raw if target == answer_path
+                                           else evidence_raw)
+        finally:
+            answer_path.write_bytes(answers_raw)
+            evidence_path.write_bytes(evidence_raw)
+
     def test_real_synthetic_frozen_pack_still_verifies(self):
         _receipt, _evidence, trials = verify_pack(self.pack)
         self.assertIn("trial-001", trials)
