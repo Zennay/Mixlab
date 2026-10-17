@@ -181,6 +181,46 @@ class StreamingChunkInvariants(unittest.TestCase):
                 self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
                 self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_leading_and_trailing_silence_are_not_interior_dropouts(self):
+        # Starting/ending a listening excerpt in silence is not itself a
+        # mid-playback transport gap. Cover both stereo projected-channel
+        # and full-channel PCM runs, alongside the positive interior oracle.
+        for channels in (1, 2):
+            for offset in (0, FRAMES - 480):
+                with self.subTest(channels=channels, edge=offset, kind="all"):
+                    sample = self._make(f"edge-all-{channels}-{offset}.wav",
+                                        channels, gap=offset)
+                    metrics = scan_wav(sample)
+                    self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+                    self.assertFalse(metrics["interior_silent_gap_risk"])
+                if channels == 2:
+                    with self.subTest(channels=channels, edge=offset, kind="left"):
+                        sample = self._make(f"edge-left-{offset}.wav", 2,
+                                            left_gap=offset)
+                        metrics = scan_wav(sample)
+                        self.assertFalse(
+                            metrics["short_interior_stereo_channel_dropout_risk"])
+                        self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_signed_minimum_sample_at_read_boundary_is_bounded(self):
+        # -32768 cannot be safely sign-inverted as signed PCM16. The
+        # fingerprint must abstain, not wrap to a bogus negative/positive
+        # match. The valid original source must still scan and warn.
+        for channels in (1, 2):
+            for offset in (CHUNK - 1, CHUNK):
+                with self.subTest(channels=channels, offset=offset):
+                    frames = [(4000,) * channels for _ in range(FRAMES)]
+                    frames[offset] = (-32768,) * channels
+                    sample = self.root / f"min-{channels}-{offset}.wav"
+                    _write(sample, channels, frames)
+                    metrics, digest, _, swapped, inverted = _scan_wav_with_digest(sample)
+                    self.assertEqual(metrics["frames"], FRAMES)
+                    self.assertEqual(len(digest), 32)
+                    self.assertIsNone(inverted)
+                    self.assertGreater(metrics["near_full_scale_fraction"], 0)
+                    self.assertTrue(metrics["severe_sample_discontinuity_risk"])
+                    self.assertEqual(swapped is not None, channels == 2)
+
     def test_pcm_digest_ignores_non_audio_riff_chunks(self):
         for channels in (1, 2):
             with self.subTest(channels=channels):
