@@ -194,6 +194,55 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.assertEqual((2, 48000, 300),
                          (report["channels"], report["sample_rate"], report["frames"]))
 
+    def test_extensible_pcm16_header_rejects_bad_precision_guid_and_layout(self):
+        # Real WAVE_FORMAT_EXTENSIBLE fmt(40): the final 24 bytes include
+        # cbSize, valid-bits, speaker mask and the uncompressed PCM GUID.
+        make_wav(self.source, channels=2, rate=48000, frames=300)
+        original = self.source.read_bytes()
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        extended = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                               48000 * 4, 4, 16, 22, 16, 3) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + extended
+        accepted = bytearray(original[:12] + fmt + original[36:])
+        accepted[4:8] = struct.pack("<I", len(accepted) - 8)
+        self.source.write_bytes(accepted)
+        self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+        # Format extension (when read after classic fmt) starts at file 36.
+        cases = (
+            (36, struct.pack("<H", 0), "no-extension"),
+            (36, struct.pack("<H", 65535), "overclaimed-extension"),
+            (38, struct.pack("<H", 12), "effective-12-bit"),
+            (38, struct.pack("<H", 0), "effective-zero-bit"),
+            (40, struct.pack("<I", 1), "mono-mask-in-stereo"),
+            (40, struct.pack("<I", 7), "three-speakers-in-stereo"),
+            (44, struct.pack("<I", 3), "float-subtype"),
+        )
+        for position, payload, label in cases:
+            with self.subTest(label=label):
+                mutated = bytearray(accepted)
+                mutated[position:position + len(payload)] = payload
+                self.source.write_bytes(mutated)
+                with patch("mixlab.quality.fd_guard.wave.open",
+                           side_effect=AssertionError("bad fmt must fail before decoder")) as parser:
+                    self.assert_rejected(self.source)
+                    parser.assert_not_called()
+
+    def test_extensible_pcm16_unspecified_speaker_mask_is_allowed(self):
+        make_wav(self.source, channels=2, rate=48000)
+        original = self.source.read_bytes()
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        extended = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                               48000 * 4, 4, 16, 22, 16, 0) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + extended
+        accepted = bytearray(original[:12] + fmt + original[36:])
+        accepted[4:8] = struct.pack("<I", len(accepted) - 8)
+        self.source.write_bytes(accepted)
+        report = validate_private_pcm16(self.source)
+        self.assertEqual(2, report["channels"])
+        self.assertTrue(report["pcm16_payload_complete"])
+
     def test_wav_extensible_bad_avg_byte_rate_rejected(self):
         make_wav(self.source, channels=2, rate=48000)
         original = self.source.read_bytes()
