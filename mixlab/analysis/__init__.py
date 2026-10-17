@@ -336,7 +336,12 @@ def _validate_cached_analysis(document, identity, source_hash, provider, info):
                 tuple(analysis["warnings"]) != ("human annotation; not automatically measured",)):
             raise ValueError("Manual analysis cache provenance/config mismatch")
     elif type(provider) is EnergyOnsetProvider:
-        if (analysis["provider"] != "energy-onset" or
+        required_warnings = (
+            "tempo octave ambiguity; verify beatgrid before rendering",
+            "downbeats, phrases, key and vocals are not inferred",
+        )
+        if (tuple(analysis["warnings"])[-2:] != required_warnings or
+                analysis["provider"] != "energy-onset" or
                 analysis["timing_source"] != "measured-heuristic" or
                 analysis["key"] is not None or
                 analysis["key_source"] != "unavailable" or
