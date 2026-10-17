@@ -75,7 +75,9 @@ PCM decoding**: RIFF/WAVE identity and declared bounds; sane unique `fmt`;
 PCM16 mono/stereo and 8–96 kHz; arithmetic consistency for bit depth,
 channel block alignment and byte rate; valid optional `fmt` extension size;
 and integral PCM frames within the declared RIFF boundary. Only chunk headers
-and 16–18 bytes of format metadata are read. Unknown private metadata chunks
+and 16–18 bytes of format metadata are read. Parsing is capped at **4096**
+RIFF chunks per input to reject pathological metadata-heavy files before
+full PCM decoding. Unknown private metadata chunks
 are skipped using RIFF padding rules, never copied to the report. Private
 trailing data outside the declared RIFF is deliberately still tolerated for
 the existing metadata-insensitive PCM fingerprint contract. This is **not**
