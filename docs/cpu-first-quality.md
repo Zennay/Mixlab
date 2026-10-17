@@ -87,6 +87,15 @@ sources and unmatched trial IDs fail closed with a sanitized error (exit 3).
 The review page is capped at 1 MiB; its text is never returned in JSON.
 Audio-only review folders without an index can still be checked, but
 `review_page_audio_links_verified` is then `false`, not a quality guarantee.
+Review HTML parsing also rejects **duplicate attribute names**, including
+case-insensitive repeated `src`, `data-trial` and `data-pack-id` on a
+single element. Browsers generally use the first duplicate while Python's
+`dict(attrs)` kept the last; a remote audio `src` followed by a local
+`src` could previously make the static check report safe links while the
+browser tried the remote source. Rejection is fail-closed even if the duplicate
+values agree. CLI errors remain path- and payload-free. The strict official
+HTML regeneration check is still recommended before any private listener pack.
+
 The static review-page check rejects external resource tags such as
 `iframe`, `img`, `link` and `script src`, remote navigation/form
 attributes, event-handler attributes and CSS `@import` / `url(...)`.
