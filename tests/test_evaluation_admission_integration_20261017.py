@@ -114,6 +114,45 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
+    def test_mutation_between_pack_verification_and_confounds_rejected(self):
+        # The evaluator opens the same listening WAVs twice: once for the
+        # frozen SHA check, then independently in compare_wavs. A writer
+        # changing audio at the second stage must not yield a report based
+        # on nonfrozen samples. No private/reviewer input is used.
+        answers = json.loads((self.pack / "private/answer-key.json").read_text())
+        receipt = json.loads((self.pack / "receipt.json").read_text())
+        rating_path = self.root / "synthetic-midscan-reviewer.json"
+        rating_path.write_text(json.dumps({
+            "schema_version": 1, "pack_id": receipt["pack_id"],
+            "reviewer": "synthetic-midscan",
+            "ratings": [{"trial": entry["trial"], "preference": "Tie"}
+                        for entry in answers],
+        }), encoding="utf-8")
+        original = self.wav.read_bytes()
+        called = 0
+
+        def replace_audio_on_comparison(_base, _candidates):
+            nonlocal called
+            called += 1
+            if called == 1:
+                changed = bytearray(original)
+                changed[-2] ^= 0x01
+                self.wav.write_bytes(changed)
+            return {"candidates": [{
+                "level_comparable_for_blind_ab": True,
+                "warnings": [],
+            }]}
+
+        try:
+            with mock.patch("mixlab.quality.compare_wavs",
+                            side_effect=replace_audio_on_comparison):
+                with self.assertRaisesRegex(ValueError, "changed|freeze|mutation"):
+                    aggregate(self.pack, [rating_path])
+            self.assertEqual(called, len(answers))
+        finally:
+            self.wav.write_bytes(original)
+            rating_path.unlink(missing_ok=True)
+
     def test_all_synthetic_render_permissions_keep_synthetic_limitation(self):
         # evidence.kind is not included in pack-id. Changing it must not
         # erase the synthetic-only limitation if every source declaration

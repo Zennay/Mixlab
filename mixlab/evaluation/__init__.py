@@ -152,6 +152,13 @@ def aggregate(root, rating_paths):
                               [root/"review"/f"{tid}-{other_label}.wav"])["candidates"][0]
         if not result["level_comparable_for_blind_ab"] or result["warnings"]:
             confounds.append({"trial":tid,"warnings":result["warnings"]})
+    # The quality comparator re-opens the reviewed files after the original
+    # freeze verification. A file changed during that second read must not
+    # contribute to a seemingly valid private aggregate. Revalidate the
+    # bounded frozen pack before publishing an outcome. This catches
+    # persistent mid-analysis edits; it is not a guarantee against an
+    # attacker swapping bytes and restoring them between observations.
+    verify_pack(root)
     # Private evidence.kind is editable metadata *outside* the frozen pack
     # identity hash. Do not let relabelling an all-synthetic source pack
     # suppress the explicit "not musical preference evidence" limitation.
