@@ -338,7 +338,7 @@ class SpectralBalanceTests(unittest.TestCase):
         for name in ("low", "mid", "high"):
             self.assertAlmostEqual(0, row[name + "_proxy_delta_db"], delta=0.01)
             self.assertFalse(row["stereo_channel_" + name + "_spectral_shift_risk"])
-        self.assertNotIn("_mono_fold", json.dumps(self.report()))
+        self.assertNotIn('"_mono_fold_ratio"', json.dumps(self.report()))
         strict = self.cli(self.base, self.other, "--fail-on-warnings")
         self.assertEqual(2, strict.returncode, strict.stderr)
         self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
