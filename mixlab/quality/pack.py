@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import tempfile
 import wave
 
 from . import compare_wavs
@@ -40,6 +41,7 @@ class _ReviewPageLinks(HTMLParser):
         self.current_trial = None
         self.trials = []
         self.audio_links = []
+        self.pack_ids = []
         self.invalid_nesting = False
         self.unsafe_external_resource = False
         self._within_style = False
@@ -57,6 +59,8 @@ class _ReviewPageLinks(HTMLParser):
             self.unsafe_external_resource = True
         if tag == "style":
             self._within_style = True
+        if tag == "form":
+            self.pack_ids.append(attributes.get("data-pack-id"))
         if tag == "fieldset":
             if self.current_trial is not None:
                 self.invalid_nesting = True
@@ -78,7 +82,10 @@ class _ReviewPageLinks(HTMLParser):
             self.unsafe_external_resource = True
 
 
-def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path]]) -> bool:
+def _verify_public_review_page(
+    directory: Path, groups: dict[str, dict[str, Path]], *,
+    require_generated_html: bool = False,
+) -> bool:
     """Check generated review UI audio links against exactly the local trial WAVs.
 
     A missing index is allowed for audio-only QA. When it exists, all
@@ -89,8 +96,9 @@ def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path
         return False
     if index.stat().st_size > MAX_REVIEW_HTML_BYTES:
         raise ValueError("Review page exceeds safe size")
+    page_html = index.read_text(encoding="utf-8")
     checker = _ReviewPageLinks()
-    checker.feed(index.read_text(encoding="utf-8"))
+    checker.feed(page_html)
     checker.close()
     expected_trials = sorted(groups)
     expected_links = [(trial, f"{trial}-{label}.wav")
@@ -99,6 +107,21 @@ def _verify_public_review_page(directory: Path, groups: dict[str, dict[str, Path
             or checker.trials != expected_trials
             or checker.audio_links != expected_links):
         raise ValueError("Review page audio links do not match the trial WAV inventory")
+    if require_generated_html:
+        # A static HTML resource check does not detect malicious inline JS.
+        # Build the exact canonical offline template using only its *public*
+        # pack_id and neutral trial IDs, then compare the entire HTML text.
+        # No answer key, private recordings or source paths are opened.
+        if (len(checker.pack_ids) != 1 or not isinstance(checker.pack_ids[0], str)
+                or re.fullmatch(r"[0-9a-f]{64}", checker.pack_ids[0]) is None):
+            raise ValueError("Review page lacks a canonical public pack identifier")
+        from ..cli import write_review
+
+        with tempfile.TemporaryDirectory(prefix="mixlab-quality-public-page-") as temp:
+            reference = Path(temp) / "index.html"
+            write_review(reference, expected_trials, checker.pack_ids[0])
+            if reference.read_text(encoding="utf-8") != page_html:
+                raise ValueError("Review page differs from the official offline generator")
     return True
 
 
@@ -134,13 +157,15 @@ def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
 
 def inspect_review_pack(
     review_directory: str | Path, *, window_ms: int = 100,
-    loudness_tolerance_db: float = 1.5,
+    loudness_tolerance_db: float = 1.5, require_generated_html: bool = False,
 ) -> dict:
     """Screen an immutable local review directory without looking up answers.
 
     Fail closed on malformed, incomplete, aliased or excessive WAV inventories.
     Do not return filenames, paths, source hashes or PCM window envelopes.
     """
+    if not isinstance(require_generated_html, bool):
+        raise ValueError("require_generated_html must be boolean")
     directory = Path(review_directory)
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("Review input must be a real directory, not a symlink")
@@ -171,7 +196,11 @@ def inspect_review_pack(
         raise ValueError("Review directory contains no trial WAV pairs")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
-    page_links_verified = _verify_public_review_page(directory, groups)
+    page_links_verified = _verify_public_review_page(
+        directory, groups, require_generated_html=require_generated_html
+    )
+    if require_generated_html and not page_links_verified:
+        raise ValueError("Official listener page missing from review pack")
 
     trials = []
     warning_trial_count = 0
@@ -239,6 +268,7 @@ def inspect_review_pack(
         "human_preference_test_required": True,
         "answer_key_opened": False,
         "review_page_audio_links_verified": page_links_verified,
+        "official_generated_html_verified": require_generated_html,
         "contains_source_paths_hashes_or_audio": False,
         "trials": trials,
     }
@@ -252,11 +282,16 @@ def main() -> int:
     parser.add_argument("--window-ms", type=int, default=100)
     parser.add_argument("--loudness-tolerance-db", type=float, default=1.5)
     parser.add_argument("--fail-on-warnings", action="store_true")
+    parser.add_argument(
+        "--require-generated-html", action="store_true",
+        help="Reject any modified listener page, including changed inline scripts",
+    )
     args = parser.parse_args()
     try:
         result = inspect_review_pack(
             args.review_directory, window_ms=args.window_ms,
             loudness_tolerance_db=args.loudness_tolerance_db,
+            require_generated_html=args.require_generated_html,
         )
     except (OSError, ValueError):
         parser.exit(3, "review quality preflight: invalid or unreadable pack (details withheld)\n")
