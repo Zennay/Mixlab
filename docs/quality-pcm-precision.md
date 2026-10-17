@@ -17,6 +17,16 @@ The read-only comparison accepts at most two uncompressed PCM16 mono/stereo
 no-follow/nonblocking flags, checked for regular-file type, and streamed in
 4096-frame chunks. A size/inode/time metadata snapshot is checked afterward.
 No audio, PCM fingerprints, file paths or segment positions are returned.
+After **both** streams finish, the comparator re-stats **both** private
+source paths using `follow_symlinks=False` and compares device, inode, size,
+mtime and ctime with the open-file receipts. This closes a source-coherency
+gap where the baseline passed its own scan, then changed or was replaced
+while the candidate was being scanned. A same-length content overwrite,
+same-byte inode replacement or symlink swap is rejected rather than
+producing a mixed A/B report. The stat receipts remain **internal only**:
+public JSON and CLI errors contain none of the file identities or paths.
+This is best-effort concurrent-edit detection, not a snapshot transaction
+or adversarial protection against privileged timestamp/inode manipulation.
 
 For each channel separately, the detector counts **informative** PCM samples
 (|sample| >=1024). Globally at least 2048 informative samples and 32 distinct
