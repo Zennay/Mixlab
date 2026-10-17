@@ -452,6 +452,20 @@ class BatchPrecisionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "aggregate PCM frame"):
                 precision.compare_precision_batch(sources[0], sources[1:])
 
+    def test_aggregate_byte_budget_rejects_large_non_audio_riff_padding(self):
+        # Sparse-size WAVs with tiny declared PCM can still carry huge
+        # metadata/data padding: refuse the entire set before any PCM scan.
+        files = [self.base, self.c1, self.c2, self.c3]
+        fifth = self.root / "PRIVATE-extra-padded.wav"
+        wav(fifth, seed=5)
+        files.append(fifth)
+        for source in files:
+            with source.open("r+b") as out:
+                out.truncate(32 * 1024 * 1024)
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            with self.assertRaisesRegex(ValueError, "aggregate WAV byte budget"):
+                precision.compare_precision_batch(files[0], files[1:])
+
     def test_rejects_hardlink_and_repeated_baseline_without_scanning(self):
         alias = self.root / "hardlink.wav"
         os.link(self.c1, alias)
