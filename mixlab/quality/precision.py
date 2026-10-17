@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import sys
 import wave
 
@@ -279,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.additional_candidates:
                 raise ValueError("batch switch required")
             result = compare_precision(args.baseline, args.candidate)
-    except (OSError, ValueError, EOFError, wave.Error):
+    except (OSError, ValueError, EOFError, wave.Error, struct.error):
         print("MixLab precision: invalid or incomparable private WAVs", file=sys.stderr)
         return 3
     print(json.dumps(result, sort_keys=True, allow_nan=False))
