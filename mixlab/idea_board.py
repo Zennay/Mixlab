@@ -145,7 +145,9 @@ def _build_pairs(source, proposals):
         tid = item.get("track_id")
         if (tid not in known or tid in given
                 or item.get("full_track_sha256") != known[tid]["sha256"]
-                or item.get("declared_bpm") != known[tid].get("bpm")):
+                or item.get("declared_bpm") != known[tid].get("bpm")
+                or item.get("declared_first_downbeat_seconds") !=
+                known[tid].get("first_downbeat_seconds")):
             raise ValueError("Energy ideas do not belong to the source track")
         given[tid] = item
     result, used = [], set()
@@ -171,6 +173,11 @@ def _build_pairs(source, proposals):
         entry_cues = given[b].get("entry")
         if not isinstance(exit_cues, list) or not isinstance(entry_cues, list):
             raise ValueError("Missing entry/exit suggestion candidates")
+        # Cue suggestions must use the same manually agreed excerpt length.
+        # Combining differently sized candidates would produce false timeline
+        # displays and potentially unplayable transition audio.
+        if proposals.get("beats_per_cue") != beats:
+            raise ValueError("Regenerate energy suggestions for the current transition beat duration")
         ranked = []
         for exit_cue in exit_cues[:8]:
             for entry_cue in entry_cues[:8]:
@@ -194,7 +201,7 @@ def _build_pairs(source, proposals):
             options.append({"key": f"idea-{len(options):02d}",
                             "a_start_seconds": left, "b_start_seconds": right,
                             "energy_gap_db": gap})
-            if len(options) > MAX_IDEAS_PER_PAIR + 1:
+            if len(options) >= MAX_IDEAS_PER_PAIR + 1:
                 break
         result.append({"id": pid, "a": a, "b": b, "bpm": bpm, "beats": beats,
                        "options": options})
