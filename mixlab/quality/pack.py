@@ -20,6 +20,7 @@ from . import compare_wavs
 _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
 MAX_REVIEW_HTML_BYTES = 1024 * 1024
+MAX_PUBLIC_RECEIPT_BYTES = 8192
 # Review pages are often passed to listeners as static files. Static
 # resource references other than the expected A/B audio can phone home,
 # reveal the listener identity or compromise offline study conditions.
@@ -82,9 +83,33 @@ class _ReviewPageLinks(HTMLParser):
             self.unsafe_external_resource = True
 
 
+def _read_public_receipt_id(directory: Path, trial_count: int) -> str:
+    """Read only the canonical sibling receipt, never the private answer key.
+
+    This checks internal pack identity/coherence, not an authenticated
+    signature or the correctness of the private trial answer key.
+    """
+    path = directory.parent / "receipt.json"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Official public pack receipt missing or linked")
+    if path.stat().st_size > MAX_PUBLIC_RECEIPT_BYTES:
+        raise ValueError("Official public pack receipt exceeds the size limit")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        raise ValueError("Invalid official public pack receipt")
+    pack_id = receipt.get("pack_id")
+    if (receipt.get("schema_version") != 1
+            or type(receipt.get("trial_count")) is not int
+            or receipt["trial_count"] != trial_count
+            or not isinstance(pack_id, str)
+            or re.fullmatch(r"[0-9a-f]{64}", pack_id) is None):
+        raise ValueError("Public pack receipt does not match review trial inventory")
+    return pack_id
+
+
 def _verify_public_review_page(
     directory: Path, groups: dict[str, dict[str, Path]], *,
-    require_generated_html: bool = False,
+    require_generated_html: bool = False, expected_pack_id: str | None = None,
 ) -> bool:
     """Check generated review UI audio links against exactly the local trial WAVs.
 
@@ -107,6 +132,8 @@ def _verify_public_review_page(
             or checker.trials != expected_trials
             or checker.audio_links != expected_links):
         raise ValueError("Review page audio links do not match the trial WAV inventory")
+    if expected_pack_id is not None and checker.pack_ids != [expected_pack_id]:
+        raise ValueError("Listener pack ID differs from the public benchmark receipt")
     if require_generated_html:
         # A static HTML resource check does not detect malicious inline JS.
         # Build the exact canonical offline template using only its *public*
@@ -158,6 +185,7 @@ def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
 def inspect_review_pack(
     review_directory: str | Path, *, window_ms: int = 100,
     loudness_tolerance_db: float = 1.5, require_generated_html: bool = False,
+    require_receipt: bool = False,
 ) -> dict:
     """Screen an immutable local review directory without looking up answers.
 
@@ -166,6 +194,8 @@ def inspect_review_pack(
     """
     if not isinstance(require_generated_html, bool):
         raise ValueError("require_generated_html must be boolean")
+    if not isinstance(require_receipt, bool):
+        raise ValueError("require_receipt must be boolean")
     directory = Path(review_directory)
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("Review input must be a real directory, not a symlink")
@@ -196,10 +226,12 @@ def inspect_review_pack(
         raise ValueError("Review directory contains no trial WAV pairs")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
+    expected_pack_id = _read_public_receipt_id(directory, len(groups)) if require_receipt else None
     page_links_verified = _verify_public_review_page(
-        directory, groups, require_generated_html=require_generated_html
+        directory, groups, require_generated_html=require_generated_html,
+        expected_pack_id=expected_pack_id,
     )
-    if require_generated_html and not page_links_verified:
+    if (require_generated_html or require_receipt) and not page_links_verified:
         raise ValueError("Official listener page missing from review pack")
 
     trials = []
@@ -269,6 +301,7 @@ def inspect_review_pack(
         "answer_key_opened": False,
         "review_page_audio_links_verified": page_links_verified,
         "official_generated_html_verified": require_generated_html,
+        "public_receipt_pack_id_verified": require_receipt,
         "contains_source_paths_hashes_or_audio": False,
         "trials": trials,
     }
@@ -286,12 +319,17 @@ def main() -> int:
         "--require-generated-html", action="store_true",
         help="Reject any modified listener page, including changed inline scripts",
     )
+    parser.add_argument(
+        "--require-receipt", action="store_true",
+        help="Bind the review form pack ID and trial count to the sibling receipt.json",
+    )
     args = parser.parse_args()
     try:
         result = inspect_review_pack(
             args.review_directory, window_ms=args.window_ms,
             loudness_tolerance_db=args.loudness_tolerance_db,
             require_generated_html=args.require_generated_html,
+            require_receipt=args.require_receipt,
         )
     except (OSError, ValueError):
         parser.exit(3, "review quality preflight: invalid or unreadable pack (details withheld)\n")
