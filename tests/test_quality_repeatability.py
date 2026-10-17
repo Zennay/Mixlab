@@ -420,7 +420,7 @@ class RepeatabilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     RepeatabilityError, "^invalid, changed or incompatible source$"
                 ):
-                    verify_repeatability(one, two, receipts=(ra, bad))
+                    verify_repeatability(one, two, receipts=(bad, ra))
         self.assertTrue(verify_repeatability(
             one, two, receipts=(ra, rb)
         )["render_receipts_consistent"])
