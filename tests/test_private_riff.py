@@ -146,6 +146,19 @@ class PrivateRiffQualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extension"):
             scan_wav(self.variant)
 
+    def test_metadata_header_chunk_budget_fails_before_pcm_decode(self):
+        # A short, bounded file can still have thousands of zero-length RIFF
+        # chunks; do not let private preflight spend unbounded CPU scanning.
+        junk = b"JUNK" + (0).to_bytes(4, "little")
+        inflated = self.original[:12] + junk * 4097 + self.original[12:]
+        inflated = patch_header(inflated, 4, (len(inflated) - 8).to_bytes(4, "little"))
+        self.variant.write_bytes(inflated)
+        with patch("mixlab.quality.wave.open",
+                   side_effect=AssertionError("PCM decode started")):
+            with self.assertRaisesRegex(ValueError, "too many chunks"):
+                scan_wav(self.variant)
+        self.assertEqual(self.original, self.baseline.read_bytes())
+
     def test_both_cli_modes_fail_sanitized_on_malformed_pcm_container(self):
         invalid = patch_header(self.original, 28, bytes(4))
         self.variant.write_bytes(invalid)
