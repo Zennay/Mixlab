@@ -447,10 +447,13 @@ class QualityTests(unittest.TestCase):
         report = inspect_review_pack(review)
         self.assertEqual(2, report["trial_count"])
         self.assertEqual(1, report["cross_trial_repeated_variant_count"])
-        self.assertEqual("trial-001/A", report["trials"][1]["cross_trial_repeated_pcm_of"]["B"])
-        self.assertEqual({}, report["trials"][0]["cross_trial_repeated_pcm_of"])
+        self.assertEqual([], report["trials"][0]["trial_warnings"])
         self.assertIn("repeated_pcm_across_trials_inspect_blinding",
-                      report["trials"][1]["B"]["warnings"])
+                      report["trials"][1]["trial_warnings"])
+        # Preserve blinding even in the QA report: do not expose which
+        # slot matched or the earlier A/B label.
+        self.assertFalse(report["trials"][1]["A"]["warnings"])
+        self.assertFalse(report["trials"][1]["B"]["warnings"])
         self.assertFalse(report["trials"][0]["technical_warnings_present"])
         self.assertTrue(report["trials"][1]["technical_warnings_present"])
         self.assertEqual(1, report["warning_trial_count"])
@@ -474,7 +477,7 @@ class QualityTests(unittest.TestCase):
                 [int(x * .9) for x in self.samples], rate=rate)
         report = inspect_review_pack(review)
         self.assertEqual(0, report["cross_trial_repeated_variant_count"])
-        self.assertEqual({}, report["trials"][1]["cross_trial_repeated_pcm_of"])
+        self.assertFalse(report["trials"][1]["trial_warnings"])
 
     def test_review_pack_rejects_untrusted_incomplete_or_oversized_inventories(self):
         review = self.root / "review"
@@ -579,9 +582,8 @@ class QualityTests(unittest.TestCase):
         # listeners can recognize this recurring reference and infer roles.
         self.assertGreaterEqual(report["cross_trial_repeated_variant_count"], 2)
         self.assertTrue(any(
-            "repeated_pcm_across_trials_inspect_blinding" in (
-                row["A"]["warnings"] + row["B"]["warnings"]
-            ) for row in report["trials"][1:]
+            "repeated_pcm_across_trials_inspect_blinding" in row["trial_warnings"]
+            for row in report["trials"][1:]
         ))
         self.assertEqual(["trial-001", "trial-002", "trial-003"],
                          [trial["trial_id"] for trial in report["trials"]])
