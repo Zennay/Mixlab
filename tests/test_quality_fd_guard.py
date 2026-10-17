@@ -11,7 +11,8 @@ import tempfile
 import unittest
 import wave
 
-from mixlab.quality.fd_guard import MAX_BYTES, admitted_pcm16, validate_private_pcm16
+from mixlab.quality.fd_guard import (MAX_BYTES, admitted_pcm16, validate_private_pcm16,
+                                    validate_private_ab_group, MAX_GROUP_FRAMES)
 
 
 def make_wav(path, *, frames=200, channels=1, rate=8000, width=2):
@@ -327,6 +328,143 @@ class PrivateFdGuardTests(unittest.TestCase):
                 self.assertEqual(expected_status, proc.returncode)
                 self.assertFalse(proc.stdout)
                 self.assertNotIn(marker, proc.stderr)
+                self.assertNotIn(str(self.root), proc.stderr)
+
+    def test_ab_group_validates_multiple_sources_anonymously_and_immutably(self):
+        c1, c2 = self.root / "PRIVATE_CANDIDATE1.wav", self.root / "PRIVATE_CANDIDATE2.wav"
+        make_wav(c1)
+        make_wav(c2)
+        files = [self.source, c1, c2]
+        before = [p.read_bytes() for p in files]
+        with patch("mixlab.quality.fd_guard.os.open", wraps=os.open) as opened:
+            report = validate_private_ab_group(files)
+        self.assertEqual(3, opened.call_count)  # no metadata second opens
+        self.assertEqual({"screen": "ml07-single-fd-ab-group-integrity-v1",
+                          "sample_rate": 8000, "channels": 1, "frames": 200,
+                          "candidate_count": 2, "shape_comparable": True,
+                          "pcm16_payloads_complete": True,
+                          "human_listening_required": True}, report)
+        self.assertEqual(before, [p.read_bytes() for p in files])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("PRIVATE", json.dumps(report))
+
+    def test_ab_group_rejects_invalid_participant_inventory(self):
+        for group in ([], [self.source], [self.source] * 9, None,
+                      (self.source,), "not-a-list"):
+            with self.subTest(group=str(type(group)) + ":" + str(len(group) if group else 0)):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    validate_private_ab_group(group)
+
+    def test_ab_group_shape_mismatch_before_pcm_scan(self):
+        candidate = self.root / "PRIVATE_DIFFERENT.wav"
+        for kwargs in ({"frames": 201}, {"channels": 2}, {"rate": 16000}):
+            with self.subTest(kwargs=kwargs):
+                make_wav(candidate, **kwargs)
+                with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError(
+                    "PCM read on header-shape mismatch"
+                )) as intercepted:
+                    with self.assertRaisesRegex(ValueError, "details withheld"):
+                        validate_private_ab_group([self.source, candidate])
+                    intercepted.assert_not_called()
+
+    def test_ab_group_rejects_missing_symlink_fifo_and_corrupt_inputs(self):
+        target = self.root / "UNKNOWN_SECRET_TRACK.wav"
+        alias = self.root / "alias.wav"
+        alias.symlink_to(self.source)
+        fifo = self.root / "fifo-secret.wav"
+        os.mkfifo(fifo)
+        for source in (target, alias, fifo):
+            with self.subTest(source=source.name):
+                with self.assertRaisesRegex(ValueError, "details withheld") as error:
+                    validate_private_ab_group([self.source, source])
+                self.assertNotIn(str(self.root), str(error.exception))
+        target.write_bytes(b"not a RIFF file" * 8)
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            validate_private_ab_group([self.source, target])
+
+    def test_ab_group_stereo_identical_shape_admitted(self):
+        make_wav(self.source, channels=2, frames=8193)
+        other = self.root / "stereo-new.wav"
+        make_wav(other, channels=2, frames=8193)
+        report = validate_private_ab_group([self.source, other])
+        self.assertEqual(2, report["channels"])
+        self.assertEqual(8193, report["frames"])
+        self.assertTrue(report["pcm16_payloads_complete"])
+
+    def test_ab_group_aggregate_ceiling_checked_before_audio_reads(self):
+        # One sparse 2M-frame file is sufficient to prove both 8M budget
+        # and pre-I/O admission. Never allocate 20M PCM samples in Python.
+        with open(self.source, "r+b") as source:
+            source.seek(40)
+            source.write(struct.pack("<I", 2_000_000 * 2))
+            source.truncate(44 + 2_000_000 * 2)
+        self.assertEqual(8_000_000, MAX_GROUP_FRAMES)
+        with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError(
+            "PCM work exceeded pre-admission budget"
+        )) as intercepted:
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                validate_private_ab_group([self.source] * 5)
+            intercepted.assert_not_called()
+
+    def test_ab_group_exact_eight_million_frames_admitted(self):
+        with open(self.source, "r+b") as source:
+            source.seek(40)
+            source.write(struct.pack("<I", 2_000_000 * 2))
+            source.truncate(44 + 2_000_000 * 2)
+        result = validate_private_ab_group([self.source] * 4)
+        self.assertEqual(3, result["candidate_count"])
+        self.assertEqual(2_000_000, result["frames"])
+
+    def test_ab_group_detects_last_candidate_mutation_while_reading(self):
+        candidate = self.root / "private-A.wav"
+        make_wav(candidate)
+        original_read = wave.Wave_read.readframes
+        changed = [False]
+        def edit_when_read(reader, n):
+            result = original_read(reader, n)
+            if not changed[0]:
+                changed[0] = True
+                with open(candidate, "r+b") as file:
+                    file.seek(44)
+                    file.write(b"\x7e")
+            return result
+        with patch.object(wave.Wave_read, "readframes", new=edit_when_read):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                validate_private_ab_group([self.source, candidate])
+        self.assertTrue(changed[0])
+
+    def test_ab_group_cli_success_stable_and_no_private_path(self):
+        candidate = self.root / "CANDIDATE_PRIVATE.wav"
+        make_wav(candidate)
+        cmd = [sys.executable, "-m", "mixlab.quality.fd_guard",
+               "--ab-group", str(self.source), str(candidate)]
+        first = subprocess.run(cmd, capture_output=True, text=True)
+        second = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertTrue(json.loads(first.stdout)["shape_comparable"])
+        self.assertNotIn("PRIVATE", first.stdout + first.stderr)
+        self.assertNotIn(str(self.root), first.stdout + first.stderr)
+
+    def test_ab_group_cli_errors_redacted(self):
+        candidate = self.root / "OTHER_SUPER_PRIVATE.wav"
+        make_wav(candidate, rate=16000)
+        modes = (
+            (["--ab-group", str(self.source), str(candidate)], 3),
+            ([str(self.source), str(candidate)], 2),
+            (["--ab-group", str(self.source)], 2),
+            (["--ab-group", str(self.source), "SECRET_NOT_FOUND"], 3),
+        )
+        for args, expected in modes:
+            with self.subTest(expected=expected, count=len(args)):
+                proc = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.fd_guard", *args],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(expected, proc.returncode)
+                self.assertFalse(proc.stdout)
+                self.assertNotIn("PRIVATE", proc.stderr)
+                self.assertNotIn("SECRET_NOT_FOUND", proc.stderr)
                 self.assertNotIn(str(self.root), proc.stderr)
 
     def test_outputs_no_private_path_or_audio_and_no_writes(self):
