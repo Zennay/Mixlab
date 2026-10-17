@@ -67,12 +67,42 @@ bounded check without invoking another subprocess. Its block-frame
 parameter accepts integers 1..4096 only. It never automatically replaces
 the current shared scanner.
 
+## Blinded A/B group preflight
+
+```sh
+python3 -m mixlab.quality.fd_guard --ab-group /private/baseline.wav /private/candidate-a.wav /private/candidate-b.wav
+```
+
+The optional group mode accepts **one baseline and 1..7 candidates**, and
+keeps all 2..8 regular descriptors open concurrently until they have passed
+file-identity checks. It verifies every admitted header before decoding
+**any** source, enforces an aggregate **8,000,000-frame** scan budget and
+identical sample rate, channel count and frame count, then streams all PCM
+in <=4096-frame chunks. Missing, symlink, FIFO and malformed sources fail
+closed. An A/B candidate naming the same inode as another source is refused,
+including a different hardlink to the same WAV.
+
+Results contain only anonymous shape, candidate count, boolean integrity and
+`human_listening_required`. They do **not** contain filenames, hashes,
+timestamps, frame coordinates, audio or an automatic pass/fail musical score.
+Exit 0 means syntactically complete, shape-comparable **PCM** only; exit 2
+means invalid private/redacted arguments; exit 3 means invalid/redacted inputs.
+Distinct inodes may still contain exactly the same PCM: use the separate
+owned ML-07 exact-PCM reuse screen (#68), not this reader, to investigate that
+bias. Identical global shape does **not** prove matched LUFS, equivalent
+musical context or unbiased human review.
+
+All source files remain private; do not run this workflow against public
+music or log operator-provided paths. Avoid additional VPS work while
+PWQ-320 is ineligible or admission/capacity is uncertain.
+
 ## Reproducible acceptance
 
 ```sh
 python3 -m compileall -q mixlab/quality/fd_guard.py tests/test_quality_fd_guard.py
 python3 -m unittest discover -s tests -p 'test_quality_fd_guard.py' -v
 python3 -m mixlab.quality.fd_guard /path/to/permitted-private.wav
+python3 -m mixlab.quality.fd_guard --ab-group /private/baseline.wav /private/candidate.wav
 python3 -m unittest discover -s tests -p 'test_quality.py' -v
 ```
 
