@@ -18,6 +18,7 @@ def reports():
                       trial_count=5, side_assignment_review_required=False)
     position = dict(schema_version=1, milestone_pass=False,
                     trial_count=5, reviewer_count=3,
+                    decisive_vote_count=15,
                     sufficient_for_position_screen=True,
                     aggregate_position_dominance_review=False,
                     individual_position_pattern_review=False)
@@ -28,6 +29,7 @@ def reports():
                 audio_confounds_reported=False)
     reviewer = dict(schema_version=1, milestone_pass=False,
                     frozen_pair_count=5, reviewer_file_count=3,
+                    full_decisive_vote_count=15,
                     sufficient_for_reviewer_influence_screen=True,
                     reviewer_influence_review_required=False,
                     official_audio_confounds_reported=False)
@@ -138,6 +140,8 @@ class PureM1ReportContract(unittest.TestCase):
         low = reports()
         low[2]["sufficient_for_position_screen"] = False
         low[2]["aggregate_position_dominance_review"] = None
+        low[2]["decisive_vote_count"] = 3
+        low[4]["full_decisive_vote_count"] = 3
         self.assertEqual(compose(*low)["technical_screen"], "REVIEW_REQUIRED")
         # Inconclusive is not a permissible substitute for the result when
         # there actually are enough decisive observations.
@@ -149,6 +153,37 @@ class PureM1ReportContract(unittest.TestCase):
         low[2]["aggregate_position_dominance_review"] = False
         with self.assertRaises(M1GateBundleError):
             compose(*low)
+
+    def test_mismatched_decisive_votes_or_forged_power_cannot_pass(self):
+        for index, field, value in (
+            (2, "decisive_vote_count", 13),
+            (4, "full_decisive_vote_count", 14),
+            (2, "decisive_vote_count", True),
+            (4, "full_decisive_vote_count", True),
+            (2, "decisive_vote_count", -1),
+            (4, "full_decisive_vote_count", 16),
+            (2, "sufficient_for_position_screen", False),
+        ):
+            with self.subTest(index=index, field=field):
+                items = reports()
+                items[index][field] = value
+                with self.assertRaises(M1GateBundleError):
+                    compose(*items)
+
+    def test_exact_decisive_threshold_uses_tri_state_only_below_twelve(self):
+        for count in (0, 1, 11, 12, 13, 15):
+            with self.subTest(decisive=count):
+                items = reports()
+                items[2]["decisive_vote_count"] = count
+                items[4]["full_decisive_vote_count"] = count
+                powered = count >= 12
+                items[2]["sufficient_for_position_screen"] = powered
+                items[2]["aggregate_position_dominance_review"] = (
+                    False if powered else None)
+                result = compose(*items)
+                self.assertEqual(result["technical_screen"],
+                                 "SCREENED" if powered else "REVIEW_REQUIRED")
+                self.assertIs(result["milestone_pass"], False)
 
     def test_does_not_echo_private_data_from_input_reports(self):
         rows = reports()
