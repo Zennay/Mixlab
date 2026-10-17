@@ -94,6 +94,13 @@ def _scan_spectral_private(
                 # Detect left/right dropouts *within* a track despite equal
                 # whole-file channel RMS. Eight by two private RMS accumulators.
                 span_channel_energy = [[0.0] * channels for _ in range(SPECTRAL_SPANS)]
+                # Aggregate channel + band together in private aligned spans.
+                # Whole-track channel and whole-span spectra can both hide
+                # low/high content migrating between L and R over time.
+                span_channel_bands = [
+                    [[0.0] * 4 for _ in range(channels)]
+                    for _ in range(SPECTRAL_SPANS)
+                ]
                 remaining = frames
                 while remaining:
                     count = min(READ_FRAMES, remaining)
@@ -130,6 +137,11 @@ def _scan_spectral_private(
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
                         span_channel_energy[span][channel] += sample_energy
+                        band_sum = span_channel_bands[span][channel]
+                        band_sum[0] += sample_energy
+                        band_sum[1] += low_sample_energy
+                        band_sum[2] += mid_sample_energy
+                        band_sum[3] += high_sample_energy
                         span_energy[span][1] += low_sample_energy
                         span_energy[span][2] += mid_sample_energy
                         span_energy[span][3] += high_sample_energy
@@ -183,6 +195,18 @@ def _scan_spectral_private(
                 math.sqrt(total / frames),
             )
             for total, low, mid, high in channel_energy
+        ],
+        "_channel_band_spans": [
+            tuple(
+                (
+                    math.sqrt(low / total) if total else None,
+                    math.sqrt(mid / total) if total else None,
+                    math.sqrt(high / total) if total else None,
+                    math.sqrt(total / count) if count else 0.0,
+                )
+                for total, low, mid, high in channel_bands
+            )
+            for channel_bands, (_, _, _, _, count) in zip(span_channel_bands, span_energy)
         ],
         "_channel_spans": [
             tuple(
@@ -417,6 +441,38 @@ def compare_spectral_balance(
             deltas["stereo_temporal_channel_dropout_risk"] = dropout_spans >= 2
             if dropout_spans >= 2:
                 warnings.append("stereo_temporal_channel_dropout_inspect")
+
+        # Stereo content can migrate L/R *temporally* while both the
+        # overall spectrum at each time and each channel's full-track
+        # spectrum remain identical. Flag persistent private span shifts.
+        if reference["channels"] == 2:
+            for name, band in (("low", 0), ("mid", 1), ("high", 2)):
+                eligible_spans = changed_spans = 0
+                for ref_group, cur_group in zip(
+                    reference["_channel_band_spans"], current["_channel_band_spans"]
+                ):
+                    comparable = changed = False
+                    for ref_ch, cur_ch in zip(ref_group, cur_group):
+                        if min(ref_ch[3], cur_ch[3]) < SILENT_WINDOW_RMS:
+                            continue
+                        a, b = ref_ch[band], cur_ch[band]
+                        if a is None or b is None or min(a, b) < MIN_RESOLVABLE_RATIO:
+                            continue
+                        comparable = True
+                        if abs(20 * math.log10(b / a)) >= TEMPORAL_PROXY_THRESHOLD_DB:
+                            changed = True
+                    if comparable:
+                        eligible_spans += 1
+                        changed_spans += int(changed)
+                key = "stereo_temporal_" + name + "_channel_spectral_mismatch_fraction"
+                deltas[key] = (
+                    round(changed_spans / eligible_spans, 6)
+                    if eligible_spans >= TEMPORAL_PROXY_MIN_SPANS else None
+                )
+                if (eligible_spans >= TEMPORAL_PROXY_MIN_SPANS
+                        and changed_spans >= 2
+                        and changed_spans / eligible_spans >= TEMPORAL_PROXY_MIN_FRACTION):
+                    warnings.append("stereo_temporal_" + name + "_channel_spectral_shift_inspect")
 
         # Whole-stereo ratios mask shifts in frequency placement between L/R.
         # Compare *each* channel at matched playback positions, but expose
