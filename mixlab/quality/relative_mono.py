@@ -61,6 +61,12 @@ def assess(
         if not adequate:
             status = "insufficient_stereo_evidence"
             delta = None
+        elif row.get("level_comparable_for_blind_ab") is not True:
+            # A large RMS difference can bias a blinded comparison even
+            # with technically valid shared stereo phase. Never emit the
+            # apparent "no new risk" result for such unmatched levels.
+            status = "rms_level_confound"
+            delta = None
         else:
             base_risk, candidate_risk = shared
             delta = round(candidate_risk - base_risk, 6)
