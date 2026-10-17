@@ -96,3 +96,32 @@ code are untouched.
 Exact-head quality Actions proof must include both
 `test_stereo_polarity.py` and `test_private_riff.py` via the companion
 suite. Do not promote the draft PR on a CI run for an earlier SHA.
+
+## Signed stereo channel swaps — further ML-07 blinding protection
+
+A stereo variant can reuse exact PCM under a *combination* of channel
+swapping and channel polarity inversion. Earlier ML-07 heuristics detected
+plain L/R swap, full polarity inversion and individual L/R polarity inversion
+separately, but not the three composite cases `(-R,L)`, `(R,-L)` and
+`(-R,-L)`. A supposedly independent listening option may therefore be
+nothing more than a signed swap of an earlier recording.
+
+The streaming scan now derives three additional **private** bounded digests
+per stereo PCM16 read, with the same sample-rate/frame/channel checks and
+the same strict `-32768` cannot-be-negated rule. The public neutral diagnostic
+is `signed_stereo_swap_pcm_inspect_for_reused_audio` and
+`signed_stereo_swap_pcm_of` references only `baseline` or the prior
+anonymous `candidate-NN`. Exact duplicate-PCM diagnostics remain separate;
+no samples, fingerprints, source files, trial answer keys, left/right mapping,
+or audio are included in output.
+
+Six new deterministic tests in `tests/test_signed_stereo_swap.py` cover
+all three transformations (crossing 4096-frame boundaries), previous-candidate
+reuse, single-sample mismatch, the PCM16 `-32768` edge and legal opposite
+channel case, exact duplicate/mono non-regression, and CLI privacy with
+read-only input verification.
+
+These are *exact transformed-PCM equality* warnings for possible A/B
+recognition confounds, not proof of perceptual identity or bad mixing;
+intentional phase and stereo manipulations may sound different.
+M1 still needs rights-approved real audio and blind listener evidence.
