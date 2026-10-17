@@ -171,6 +171,31 @@ remains available for a deliberate integration re-run. A green technical
 matrix is not M1 musical evidence and is not a substitute for a separately
 approved integration/merge decision.
 
+## Real maximum-frame A/B integration, resource proof and mutation safety
+
+The exact-head GitHub-hosted Python 3.13/3.14 quality matrix includes a
+**streamed two-source 2,000,000-frame, 96 kHz stereo WAV test**, plus the other
+four canonical frozen pairs and three synthetic reviewer ballots. It rebuilds
+genuine pack digests and executes **all five M1 gates** on the frozen study;
+the result remains non-milestone and does not claim a human preference.
+
+A second pass produces **2,000,001-frame** original WAVs with freshly
+consistent JSON/pack commitments. The existing public scanner must reject the
+over-limit source with the same anonymized invalid-input verdict. This verifies
+actual admission rather than mocking the 2M limit or inventing unsafe giant
+fixture bytes in memory. The test is a bounded, deliberately longer run:
+approximately **111–117 seconds** for the full first suite per Python
+version on hosted CI at the verified max case; peak RSS stayed below **31 MiB**.
+The workflow has a hard 15-minute job ceiling and 192-MiB virtual-memory cap.
+
+Independent mutation tests deliberately change, after the fifth real gate
+returns, (1) original reviewed PCM bytes and (2) the private evidence JSON
+file. The bundle must reject both before publishing any technical status,
+without including a path or canary in the error. This proves detection of
+**persistent observed changes**; it cannot protect against a malicious actor
+that changes and restores the bytes between read intervals. Freeze the
+filesystem when conducting real blinded human studies.
+
 ## Gate and ownership
 
 Owns only this newly added module, test suite, workflow and document.
