@@ -143,3 +143,28 @@ played to real output hardware, signal continuity was perfect or a human
 could hear a good transition. The existing bounded PCM scanner and human
 listening study remain mandatory. Fixtures are generated in a disposable
 temporary folder and are never committed or uploaded as media.
+
+## Full M1 software-path validation without real music
+
+The hosted browser job additionally runs **the existing MixLab production
+software path on original rights-safe procedural fixtures**. It creates a
+16 kHz stereo two-track library with `mixlab.cli.fixture`, builds a
+seeded **three-trial, four-family** frozen blind pack with
+`mixlab.cli.benchmark`, and validates it using the canonical:
+`check_review_controls`, `inspect_review_pack(require_generated_html=True,
+require_receipt=True)`, and `verify_pack` APIs. Every neutral A/B renderer
+WAV is loaded in a real hosted Chromium page copied to a disposable browser
+directory, preserving the original frozen pack. Browser-created, explicitly
+**synthetic** ratings A/Tie/Both-unusable are passed to the *existing*
+`mixlab.evaluation.aggregate` (one machine-generated test identity) to
+verify the end-to-end contract and the invariant `milestone_pass=False`.
+
+A second complete benchmark render from the same private synthetic manifest
+and fixed test seed must produce the **same frozen pack identity and trial
+assignments**. This is a reproducibility test, not an invitation to fix a seed
+for actual blinded listening. Production pilots must omit `--seed`, freeze
+their permitted 5–10 independent preselected pairs, match loudness, and obtain
+three independent human responses. These CI tests do not evaluate taste,
+quality superiority, source ownership, real audio device output or accessible
+screen-reader behaviour. All files are temporary GitHub-hosted fixtures;
+the production VPS and private audio library remain untouched.
