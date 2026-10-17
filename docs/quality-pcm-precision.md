@@ -106,7 +106,10 @@ Strict admission occurs **before PCM scanning**: each input must be a bounded
 regular read-only PCM16 mono/stereo 8–96 kHz WAV of at most 32 MiB and
 2 million frames, all with identical channel layout, sampling rate and
 frame count. Total declared frames across baseline and candidates may not
-exceed **8 million**. Duplicate baseline/candidate aliases, including
+exceed **8 million**, nor may the sum of on-disk WAV file sizes exceed
+**128 MiB** (to bound non-audio RIFF metadata/padding even if frame counts
+are low). Both global caps are enforced before any PCM sample scan.
+Duplicate baseline/candidate aliases, including
 hardlinks, are refused. All files are scanned at most once and the baseline
 is reused only as private compact histogram data. Each source's device,
 inode, size, modification time and change time are revalidated after the
