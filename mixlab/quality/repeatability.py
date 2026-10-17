@@ -23,6 +23,8 @@ from ..models import FAMILY_NAMES
 MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
 CHUNK_FRAMES = 4096
+MAX_PATH_COMPONENTS = 64
+MAX_PATH_BYTES = 4096
 _ERROR = "invalid, changed or incompatible source"
 
 
@@ -52,7 +54,11 @@ def _open_no_symlink_components(path: Path) -> int:
     # traversal must encounter it before stepping back via '..'.
     absolute = path if path.is_absolute() else Path.cwd() / path
     components = absolute.parts
-    if len(components) < 2:
+    # Limit the number of simultaneously opened parent directories and
+    # reject excessively long paths before opening even the root dirfd.
+    if (len(components) < 2 or len(components) > MAX_PATH_COMPONENTS
+            or len(os.fspath(absolute)) > MAX_PATH_BYTES
+            or len(os.fsencode(absolute)) > MAX_PATH_BYTES):
         raise RepeatabilityError(_ERROR)
     common = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     directory_flags = common | os.O_DIRECTORY | getattr(os, "O_NONBLOCK", 0)
