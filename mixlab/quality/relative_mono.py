@@ -56,16 +56,18 @@ def assess(
             and candidate["silent_window_fraction"] <= MAX_SILENT_WINDOW_FRACTION
             and baseline["rms_dbfs"] is not None
             and candidate["rms_dbfs"] is not None
-            and shared is not None
         )
         if not adequate:
             status = "insufficient_stereo_evidence"
             delta = None
         elif row.get("level_comparable_for_blind_ab") is not True:
-            # A large RMS difference can bias a blinded comparison even
-            # with technically valid shared stereo phase. Never emit the
-            # apparent "no new risk" result for such unmatched levels.
+            # A large RMS difference invalidates a blinded comparison
+            # *before* the costly aligned scan. Do not collapse this
+            # explicit HOLD into "insufficient stereo evidence".
             status = "rms_level_confound"
+            delta = None
+        elif shared is None:
+            status = "insufficient_stereo_evidence"
             delta = None
         else:
             base_risk, candidate_risk = shared
