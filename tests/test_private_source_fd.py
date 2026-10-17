@@ -136,6 +136,37 @@ class PrivateSourceIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "32 MiB"):
                 scan_wav(oversized)
 
+    def test_all_stereo_fingerprints_keep_reads_bounded_at_4096_frames(self):
+        # Even with the complete signed stereo/per-channel fingerprint set,
+        # a quality scan cannot request a whole recording in one read.
+        long_source = self.root / "long-private-stereo.wav"
+        samples = array("h", [
+            int(3400 * ((i % 37) - 18) / 18)
+            for i in range(9003) for _ in range(2)
+        ])
+        if sys.byteorder != "little":
+            samples.byteswap()
+        with wave.open(str(long_source), "wb") as target:
+            target.setnchannels(2)
+            target.setsampwidth(2)
+            target.setframerate(8000)
+            target.writeframes(samples.tobytes())
+        original = wave.Wave_read.readframes
+        requested = []
+
+        def guarded(reader, frame_count):
+            self.assertGreater(frame_count, 0)
+            self.assertLessEqual(frame_count, 4096)
+            requested.append(frame_count)
+            return original(reader, frame_count)
+
+        with patch.object(wave.Wave_read, "readframes", guarded):
+            report = compare_wavs(long_source, [long_source])
+        self.assertEqual("baseline", report["candidates"][0]["duplicate_pcm_of"])
+        self.assertEqual(9003, report["baseline"]["frames"])
+        # 9003 frames require exactly 4096 + 4096 + 811 per side.
+        self.assertEqual([4096, 4096, 811, 4096, 4096, 811], requested)
+
     def test_missing_file_error_does_not_reveal_secret_filename(self):
         missing = self.root / "PRIVATE_EXPERIMENTAL_TRACK_CREDS_443.wav"
         with self.assertRaises(ValueError) as captured:
