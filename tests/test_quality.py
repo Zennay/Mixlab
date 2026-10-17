@@ -560,6 +560,46 @@ class QualityTests(unittest.TestCase):
         page.unlink()
         self.assertFalse(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_public_review_page_rejects_external_and_event_resources(self):
+        review = self.root / "review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x * .9) for x in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        unsafe = (
+            '<script src="https://collector.example/collect.js"></script>',
+            '<img src="https://collector.example/pixel">',
+            '<iframe src="https://collector.example/answer"></iframe>',
+            '<link rel="stylesheet" href="https://collector.example/theme.css">',
+            '<base href="https://collector.example/">',
+            '<meta http-equiv="refresh" content="0;url=https://collector.example/">',
+            '<form action="https://collector.example/submit"></form>',
+            '<a href="https://collector.example/">remote</a>',
+            '<style>@import "https://collector.example/style.css";</style>',
+            '<style>body{background:url(https://collector.example/img)}</style>',
+            '<div style="background:url(https://collector.example/img)"></div>',
+            '<svg onload="location.href=\'https://collector.example\'"></svg>',
+            '<fieldset onclick="alert(1)"></fieldset>',
+        )
+        for payload in unsafe:
+            with self.subTest(payload=payload):
+                page.write_text(clean + payload)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+                result = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, result.returncode)
+                self.assertFalse(result.stdout)
+                self.assertNotIn(str(self.root), result.stderr)
+                self.assertNotIn("collector.example", result.stderr)
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
