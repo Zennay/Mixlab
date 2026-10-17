@@ -466,6 +466,47 @@ class ResolutionTests(unittest.TestCase):
         self.assertTrue(swapped)
         self.assertFalse(opened_private, "Directory traversal must not follow an exchanged parent")
 
+    @unittest.skipUnless(Path("/proc/self/fd").exists(), "Linux FD accounting")
+    def test_repeated_nested_nofollow_rejection_and_success_do_not_leak_fds(self):
+        nested = self.root / "a" / "b" / "c"
+        nested.mkdir(parents=True)
+        target = nested / "private.wav"
+        wav(target, samples())
+        link = self.root / "nested-link"
+        link.symlink_to(self.root / "a", target_is_directory=True)
+        checked = link / "b" / "c" / "private.wav"
+        before = len(os.listdir("/proc/self/fd"))
+        for _ in range(16):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(checked, [self.good])
+            result = bitdepth.inspect_ab(target, [self.good])
+            self.assertIs(result["candidates"][0]["coarse_resolution_review"], False)
+        after = len(os.listdir("/proc/self/fd"))
+        self.assertEqual(before, after)
+
+    def test_nofollow_walk_opens_each_path_component_relative_to_dirfd(self):
+        parent = self.root / "one" / "two" / "three"
+        parent.mkdir(parents=True)
+        source = parent / "nested.wav"
+        wav(source, samples())
+        seen = []
+        original_open = os.open
+
+        def record_component(path, flags, *args, **kwargs):
+            seen.append((os.fspath(path), flags, kwargs.get("dir_fd")))
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch.object(bitdepth.os, "open", side_effect=record_component):
+            result = bitdepth.inspect_ab(source, [self.good])
+        self.assertIs(result["candidates"][0]["coarse_resolution_review"], False)
+        self.assertTrue(any(p == "nested.wav" and dir_fd is not None for p, _, dir_fd in seen))
+        self.assertTrue(any(p == "one" and dir_fd is not None and flags & os.O_NOFOLLOW and flags & os.O_DIRECTORY
+                            for p, flags, dir_fd in seen))
+        self.assertTrue(any(p == "two" and dir_fd is not None and flags & os.O_NOFOLLOW and flags & os.O_DIRECTORY
+                            for p, flags, dir_fd in seen))
+        self.assertTrue(any(p == "three" and dir_fd is not None and flags & os.O_NOFOLLOW and flags & os.O_DIRECTORY
+                            for p, flags, dir_fd in seen))
+
     def test_non_regular_and_missing_sources_do_not_leak_path(self):
         for path in [self.root / "not-found-private.wav", self.root]:
             with self.assertRaises(ValueError) as ctx:
