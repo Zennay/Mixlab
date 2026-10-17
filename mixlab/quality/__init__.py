@@ -13,10 +13,14 @@ from pathlib import Path
 import sys
 import wave
 
-from .private_source import open_verified_private_pcm16, private_path_identity
+from .private_source import open_verified_private_pcm16, private_path_identity, private_wav_frame_count
 
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
+# Aggregate budgets are checked before the first PCM read. Without them a
+# 20-candidate comparison can multiply the per-WAV 2M-frame limit by 21.
+MAX_COMPARE_TOTAL_SOURCE_BYTES = 128 * 1024 * 1024
+MAX_COMPARE_TOTAL_FRAMES = 8_000_000
 SILENT_WINDOW_RMS = 10 ** (-55 / 20)
 # Investigate gaps of at least 200 ms between audible sections, even if
 # the rest of an otherwise valid transition is loud.
@@ -569,6 +573,17 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     # while later candidates are being processed.
     all_paths = (baseline, *candidates)
     initial_identities = tuple(private_path_identity(p) for p in all_paths)
+    # Admission is O(number of inputs + bounded RIFF chunk headers), not O(audio
+    # frames). No PCM sample is decoded until both full-batch budgets pass.
+    if sum(identity[2] for identity in initial_identities) > MAX_COMPARE_TOTAL_SOURCE_BYTES:
+        raise ValueError("Quality comparison exceeds the total input byte budget")
+    declared_frames = 0
+    for source_path in all_paths:
+        declared_frames += private_wav_frame_count(source_path, max_bytes=MAX_SOURCE_BYTES)
+        if declared_frames > MAX_COMPARE_TOTAL_FRAMES:
+            raise ValueError("Quality comparison exceeds the total PCM frame budget")
+    if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
+        raise ValueError("Private WAV input changed during quality comparison")
     base, base_digest, base_windows, _, _, _, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
