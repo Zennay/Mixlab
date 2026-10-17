@@ -83,9 +83,16 @@ technical screen, never a certification of musical superiority.
   source provenance, or guarantee protection from an adversary with arbitrary
   access to the process's file descriptors; it does not verify music rights.
 - Read at most 4,096 stereo frames per input block. Compute independent
-  left/right energy for each aligned 250 ms window. Ignore windows unless
-  **both channels in both samples** exceed -45 dBFS RMS; otherwise abstain.
-  Remaining partial windows (<250 ms) are not decisive.
+  left/right energy for each aligned 250 ms pan window. A window counts as
+  usable **only if both channels of BOTH sources** are at least -45 dBFS
+  RMS in the whole 250 ms window **and in every aligned 50 ms subwindow**.
+  Four 250 ms windows containing just one short loud pulse each do **not**
+  amount to a continuous second of audible stereo. Missing evidence is
+  `null` (and exit 3 with `--fail-on-review`), not a green pass. The 50 ms
+  guards have rational sample boundaries aligned with the 250 ms ones, and
+  remain an RMS-based approximation: they do not certify sample-by-sample
+  audibility or continuous music. Trailing incomplete 250 ms windows
+  (<250 ms) are not decisive.
 - 250ms window boundaries use **cumulative rational sample positions**
   (nearest integer), not independently truncated 250ms widths. Thus the
   complete fourth window ends at exactly 1 second even for sample rates
@@ -205,3 +212,26 @@ exit 3 in strict batch CLI mode. Both return only anonymous technical
 fields. This is deterministic DSP integration proof, **not** rights
 evidence, an acoustic perceptual loudness measurement or independent
 human-blinded DJ-preference proof.
+
+## Sparse-pulse false-positive evidence gate (October 2026)
+
+The previous 250 ms integrated-RMS test could count an entire second of
+apparently continuous stereo when both channels carried only **20 ms of
+sound in each 250 ms** (92% silence). In one regression the brief pulses are
+scaled so overall candidate RMS closely matches an uninterrupted baseline,
+which shows why a single whole-clip or whole-quarter RMS gate cannot prove
+continuous usable listening evidence. The original algorithm produced a
+false clear/review instead of abstaining. Dedicated **RED** CI reproduced
+both candidate-side and baseline-side failures at
+[run 39035489399](https://github.com/Zennay/Mixlab/actions/runs/39035489399).
+
+The tightened algorithm maintains bounded, integer-only **50 ms RMS
+subwindow guards** within each original 250 ms pan window and demands
+sufficient energy from both channels in both sources in *every* subwindow.
+The 250 ms pan-tilt measure and one-second persistence threshold are
+unchanged. Additional synthetic tests cover near-equal whole-clip RMS,
+bursts on either source, 50 ms gaps at 11,025 Hz, strict CLI exit 3, and
+existing real-M1-renderer integration. All sample rates remain 8–96 kHz;
+no media are retained or uploaded, and the 192 MiB virtual memory limit
+is enforced by the hosted test workflow. This remains only a conservative
+technical evidence screen, not a music or human-perception score.
