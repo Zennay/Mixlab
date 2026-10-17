@@ -268,6 +268,53 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual([False, None], result["per_channel_review"])
         self.assertIsNone(result["coarse_resolution_review"])
 
+
+    def test_disjoint_active_100ms_intervals_never_make_a_clean_ab_claim(self):
+        # Both files independently contain a full second of valid PCM16,
+        # yet none of their audible frames coincide. Aggregate statistics
+        # are identical and must not be interpreted as comparative evidence.
+        chunk = samples(frames=8000)
+        silence = b"\x00\x00" * 2 * 8000
+        wav(self.base, chunk + silence)
+        wav(self.good, silence + chunk)
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertTrue(all(c["evidenced"] for c in report["baseline_channel_metrics"]))
+        self.assertEqual([None, None], report["candidates"][0]["per_channel_review"])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+        self.assertEqual(3, self.cli(self.base, self.good, "--strict").returncode)
+
+    def test_disjoint_coarse_candidate_cannot_claim_bitdepth_defect(self):
+        # A quantised candidate is silent wherever the reference is active.
+        # No A/B evidence exists to attribute precision loss to processing.
+        chunk = samples(frames=8000)
+        coarse = samples(frames=8000, collapse=True)
+        silence = b"\x00\x00" * 2 * 8000
+        wav(self.base, chunk + silence)
+        wav(self.bad, silence + coarse)
+        report = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([None, None], report["candidates"][0]["per_channel_review"])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
+    def test_stereo_right_disjoint_from_baseline_abstains_without_full_clean(self):
+        # Both left channels align, but the right candidate channel plays
+        # only in the second second, with its reference on the first.
+        block = array.array("h")
+        block.frombytes(samples(frames=8000))
+        values = array.array("h")
+        for frame in range(8000):
+            values.extend((block[frame * 2], 0))
+        for frame in range(8000):
+            values.extend((0, block[frame * 2 + 1]))
+        if sys.byteorder != "little":
+            values.byteswap()
+        left_only_then_right = values.tobytes()
+        silence = b"\x00\x00" * 2 * 8000
+        wav(self.base, samples(frames=8000) + silence)
+        wav(self.good, left_only_then_right)
+        report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual([False, None], report["candidates"][0]["per_channel_review"])
+        self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
     def test_low_energy_abstains_without_claiming_a_clean_pair(self):
         wav(self.good, samples(quiet=True))
         data = bitdepth.inspect_ab(self.base, [self.good])
