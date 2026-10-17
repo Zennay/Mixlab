@@ -37,13 +37,37 @@ def _identity(info: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _source(path: Path, stack: ExitStack) -> tuple[wave.Wave_read, object, os.stat_result]:
-    # Reject symlink traversal and FIFOs before parsing even a WAV header.
-    if not hasattr(os, "O_NOFOLLOW"):
+def _open_no_symlink_components(path: Path) -> int:
+    """Open an admitted file while refusing symlinks in EVERY path component.
+
+    A bare O_NOFOLLOW on the final component still follows parent-directory
+    symlinks. Walk an absolute lexical path using O_DIRECTORY | O_NOFOLLOW
+    dirfds, closing every intermediate descriptor before returning the final
+    (nonblocking, no-follow) read-only source descriptor.
+    """
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         raise RepeatabilityError(_ERROR)
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(path, flags)
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    components = absolute.parts
+    if len(components) < 2:
+        raise RepeatabilityError(_ERROR)
+    common = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    directory_flags = common | os.O_DIRECTORY | getattr(os, "O_NONBLOCK", 0)
+    file_flags = common | getattr(os, "O_NONBLOCK", 0)
+    with ExitStack() as dirs:
+        parent = os.open(os.sep, directory_flags)
+        dirs.callback(os.close, parent)
+        for component in components[1:-1]:
+            next_parent = os.open(component, directory_flags, dir_fd=parent)
+            dirs.callback(os.close, next_parent)
+            parent = next_parent
+        return os.open(components[-1], file_flags, dir_fd=parent)
+
+
+def _source(path: Path, stack: ExitStack) -> tuple[wave.Wave_read, object, os.stat_result]:
+    # Reject parent-component symlinks, final symlinks and FIFOs before
+    # parsing a header or streaming any private PCM.
+    fd = _open_no_symlink_components(path)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or not 44 <= info.st_size <= MAX_BYTES:
@@ -71,7 +95,13 @@ def _unchanged(path: Path, handle: object, original: os.stat_result) -> bool:
     # A descriptor snapshot alone does not establish that the original name
     # still refers to that source after a concurrent rename/replacement.
     info = os.fstat(handle.fileno())
-    named = os.stat(path, follow_symlinks=False)
+    # Reopen the complete named path without traversing symlinked ancestors:
+    # a basename-only lstat would still follow a swapped parent directory.
+    check_fd = _open_no_symlink_components(path)
+    try:
+        named = os.fstat(check_fd)
+    finally:
+        os.close(check_fd)
     return (
         stat.S_ISREG(named.st_mode)
         and _identity(info) == _identity(original) == _identity(named)
