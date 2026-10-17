@@ -88,7 +88,9 @@ class PureM1ReportContract(unittest.TestCase):
             (0, "study_pack_metadata_consistent_with_pinned_id", False),
             (0, "milestone_pass", True),
             (2, "milestone_pass", True),
-            (4, "schema_version", 99),\n            (4, "schema_version", True),\n            (0, "schema_version", True),
+            (4, "schema_version", 99),
+            (4, "schema_version", True),
+            (0, "schema_version", True),
             (3, "audio_confounds_reported", "false"),
             (4, "official_audio_confounds_reported", None),
         ):
