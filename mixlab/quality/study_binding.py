@@ -49,6 +49,17 @@ def _verified_study(path, expected_study_id):
     pairs = study.get("pairs")
     if not isinstance(pairs, list) or not 5 <= len(pairs) <= 10:
         _fail()
+    # A recomputed hash only proves internal JSON consistency. It does NOT
+    # establish the frozen study is a legal sampling protocol. Enforce the
+    # independent ML-05 study reuse and candidate balance constraints here,
+    # before ever opening review WAVs or touching private listener material.
+    limit = study.get("max_track_uses")
+    if type(limit) is not int or not 1 <= limit <= 4:
+        _fail()
+    uses = {}
+    families = {name: 0 for name in _FAMILIES}
+    id_to_source = {}
+    source_to_id = {}
     seen = set()
     for i, row in enumerate(pairs, 1):
         if not isinstance(row, dict) or row.get("pair_id") != f"pair-{i:02d}":
@@ -63,6 +74,19 @@ def _verified_study(path, expected_study_id):
         if track_pair in seen:
             _fail()
         seen.add(track_pair)
+        families[row["candidate_family"]] += 1
+        for label in ("a", "b"):
+            tid, sha = row[label], row.get(f"{label}_sha256")
+            if uses.get(tid, 0) >= limit:
+                _fail()
+            uses[tid] = uses.get(tid, 0) + 1
+            # Two IDs for one PCM source (or one ID with different hashes)
+            # undermine independent evaluation even with distinct trial IDs.
+            if (tid in id_to_source and id_to_source[tid] != sha
+                    or sha in source_to_id and source_to_id[sha] != tid):
+                _fail()
+            id_to_source[tid] = sha
+            source_to_id[sha] = tid
         for field in ("a_sha256", "b_sha256"):
             if not isinstance(row.get(field), str) or _SHA.fullmatch(row[field]) is None:
                 _fail()
@@ -70,6 +94,8 @@ def _verified_study(path, expected_study_id):
             val = row.get(field)
             if type(val) not in (int, float) or not math.isfinite(val) or not 30 <= val <= 300:
                 _fail()
+    if max(families.values()) - min(families.values()) > 1:
+        _fail()
     return study
 
 
