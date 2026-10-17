@@ -51,7 +51,11 @@ sizes and timestamps again after the last candidate. An invalid, late-changed
 or missing input fails the **whole batch** without partial JSON.
 
 Results use ordered neutral IDs (`candidate-001` etc.) with per-channel
-`candidate_excess_bias_warning` and overall tri-state. Source paths, audio,
+`candidate_excess_bias_warning`, baseline flags, exact `complete_windows`,
+identical explicit `thresholds` as single-pair mode, and overall tri-state.
+The single-candidate batch result is cross-tested against the single-pair
+contract; clips too short for four complete windows never report clear.
+Source paths, audio,
 sample data, inode numbers and source hashes never appear in the public
 result or stderr. `--strict` returns 2 on any true/unknown warning; invalid
 input returns 3 with empty stdout. The same code and diagnostic thresholds
