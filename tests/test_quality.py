@@ -244,6 +244,48 @@ class QualityTests(unittest.TestCase):
                       report["baseline_warnings"])
         self.assertEqual(1, report["baseline"]["high_flat_top_plateau_count"])
 
+    def test_playback_boundaries_flag_steps_absent_from_adjacent_jump_checks(self):
+        # A smooth waveform can still start at a very high sample value:
+        # no internal >50% discontinuity, but playback from zero may click.
+        smooth_start = [int(18000 * math.cos(i * 0.01)) for i in range(8000)]
+        wav(self.candidate, smooth_start)
+        report = compare_wavs(self.base, [self.candidate])
+        candidate = report["candidates"][0]
+        metrics = candidate["metrics"]
+        self.assertFalse(metrics["severe_sample_discontinuity_risk"])
+        self.assertEqual(0, metrics["severe_adjacent_jump_count"])
+        self.assertGreater(metrics["playback_start_peak"], 0.5)
+        self.assertTrue(metrics["playback_boundary_pop_risk"])
+        self.assertIn("playback_boundary_step_inspect_for_clicks", candidate["warnings"])
+        self.assertNotIn("playback_boundary_step_inspect_for_clicks",
+                         report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        # The exact same hazard must also be audited on the reference.
+        wav(self.base, smooth_start)
+        wav(self.candidate, self.samples)
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("playback_boundary_step_inspect_for_clicks", report["baseline_warnings"])
+        self.assertNotIn("playback_boundary_step_inspect_for_clicks",
+                         report["candidates"][0]["warnings"])
+
+    def test_playback_boundary_threshold_and_stereo_single_channel(self):
+        stereo = self.root / "boundary-stereo.wav"
+        quiet = [0] * (8000 * 2)
+        quiet[-1] = 8191
+        wav(stereo, quiet, channels=2)
+        metrics = scan_wav(stereo)
+        self.assertFalse(metrics["playback_boundary_pop_risk"])
+        self.assertLess(metrics["playback_end_peak"], 0.25)
+        quiet[-1] = 8192
+        wav(stereo, quiet, channels=2)
+        metrics = scan_wav(stereo)
+        self.assertTrue(metrics["playback_boundary_pop_risk"])
+        self.assertEqual(0.25, metrics["playback_end_peak"])
+        self.assertEqual(0.0, metrics["playback_start_peak"])
+        # Entirely silent audio has no artificial boundary click.
+        wav(stereo, [0] * len(quiet), channels=2)
+        self.assertFalse(scan_wav(stereo)["playback_boundary_pop_risk"])
+
     def test_sample_splice_click_detected_across_stream_read_boundary(self):
         samples = self.samples.copy()
         samples[4095], samples[4096], samples[4097] = 0, 22000, 0
