@@ -146,27 +146,31 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     # also cleans up its own fresh output folder on decoding/render errors.
     studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
     normalized = destination / "sources" / "source_manifest.json"
-    editor = prepare_visual_editor(normalized, destination / "sources" / "cue-editor.html")
-    composer = create_composer(destination)
+    warnings = []
+    editor = None
+    composer = None
+    # The already rendered private Studio is a complete usable result even
+    # if optional HTML entry points cannot be written (e.g. too many samples
+    # for the visual waveform page). Never delete that expensive session.
+    try:
+        editor = prepare_visual_editor(normalized, destination / "sources" / "cue-editor.html")
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        warnings.append("Optional cue editor unavailable: " + str(exc))
+    try:
+        composer = create_composer(destination)
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        warnings.append("Optional Set Composer unavailable: " + str(exc))
+    with manifest.open("r", encoding="utf-8") as reader:
+        summary = json.load(reader)
     payload = {"ready": True, "private_source_manifest": str(manifest),
                "session_directory": str(destination), "studio": str(studio),
-               "visual_cue_editor": str(editor), "set_composer": str(composer),
-               "tracks": len(_read_manifest_track_ids(manifest)),
-               "transition_pairs": len(_read_manifest_pairs(manifest)),
-               "offline": True, "automatic_tempo_matching": False,
-               "music_preference_proven": False}
-    write("Playlist Studio ready. Open the Set Composer page and select transitions.")
+               "visual_cue_editor": str(editor) if editor else None,
+               "set_composer": str(composer) if composer else None,
+               "tracks": len(summary["tracks"]), "transition_pairs": len(summary["pairs"]),
+               "warnings": warnings, "offline": True,
+               "automatic_tempo_matching": False, "music_preference_proven": False}
+    write("Playlist Studio rendered. Open the Set Composer or the fallback Studio page.")
     return payload
-
-
-def _read_manifest_track_ids(path):
-    with open(path, "r", encoding="utf-8") as source:
-        return json.load(source)["tracks"]
-
-
-def _read_manifest_pairs(path):
-    with open(path, "r", encoding="utf-8") as source:
-        return json.load(source)["pairs"]
 
 
 def main():
