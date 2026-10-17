@@ -77,6 +77,17 @@ redacted rejection as an invalid WAV. No receipt fields, filenames, hashes or
 source audio appear in the result. With receipts absent, the report retains
 the original pure-PCM schema and makes **no** receipt-consistency claim.
 
+**Exact receipt types and M1 family admission:** numeric WAV metadata
+such as `schema_version`, `channels`, `sample_rate` and `frames` must be
+plain integers, not booleans or numerically equal floats. Python regards
+`True == 1` and `4000.0 == 4000` as true; equal but wrongly typed
+private receipts formerly slipped through. `recipe.family` must be one
+of the actual registered `mixlab.models.FAMILY_NAMES`, not an arbitrary
+shared string. Invalid declarations fail **before** either `wave.readframes`
+reads PCM or a full-file SHA is computed. This protects both evidence
+interpretation and private-source preflight, but does not authenticate
+a claimed recipe against the rendered audio.
+
 **Physical receipt invariants:** incoming declared `frames` must equal
 `round(beats * 60 / bpm * sample_rate)`; `duration_seconds` must match
 the observed PCM frame count divided by its sample rate; `gain_linear`
