@@ -78,7 +78,11 @@ class PrivateSourceIdentityTests(unittest.TestCase):
             return native(source, mode)
 
         with patch("mixlab.quality.private_source.wave.open", side_effect=change_path):
-            self.assertEqual(4099, scan_wav(self.private)["frames"])
+            # Renaming the opened inode updates ctime. The verified handle
+            # is still the old file, but the post-scan mutation guard must
+            # conservatively reject rather than publish a stale report.
+            with self.assertRaisesRegex(ValueError, "changed during quality preflight"):
+                scan_wav(self.private)
         self.assertEqual([old.stat().st_ino], used)
         self.assertEqual(malicious, self.private.read_bytes())
 
