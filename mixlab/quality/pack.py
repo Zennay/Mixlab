@@ -6,12 +6,14 @@ Metrics are technical diagnostics, not proof of musical preference.
 
 from __future__ import annotations
 
+from array import array
 import argparse
 from html.parser import HTMLParser
 import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 import tempfile
 import wave
 
@@ -263,14 +265,15 @@ def _verify_neutral_public_wav(path: Path) -> None:
             raise ValueError("Review public WAV contains extra payload or metadata")
 
 
-def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
-    """Identify repeated *playback PCM* without exporting an audio fingerprint.
+def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> tuple[bytes, bytes | None]:
+    """Identify repeated exact or channel-swapped playback PCM privately.
 
     Source format is included so the same sample bytes played at a different
     rate or channel layout do not create a false match. The streaming scanner
     already validated format and byte/frame limits before this private pass.
     """
     digest = hashlib.sha256()
+    swapped_digest = hashlib.sha256() if expected_metrics["channels"] == 2 else None
     try:
         with wave.open(str(path), "rb") as source:
             channels, sample_width, rate, frames, compression, _ = source.getparams()
@@ -279,7 +282,10 @@ def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
                     or frames != expected_metrics["frames"] or compression != "NONE"):
                 raise ValueError("Review audio changed during quality preflight")
             for number in (channels, rate, frames):
-                digest.update(number.to_bytes(4, "little"))
+                format_bytes = number.to_bytes(4, "little")
+                digest.update(format_bytes)
+                if swapped_digest is not None:
+                    swapped_digest.update(format_bytes)
             remaining = frames
             while remaining:
                 count = min(4096, remaining)
@@ -287,10 +293,21 @@ def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
                 if len(raw) != count * channels * sample_width:
                     raise ValueError("Review audio truncated during quality preflight")
                 digest.update(raw)
+                if swapped_digest is not None:
+                    samples = array("h")
+                    samples.frombytes(raw)
+                    if sys.byteorder != "little":
+                        samples.byteswap()
+                    reversed_stereo = array("h", samples)
+                    reversed_stereo[::2] = samples[1::2]
+                    reversed_stereo[1::2] = samples[::2]
+                    if sys.byteorder != "little":
+                        reversed_stereo.byteswap()
+                    swapped_digest.update(reversed_stereo.tobytes())
                 remaining -= count
     except (wave.Error, EOFError) as exc:
         raise ValueError("Invalid review WAV") from exc
-    return digest.digest()
+    return digest.digest(), swapped_digest.digest() if swapped_digest is not None else None
 
 
 def _file_identity(path: Path) -> tuple[int, int, int, int, int]:
@@ -417,10 +434,15 @@ def inspect_review_pack(
         # A/B-neutral references are safe; fingerprints never leave memory.
         repeated_from_other_trial = False
         for label in ("A", "B"):
-            digest = _private_audio_fingerprint(labels[label], (
+            digest, swapped_digest = _private_audio_fingerprint(labels[label], (
                 result["baseline"] if label == "A" else candidate["metrics"]
             ))
             previous = seen_audio.get(digest)
+            # A reversed L/R reference is recognizably reused audio too.
+            # The private format-bound swapped fingerprint never leaves QA.
+            # Exact equality takes precedence for dual-mono files.
+            if previous is None and swapped_digest is not None:
+                previous = seen_audio.get(swapped_digest)
             if previous is not None:
                 # Duplicate A/B within the same trial is already reported by
                 # compare_wavs; only repetition in *different* trials counts.
