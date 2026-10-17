@@ -62,6 +62,9 @@ def _source(path: str | Path, expected: tuple[int, int, int] | None = None):
 def _compare_pair(baseline: str | Path, candidate: str | Path, header: tuple[int, int, int]) -> dict:
     _, channels, frames = header
     active = identical = left_same = right_same = swapped = 0
+    win_active = [0] * 8
+    win_left = [0] * 8
+    win_right = [0] * 8
     with ExitStack() as stack:
         base, _ = stack.enter_context(_source(baseline, expected=header))
         other, _ = stack.enter_context(_source(candidate, expected=header))
@@ -84,9 +87,15 @@ def _compare_pair(baseline: str | Path, candidate: str | Path, header: tuple[int
                 if ba == bb:
                     identical += 1
                 if channels == 2:
-                    left_same += ba[:2] == bb[:2]
-                    right_same += ba[2:] == bb[2:]
+                    left_match = ba[:2] == bb[:2]
+                    right_match = ba[2:] == bb[2:]
+                    left_same += left_match
+                    right_same += right_match
                     swapped += ba != bb and ba[:2] == bb[2:] and ba[2:] == bb[:2]
+                    window = min(7, 8 * (processed + pos // (2 * channels)) // frames)
+                    win_active[window] += 1
+                    win_left[window] += left_match
+                    win_right[window] += right_match
             processed += amount
     evidence = active >= MIN_ACTIVE_FRAMES and active / frames >= MIN_ACTIVE_FRACTION
     if not evidence:
@@ -95,12 +104,32 @@ def _compare_pair(baseline: str | Path, candidate: str | Path, header: tuple[int
                 "stereo_left_reuse_fraction": None,
                 "stereo_right_reuse_fraction": None,
                 "stereo_swapped_frame_fraction": None,
+                "stereo_temporal_stale_window_fraction": None,
                 "warnings": ["insufficient_audible_pcm_for_reuse_inspection"]}
     exact = identical / active
     left = left_same / active if channels == 2 else None
     right = right_same / active if channels == 2 else None
     swap = swapped / active if channels == 2 else None
     warnings = []
+    temporal_stale_fraction = None
+    if channels == 2:
+        eligible = stale_windows = 0
+        minimum_window_frames = max(100, round(frames / 8 * MIN_ACTIVE_FRACTION))
+        for count, matches_left, matches_right in zip(win_active, win_left, win_right):
+            if count < minimum_window_frames:
+                continue
+            eligible += 1
+            if ((matches_left / count >= ONE_CHANNEL_STALE_FRACTION
+                 and matches_right / count <= OTHER_CHANNEL_CHANGED_FRACTION)
+                or (matches_right / count >= ONE_CHANNEL_STALE_FRACTION
+                    and matches_left / count <= OTHER_CHANNEL_CHANGED_FRACTION)):
+                stale_windows += 1
+        if eligible >= 3:
+            temporal_stale_fraction = stale_windows / eligible
+            if stale_windows >= 2 and temporal_stale_fraction >= 0.25:
+                warnings.append("stereo_temporal_single_channel_stale_pcm_inspect")
+        else:
+            warnings.append("stereo_temporal_reuse_coverage_inconclusive_inspect")
     if exact >= NEAR_IDENTICAL_FRACTION:
         warnings.append("near_identical_candidate_pcm_inspect")
     # Useful render regression indicator, not evidence that creative panning is wrong.
@@ -114,6 +143,8 @@ def _compare_pair(baseline: str | Path, candidate: str | Path, header: tuple[int
             "stereo_left_reuse_fraction": round(left, 4) if left is not None else None,
             "stereo_right_reuse_fraction": round(right, 4) if right is not None else None,
             "stereo_swapped_frame_fraction": round(swap, 4) if swap is not None else None,
+            "stereo_temporal_stale_window_fraction": (round(temporal_stale_fraction, 4)
+                                                      if temporal_stale_fraction is not None else None),
             "warnings": warnings}
 
 
