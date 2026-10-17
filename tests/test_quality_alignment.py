@@ -196,5 +196,26 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         with self.assertRaises(OSError):
             compare_envelopes(alias, [self.other])
 
+
+    def test_real_two_million_frame_limit_without_loading_all_pcm(self):
+        # Full advertised admission boundary, not just mocked source limits.
+        # Constant non-silent PCM is deliberately uninformative (risk=None).
+        block = array("h", [2000] * 4096)
+        if sys.byteorder != "little":
+            block.byteswap()
+        for path in (self.base, self.other):
+            with wave.open(str(path), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(8000)
+                for _ in range(2_000_000 // 4096):
+                    out.writeframesraw(block.tobytes())
+                tail = array("h", [2000] * (2_000_000 % 4096))
+                if sys.byteorder != "little":
+                    tail.byteswap()
+                out.writeframesraw(tail.tobytes())
+        result = compare_envelopes(self.base, [self.other])
+        self.assertIsNone(result["candidates"][0]["temporal_envelope_shift_risk"])
+
 if __name__ == "__main__":
     unittest.main()
