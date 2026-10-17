@@ -18,6 +18,7 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
 `/private/final-set-01.wav.player.html`. Open die naast de WAV in je browser:
 
 - één doorlopende speler met alle nummers en goedgekeurde overgangen;
+- een **klikbare visuele golfvorm** van de complete set, met overgangsmarkeringen, playhead en toetsenbordnavigatie via links/rechts (stappen van vijf seconden);
 - hoofdstukken die rechtstreeks naar elke solo-sectie of transitie springen;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
@@ -37,6 +38,8 @@ Een nieuw HTML-bestand verschijnt naast de WAV. De originele private receipt
 `final-set-01.wav.receipt.private.json` moet aanwezig zijn.
 
 ## Integriteits- en privacygrenzen
+
+De golfvorm wordt in maximaal 640 tijdvakken uit vier korte PCM-vensters per vak gesampled (maximaal 655.360 leesframes). Hij geeft een genormaliseerde, **benaderde energievisualisatie**, geen geïntegreerde loudnessmeting of muziekbeoordeling. Daardoor blijft de extra CPU- en geheugendruk begrensd, ook bij langere sets.
 
 De speler verwerkt uitsluitend een **eerder werkelijk geëxporteerde**
 `private-continuous-manual-set` en het bijbehorende manifest. Hij leest de
