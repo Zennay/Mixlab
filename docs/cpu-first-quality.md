@@ -107,6 +107,16 @@ biases but is **not** an arbitrary inline-JavaScript/CSS inspection or
 proof of equivalent listening conditions. Use `--require-generated-html`
 for frozen official studies and an independent human review.
 
+The static parser rejects browser-inert or reinterpreted container elements
+`template`, `plaintext`, `xmp`, `noscript`, and `textarea`.
+Python HTMLParser can enumerate apparently valid nested trial/audio references
+inside these contexts even when a browser treats the markup as inert, raw
+text or conditional content; this would make `review_page_audio_links_verified`
+misleading for a listener who sees no functional players. Normal generated
+pages are unaffected. This does **not** make the static parser a full HTML5
+browser emulator: frozen official studies still need exact generated HTML
+verification plus human review of display, accessibility and JS behavior.
+
 The static review-page check rejects external resource tags such as
 `iframe`, `img`, `link` and `script src`, remote navigation/form
 attributes, event-handler attributes and CSS `@import` / `url(...)`.
