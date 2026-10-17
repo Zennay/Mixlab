@@ -211,7 +211,7 @@ class ReviewerInfluenceTests(unittest.TestCase):
         self.assertTrue(json.loads(warning.stdout)["omission_flips_candidate_plurality"])
 
         private = self.root / "PRIVATE-TRACK-SECRET" / "review.json"
-        command[2] = str(private)
+        command[3] = str(private)
         invalid = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(invalid.returncode, 2)
         self.assertNotIn("PRIVATE-TRACK-SECRET", invalid.stdout + invalid.stderr)
