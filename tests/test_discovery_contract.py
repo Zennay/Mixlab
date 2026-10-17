@@ -26,6 +26,8 @@ class CompanionDiscoveryContractTests(unittest.TestCase):
             "test_pcm_metrics_oracle.py",
             "test_riff_chunk_matrix.py",
             "test_blind_report_invariance.py",
+            "test_stereo_level_confound.py",
+            "test_stereo_window_balance.py",
         }
         selected = {path.name for path in tests_dir.glob(pattern)}
         self.assertTrue(expected <= selected, "ML-07 test omitted from companion CI: " +
