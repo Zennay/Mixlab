@@ -443,6 +443,39 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(report["candidates"][0]["metrics"], pan_balance.inspect(self.a, self.b))
         self.assertEqual(report["candidates"][1]["metrics"], pan_balance.inspect(self.a, third))
 
+    def test_python_api_errors_never_echo_missing_private_source_paths(self):
+        # CLI errors are sanitized already; the public Python API should not
+        # leak the pathname inside the built-in FileNotFoundError either.
+        wav(self.a)
+        missing = self.root / "sensitive missing recording.wav"
+        calls = (
+            lambda: pan_balance.inspect(self.a, missing),
+            lambda: pan_balance.inspect_batch(self.a, [missing]),
+        )
+        for call in calls:
+            with self.subTest(api=call.__code__.co_firstlineno):
+                with self.assertRaises(ValueError) as error:
+                    call()
+                self.assertNotIn(str(self.root), str(error.exception))
+                self.assertNotIn(missing.name, str(error.exception))
+
+    def test_python_api_rejects_parent_symlink_without_disclosing_private_name(self):
+        wav(self.a)
+        album = self.root / "original_album"
+        album.mkdir()
+        filename = album / "very private mix.wav"
+        wav(filename)
+        alias = self.root / "private alias"
+        alias.symlink_to(album, target_is_directory=True)
+        for call in (
+            lambda: pan_balance.inspect(self.a, alias / filename.name),
+            lambda: pan_balance.inspect_batch(self.a, [alias / filename.name]),
+        ):
+            with self.assertRaises(ValueError) as error:
+                call()
+            self.assertNotIn(str(self.root), str(error.exception))
+            self.assertNotIn(filename.name, str(error.exception))
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
