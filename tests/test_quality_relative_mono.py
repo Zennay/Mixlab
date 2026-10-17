@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -154,6 +155,34 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(run.returncode, 2)
         self.assertNotIn(str(self.root), run.stdout + run.stderr)
 
+
+    def test_leaf_and_ancestor_symlink_paths_are_rejected(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="normal")
+        leaf_link = self.root / "link.wav"
+        leaf_link.symlink_to(self.base)
+        with self.assertRaisesRegex(ValueError, "regular"):
+            inspect(str(leaf_link), [str(self.candidate)])
+        linked_parent = self.root / "linked-dir"
+        linked_parent.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "directory"):
+            inspect(str(linked_parent / "base.wav"), [str(self.candidate)])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX FIFO admission test")
+    def test_fifo_rejected_without_opening_or_hanging(self):
+        _wave(self.base, mode="normal")
+        fifo = self.root / "pretend-audio.wav"
+        os.mkfifo(fifo)
+        with self.assertRaisesRegex(ValueError, "regular"):
+            inspect(str(self.base), [str(fifo)])
+
+    def test_out_of_budget_file_rejected_before_decoding(self):
+        _wave(self.base, mode="normal")
+        large = self.root / "too-large.wav"
+        with open(large, "wb") as stream:
+            stream.truncate(32 * 1024 * 1024 + 1)
+        with self.assertRaisesRegex(ValueError, "bounded regular"):
+            inspect(str(self.base), [str(large)])
 
 
 if __name__ == "__main__":
