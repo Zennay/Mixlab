@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 import wave
 
-from .private_source import open_verified_private_pcm16, private_path_identity, private_wav_frame_count
+from .private_source import open_verified_private_pcm16, private_path_identity, private_wav_format
 
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
@@ -578,8 +578,23 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     if sum(identity[2] for identity in initial_identities) > MAX_COMPARE_TOTAL_SOURCE_BYTES:
         raise ValueError("Quality comparison exceeds the total input byte budget")
     declared_frames = 0
-    for source_path in all_paths:
-        declared_frames += private_wav_frame_count(source_path, max_bytes=MAX_SOURCE_BYTES)
+    reference_header = None
+    for index, source_path in enumerate(all_paths):
+        channels, rate, frames = private_wav_format(source_path, max_bytes=MAX_SOURCE_BYTES)
+        # Reject overlong/empty recordings and incompatible candidates
+        # before paying the cost of decoding even the baseline's PCM.
+        if not 1 <= frames <= MAX_SOURCE_FRAMES:
+            raise ValueError("Frames must be between 1 and 2,000,000")
+        header = (channels, rate, frames)
+        if reference_header is None:
+            reference_header = header
+        else:
+            for field, value, reference in zip(
+                ("channels", "sample_rate", "frames"), header, reference_header
+            ):
+                if value != reference:
+                    raise ValueError(f"Candidate {index} {field} differs from baseline")
+        declared_frames += frames
         if declared_frames > MAX_COMPARE_TOTAL_FRAMES:
             raise ValueError("Quality comparison exceeds the total PCM frame budget")
     if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
