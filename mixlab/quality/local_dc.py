@@ -1,0 +1,470 @@
+"""Read-only PCM16 preflight for persistent *local* DC-offset confounds.
+
+A whole-clip DC mean can hide a +DC section followed by a -DC section.
+This technical check abstains on short/ambiguous evidence and never judges
+musical quality. It does not modify input or publish source paths or samples.
+"""
+from __future__ import annotations
+
+from array import array
+import argparse
+import json
+import os
+from pathlib import Path
+import stat
+import struct
+import sys
+import wave
+
+MAX_SOURCE_BYTES = 32 * 1024 * 1024
+MAX_SOURCE_FRAMES = 2_000_000
+WINDOW_MS = 250
+PHASE_SHIFT_DIVISOR = 2  # inspect a second grid halfway through each window
+MIN_SUSTAINED_WINDOWS = 4  # 1 second, including on 8 kHz recordings
+DC_THRESHOLD = 0.03  # 3% full-scale absolute DC
+RELATIVE_THRESHOLD = 0.025  # candidate vs baseline mean change
+CHUNK_FRAMES = 4096
+MAX_BATCH_CANDIDATES = 8
+MAX_BATCH_FRAMES = 8_000_000
+MAX_BATCH_BYTES = 128 * 1024 * 1024
+MAX_RIFF_CHUNKS = 1024  # bound header work on hostile metadata-only WAVs
+PCM_SUBFORMAT_GUID = bytes.fromhex("0100000000001000800000aa00389b71")
+
+
+def _identity(st: os.stat_result) -> tuple[int, ...]:
+    return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _validate_riff_envelope(handle, physical_bytes: int) -> int:
+    """Validate bounded RIFF chunk framing without decoding PCM samples.
+
+    A matching outer RIFF length alone is insufficient: it can conceal
+    truncated or overlapping inner chunks, duplicate audio payloads, and
+    sub-frame bytes silently dropped by WAV parsers. Visit chunk headers only,
+    never read any PCM payload, and cap how many headers are examined.
+    Return the size of the sole data chunk for frame alignment verification.
+    """
+    try:
+        handle.seek(0)
+        header = handle.read(12)
+        if (len(header) != 12 or header[:4] != b"RIFF" or
+                header[8:12] != b"WAVE"):
+            raise ValueError("Invalid private RIFF/WAVE envelope")
+        declared_bytes = 8 + struct.unpack_from("<I", header, 4)[0]
+        if declared_bytes != physical_bytes:
+            raise ValueError("Private RIFF size does not match physical bytes")
+
+        cursor = 12
+        fmt_seen = data_seen = False
+        data_size = None
+        chunk_count = 0
+        while cursor < physical_bytes:
+            chunk_count += 1
+            if chunk_count > MAX_RIFF_CHUNKS:
+                raise ValueError("Too many private RIFF chunks")
+            if physical_bytes - cursor < 8:
+                raise ValueError("Incomplete private RIFF chunk header")
+            handle.seek(cursor)
+            chunk = handle.read(8)
+            if len(chunk) != 8:
+                raise ValueError("Truncated private RIFF chunk header")
+            tag, size = chunk[:4], struct.unpack_from("<I", chunk, 4)[0]
+            # RIFF chunks use a pad byte for odd-sized payloads.
+            next_cursor = cursor + 8 + size + (size & 1)
+            if next_cursor > physical_bytes:
+                raise ValueError("Private RIFF chunk exceeds file bounds")
+            if tag == b"fmt ":
+                if fmt_seen or data_seen:
+                    raise ValueError("Invalid duplicate/out-of-order fmt chunk")
+                # Python's wave reader can ignore internally contradictory
+                # nAvgBytesPerSec/nBlockAlign values. An A/B input with such
+                # metadata is not a trustworthy PCM16 quality reference.
+                # Inspect only the fixed 16-byte format header, not audio.
+                if size < 16:
+                    raise ValueError("Incomplete private PCM format header")
+                handle.seek(cursor + 8)
+                raw_fmt = handle.read(16)
+                if len(raw_fmt) != 16:
+                    raise ValueError("Truncated private PCM format header")
+                fmt_tag, channels, rate, byte_rate, block_align, bits = struct.unpack(
+                    "<HHIIHH", raw_fmt
+                )
+                if (channels not in (1, 2) or bits != 16 or
+                        not 8000 <= rate <= 96000 or
+                        block_align != channels * 2 or
+                        byte_rate != rate * block_align):
+                    raise ValueError("Inconsistent private PCM16 format header")
+                if fmt_tag == 1:  # WAVE_FORMAT_PCM
+                    # Ordinary PCM needs only the 16-byte standard header.
+                    # Some writers append a legal zero-length WAVEFORMATEX
+                    # cbSize; reject undeclared extensions/ambiguous padding.
+                    if size == 18:
+                        if struct.unpack("<H", handle.read(2))[0] != 0:
+                            raise ValueError("Invalid PCM16 format extension")
+                    elif size != 16:
+                        raise ValueError("Invalid PCM16 format extension")
+                elif fmt_tag == 0xFFFE:  # WAVE_FORMAT_EXTENSIBLE
+                    # wave.open() accepts the PCM subtype on newer Python,
+                    # but does not reliably enforce valid precision and the
+                    # channel mask. Restrict this preflight to unambiguous,
+                    # fully occupied 16-bit containers.
+                    if size != 40:
+                        raise ValueError("Invalid extensible PCM16 header size")
+                    extra = handle.read(24)
+                    if len(extra) != 24:
+                        raise ValueError("Truncated extensible PCM16 header")
+                    extra_length, valid_bits, mask = struct.unpack("<HHI", extra[:8])
+                    subformat = extra[8:]
+                    valid_masks = (0, 1, 4) if channels == 1 else (0, 3)
+                    if (extra_length != 22 or valid_bits != 16 or
+                            subformat != PCM_SUBFORMAT_GUID or
+                            mask not in valid_masks):
+                        raise ValueError("Inconsistent extensible PCM16 header")
+                else:
+                    raise ValueError("Unsupported PCM16 format tag")
+                fmt_seen = True
+            elif tag == b"data":
+                if data_seen or not fmt_seen:
+                    raise ValueError("Invalid duplicate/out-of-order data chunk")
+                data_seen = True
+                data_size = size
+            cursor = next_cursor
+
+        if cursor != physical_bytes or not fmt_seen or not data_seen:
+            raise ValueError("Private RIFF chunk layout incomplete")
+        return data_size
+    finally:
+        handle.seek(0)
+
+
+def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
+    """Retain window means only; fail closed on nonregular/changing input."""
+    fd = None
+    path = Path(source)
+    try:
+        original = path.lstat()
+        if not stat.S_ISREG(original.st_mode):
+            raise ValueError("private input must be a regular WAV")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(path, flags)
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or _identity(before) != _identity(original):
+            raise ValueError("private WAV changed during admission")
+        if not 44 <= before.st_size <= MAX_SOURCE_BYTES:
+            raise ValueError("private WAV outside byte bounds")
+        with os.fdopen(fd, "rb", closefd=True) as handle:
+            fd = None
+            data_bytes = _validate_riff_envelope(handle, before.st_size)
+            with wave.open(handle, "rb") as wav:
+                channels, width, rate, frames, compression, _ = wav.getparams()
+                if data_bytes != frames * channels * width:
+                    raise ValueError("Private PCM payload is not frame-aligned")
+                if channels not in (1, 2) or width != 2 or compression != "NONE":
+                    raise ValueError("PCM16 mono/stereo required")
+                if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
+                    raise ValueError("private WAV outside frame/rate bounds")
+                window_size = max(1, round(rate * WINDOW_MS / 1000))
+                # Four staggered 250-ms grids: 0, 62.5, 125, 187.5 ms.
+                # Frames are decoded only once; each grid holds sums and
+                # complete means, never raw audio or sample positions.
+                offsets = (0, window_size // 4, window_size // 2,
+                           (3 * window_size) // 4)
+                grids = [[] for _ in offsets]
+                sums = [[0] * channels for _ in offsets]
+                counts = [0] * len(offsets)
+                processed = 0
+                while processed < frames:
+                    expected = min(CHUNK_FRAMES, frames - processed)
+                    raw = wav.readframes(expected)
+                    if len(raw) != expected * channels * 2:
+                        raise ValueError("truncated PCM payload")
+                    samples = array("h")
+                    samples.frombytes(raw)
+                    if sys.byteorder != "little":
+                        samples.byteswap()
+                    for i in range(0, len(samples), channels):
+                        frame_index = processed + i // channels
+                        for phase, offset in enumerate(offsets):
+                            if frame_index < offset:
+                                continue
+                            for c in range(channels):
+                                sums[phase][c] += samples[i + c]
+                            counts[phase] += 1
+                            if counts[phase] == window_size:
+                                grids[phase].append(
+                                    tuple(v / (window_size * 32768.0)
+                                          for v in sums[phase])
+                                )
+                                counts[phase] = 0
+                                sums[phase] = [0] * channels
+                    processed += expected
+            after = os.fstat(handle.fileno())
+            if _identity(after) != _identity(before):
+                raise ValueError("private WAV changed during scanning")
+        final = path.lstat()
+        if not stat.S_ISREG(final.st_mode) or _identity(final) != _identity(before):
+            raise ValueError("private WAV path changed during scanning")
+        return {"_identity": _identity(before), "channels": channels, "sample_rate": rate, "frames": frames,
+                "window_count": len(grids[0]), "means": grids[0],
+                "quarter_means": grids[1], "shifted_means": grids[2],
+                "three_quarter_means": grids[3]}
+    except (OSError, EOFError, wave.Error, struct.error, OverflowError) as exc:
+        raise ValueError("private WAV could not be safely inspected") from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def _run_state(flags: list[bool], *, enough_windows: bool) -> bool | None:
+    if not enough_windows:
+        return None
+    run = best = 0
+    for flag in flags:
+        run = run + 1 if flag else 0
+        best = max(best, run)
+    if best >= MIN_SUSTAINED_WINDOWS:
+        return True
+    if best:
+        return None  # evidence is too short to call good or bad
+    return False
+
+
+def _phase_state(*grids: list[bool]) -> bool | None:
+    """Combine full-window phase grids, requiring one complete second.
+
+    Incomplete grids contribute no decision. A clean exactly-one-second
+    source remains conclusively clear from the original 0-ms phase alone.
+    """
+    states = [_run_state(flags, enough_windows=True)
+              for flags in grids if len(flags) >= MIN_SUSTAINED_WINDOWS]
+    if not states:
+        return None
+    return True if True in states else (None if None in states else False)
+
+
+def _verify_pair_source(source: str | os.PathLike[str], expected: tuple[int, ...]) -> None:
+    try:
+        after = Path(source).lstat()
+        if not stat.S_ISREG(after.st_mode) or _identity(after) != expected:
+            raise ValueError("private WAV changed during pair inspection")
+    except OSError:
+        raise ValueError("private WAV changed during pair inspection") from None
+
+
+def _compare_scans(ref: dict, alt: dict) -> dict:
+    """Compare already-screened private sources; reusable by bounded batches."""
+    if any(ref[k] != alt[k] for k in ("channels", "sample_rate", "frames", "window_count")):
+        raise ValueError("private PCM16 sources do not have identical shape")
+    n = ref["window_count"]
+    baseline_states = []
+    excess_states = []
+    phase_keys = ("means", "quarter_means", "shifted_means",
+                  "three_quarter_means")
+    for c in range(ref["channels"]):
+        baseline_states.append(_phase_state(*(
+            [abs(row[c]) >= DC_THRESHOLD for row in ref[key]]
+            for key in phase_keys
+        )))
+        def excess(rows_a: list, rows_b: list) -> list[bool]:
+            return [abs(new[c]) >= DC_THRESHOLD and
+                    abs(new[c] - old[c]) >= RELATIVE_THRESHOLD
+                    for old, new in zip(rows_a, rows_b)]
+        excess_states.append(_phase_state(*(
+            excess(ref[key], alt[key]) for key in phase_keys
+        )))
+    all_states = baseline_states + excess_states
+    warning = True if True in all_states else (None if None in all_states else False)
+    return {
+        "check": "local-dc-bias-v1",
+        "warning": warning,
+        "baseline_bias_warning": baseline_states,
+        "candidate_excess_bias_warning": excess_states,
+        "channels": ref["channels"],
+        "sample_rate": ref["sample_rate"],
+        "frames": ref["frames"],
+        "window_ms": WINDOW_MS,
+        "window_phase_shift_ms": WINDOW_MS // PHASE_SHIFT_DIVISOR,
+        "window_grid_offsets_ms": [0.0, WINDOW_MS / 4, WINDOW_MS / 2,
+                                   3 * WINDOW_MS / 4],
+        "complete_windows": n,
+        "thresholds": {"dc_fraction_full_scale": DC_THRESHOLD,
+                       "relative_fraction_full_scale": RELATIVE_THRESHOLD,
+                       "min_consecutive_windows": MIN_SUSTAINED_WINDOWS},
+        "interpretation": "Technical DC confound only; not LUFS, clipping proof, or musical preference.",
+    }
+
+
+def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str]) -> dict:
+    """Compare distinct equal-shape private PCM16 files, read-only."""
+    # The single-pair path must enforce the same fail-closed, metadata-only
+    # admission as the one-to-many path. Reject alias/format/shape/resource
+    # issues BEFORE decoding either private PCM source.
+    admitted = _admit_batch([baseline, candidate])
+    ref = _scan_private_pcm(baseline)
+    if ref["_identity"] != admitted[0]["identity"]:
+        raise ValueError("Baseline changed after source admission")
+    alt = _scan_private_pcm(candidate)
+    if alt["_identity"] != admitted[1]["identity"]:
+        raise ValueError("Candidate changed after source admission")
+    result = _compare_scans(ref, alt)
+    _verify_pair_source(baseline, ref["_identity"])
+    _verify_pair_source(candidate, alt["_identity"])
+    return result
+
+
+def _admit_batch(sources: list[str | os.PathLike[str]]) -> list[dict]:
+    """Admit *all* inputs before decoding any PCM or publishing results.
+
+    This initial read is metadata only. Subsequent full scans verify the exact
+    admission device/inode/size/timestamps, and all names are checked again
+    after the last candidate. The bounds include the baseline exactly once.
+    """
+    if not 2 <= len(sources) <= MAX_BATCH_CANDIDATES + 1:
+        raise ValueError("Batch needs one baseline and 1..8 candidates")
+    accepted = []
+    seen = set()
+    total_bytes = total_frames = 0
+    shape = None
+    for source in sources:
+        path = Path(source)
+        fd = None
+        try:
+            original = path.lstat()
+            if not stat.S_ISREG(original.st_mode):
+                raise ValueError("Batch input is not a regular WAV")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            flags |= getattr(os, "O_CLOEXEC", 0)
+            fd = os.open(path, flags)
+            actual = os.fstat(fd)
+            if not stat.S_ISREG(actual.st_mode) or _identity(actual) != _identity(original):
+                raise ValueError("Batch source changed during admission")
+            if not 44 <= actual.st_size <= MAX_SOURCE_BYTES:
+                raise ValueError("Batch input outside per-file byte bounds")
+            key = (actual.st_dev, actual.st_ino)
+            if key in seen:
+                raise ValueError("A/B sources must be distinct regular files")
+            seen.add(key)
+            with os.fdopen(fd, "rb", closefd=True) as handle:
+                fd = None
+                data_bytes = _validate_riff_envelope(handle, actual.st_size)
+                with wave.open(handle, "rb") as wav:
+                    channels, width, rate, frames, comp, _ = wav.getparams()
+                    if data_bytes != frames * channels * width:
+                        raise ValueError("Private PCM payload is not frame-aligned")
+                    if comp != "NONE" or width != 2 or channels not in (1, 2):
+                        raise ValueError("Batch requires PCM16 mono/stereo")
+                    if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
+                        raise ValueError("Batch input outside frame/rate bounds")
+                    current_shape = (channels, rate, frames)
+                    if shape is None:
+                        shape = current_shape
+                    elif shape != current_shape:
+                        raise ValueError("private PCM16 sources do not have identical shape")
+                    total_bytes += actual.st_size
+                    total_frames += frames
+                    if total_bytes > MAX_BATCH_BYTES or total_frames > MAX_BATCH_FRAMES:
+                        raise ValueError("Batch resource admission limit exceeded")
+                if _identity(os.fstat(handle.fileno())) != _identity(actual):
+                    raise ValueError("Batch source mutated during metadata admission")
+            accepted.append({"source": source, "identity": _identity(actual)})
+        except (OSError, EOFError, wave.Error, struct.error, OverflowError):
+            raise ValueError("Batch private WAV admission failed") from None
+        finally:
+            if fd is not None:
+                os.close(fd)
+    # Recheck every source after final admission to catch path/metadata changes
+    # before the first PCM frame is read.
+    for entry in accepted:
+        _verify_pair_source(entry["source"], entry["identity"])
+    return accepted
+
+
+def inspect_batch(baseline: str | os.PathLike[str],
+                  candidates: list[str | os.PathLike[str]]) -> dict:
+    """Read-only one-to-many technical screen; no partial result on any error.
+
+    A baseline is PCM-decoded *once* for at most 8 unique candidates. Refuse
+    mismatched sources or any post-admission mutation across the entire batch.
+    """
+    if not isinstance(candidates, (list, tuple)):
+        raise ValueError("Candidate collection must be a list")
+    sources = [baseline, *candidates]
+    admitted = _admit_batch(sources)
+    ref = _scan_private_pcm(baseline)
+    if ref["_identity"] != admitted[0]["identity"]:
+        raise ValueError("Baseline changed after batch admission")
+    details = []
+    for index, candidate in enumerate(candidates, 1):
+        scan = _scan_private_pcm(candidate)
+        if scan["_identity"] != admitted[index]["identity"]:
+            raise ValueError("Candidate changed after batch admission")
+        result = _compare_scans(ref, scan)
+        details.append({"candidate_id": f"candidate-{index:03d}",
+                        "warning": result["warning"],
+                        "candidate_excess_bias_warning": result["candidate_excess_bias_warning"]})
+    for entry in admitted:
+        _verify_pair_source(entry["source"], entry["identity"])
+    baseline_result = _compare_scans(ref, ref)
+    states = [item["warning"] for item in details]
+    states.extend(baseline_result["baseline_bias_warning"])
+    overall = True if True in states else (None if None in states else False)
+    return {
+        "check": "local-dc-bias-batch-v1",
+        "warning": overall,
+        "baseline_bias_warning": baseline_result["baseline_bias_warning"],
+        "channels": ref["channels"],
+        "sample_rate": ref["sample_rate"],
+        "frames": ref["frames"],
+        "candidate_count": len(details),
+        "candidates": details,
+        "window_ms": WINDOW_MS,
+        "window_phase_shift_ms": WINDOW_MS // PHASE_SHIFT_DIVISOR,
+        "window_grid_offsets_ms": [0.0, WINDOW_MS / 4, WINDOW_MS / 2,
+                                   3 * WINDOW_MS / 4],
+        "complete_windows": ref["window_count"],
+        "thresholds": baseline_result["thresholds"],
+        "interpretation": "Technical DC confound only; not musical preference.",
+    }
+
+
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # argparse's default error includes unknown option values, possibly
+        # absolute private audio paths. Never let it write usage or arguments.
+        raise ValueError("Invalid options")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _PrivateArgumentParser(description="Offline, private local DC bias preflight")
+    parser.add_argument("baseline")
+    parser.add_argument("candidate", nargs="+")
+    parser.add_argument("--batch", action="store_true", help="screen 1..8 candidates with a shared baseline")
+    parser.add_argument("--strict", action="store_true",
+                        help="exit 2 for warning or inconclusive result")
+    try:
+        args = parser.parse_args(argv)
+        if args.batch:
+            result = inspect_batch(args.baseline, args.candidate)
+        elif len(args.candidate) == 1:
+            result = inspect(args.baseline, args.candidate[0])
+        else:
+            raise ValueError("Pass --batch for multiple candidates")
+    except SystemExit as finish:
+        # argparse uses exit(0) after printing its static --help usage.
+        # Preserve normal help behavior while keeping all invalid private
+        # audio filenames and malformed options behind a redacted error.
+        if finish.code == 0:
+            return 0
+        print("Invalid private WAV pair or options", file=sys.stderr)
+        return 3
+    except Exception:
+        # Protect private paths even in argparse usage errors and OS exceptions.
+        print("Invalid private WAV pair or options", file=sys.stderr)
+        return 3
+    print(json.dumps(result, sort_keys=True))
+    return 2 if args.strict and result["warning"] is not False else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
