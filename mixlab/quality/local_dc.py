@@ -75,6 +75,26 @@ def _validate_riff_envelope(handle, physical_bytes: int) -> int:
             if tag == b"fmt ":
                 if fmt_seen or data_seen:
                     raise ValueError("Invalid duplicate/out-of-order fmt chunk")
+                # Python's wave reader can ignore internally contradictory
+                # nAvgBytesPerSec/nBlockAlign values. An A/B input with such
+                # metadata is not a trustworthy PCM16 quality reference.
+                # Inspect only the fixed 16-byte format header, not audio.
+                if size < 16:
+                    raise ValueError("Incomplete private PCM format header")
+                handle.seek(cursor + 8)
+                raw_fmt = handle.read(16)
+                if len(raw_fmt) != 16:
+                    raise ValueError("Truncated private PCM format header")
+                fmt_tag, channels, rate, byte_rate, block_align, bits = struct.unpack(
+                    "<HHIIHH", raw_fmt
+                )
+                if (channels not in (1, 2) or bits != 16 or
+                        not 8000 <= rate <= 96000 or
+                        block_align != channels * 2 or
+                        byte_rate != rate * block_align):
+                    raise ValueError("Inconsistent private PCM format header")
+                # Keep container subtype validation with wave.open; recent
+                # Python versions can also accept PCM WAVE_FORMAT_EXTENSIBLE.
                 fmt_seen = True
             elif tag == b"data":
                 if data_seen or not fmt_seen:
