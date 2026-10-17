@@ -286,12 +286,12 @@ def _validate_cached_analysis(document, identity, source_hash, provider, info):
     ):
         raise ValueError("Invalid cached analysis key")
     warnings = analysis["warnings"]
-    if (not isinstance(warnings, list) or len(warnings) > 64 or
+    if (not isinstance(warnings, (list, tuple)) or len(warnings) > 64 or
             any(not isinstance(w, str) or len(w) > 256 for w in warnings)):
         raise ValueError("Invalid cached analysis warnings")
     for field in ("beats_seconds", "downbeats_seconds", "phrase_starts_seconds"):
         points = analysis[field]
-        if not isinstance(points, list) or len(points) > 10000:
+        if not isinstance(points, (list, tuple)) or len(points) > 10000:
             raise ValueError("Invalid cached analysis beatgrid")
         previous = -1.
         for point in points:
@@ -300,11 +300,11 @@ def _validate_cached_analysis(document, identity, source_hash, provider, info):
                 raise ValueError("Invalid cached analysis beatgrid")
             previous = point
     energy = analysis["energy"]
-    if not isinstance(energy, list) or len(energy) > 100000:
+    if not isinstance(energy, (list, tuple)) or len(energy) > 100000:
         raise ValueError("Invalid cached analysis energy")
     previous = -1.
     for point in energy:
-        if not isinstance(point, list) or len(point) != 2:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
             raise ValueError("Invalid cached analysis energy")
         position, amplitude = point
         if (type(position) not in (int, float) or not math.isfinite(position)
