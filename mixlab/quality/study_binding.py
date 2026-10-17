@@ -146,6 +146,7 @@ def _preflight_render_claims(study, evidence):
         if pair in seen_pack_pairs:
             _fail()
         seen_pack_pairs.add(pair)
+        comparison_contracts = []
         for row in rows:
             if row.get("source_hashes") != [frozen["a_sha256"], frozen["b_sha256"]]:
                 _fail()
@@ -179,6 +180,16 @@ def _preflight_render_claims(study, evidence):
                 if (type(actual) not in (int, float) or not math.isfinite(actual)
                         or actual != expected):
                     _fail()
+            # Only the transition *family* may differ in a blinded baseline
+            # versus candidate pair. A renderer claiming different timing or
+            # gain is a confounded comparison even if individual recipes are
+            # otherwise physically valid and both WAV checksums still pass.
+            comparison_contracts.append((
+                bpm, beats, recipe["a_start"], recipe["b_start"], gain,
+                recipe["a_bpm"], recipe["b_bpm"]
+            ))
+        if comparison_contracts[0] != comparison_contracts[1]:
+            _fail()
         binding.append((index, pair, families))
     if set(by_study) != {row["pair_id"] for row in pairs}:
         _fail()
