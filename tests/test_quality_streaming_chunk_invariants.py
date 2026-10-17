@@ -69,7 +69,8 @@ class StreamingChunkInvariants(unittest.TestCase):
             for index in range(left_gap, left_gap + 480):
                 frames[index][0] = 0
         result = self.root / name
-        _write(result, channels, [tuple(f) for f in frames],\n               extra_chunk=extra_chunk, sample_rate=sample_rate)
+        _write(result, channels, [tuple(f) for f in frames],
+               extra_chunk=extra_chunk, sample_rate=sample_rate)
         return result
 
     def test_isolated_click_detected_on_both_sides_of_read_boundary(self):
