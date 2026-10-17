@@ -39,6 +39,21 @@ python3 -m mixlab.idea_board create \
 
 Open `transition-ideas.html` op je eigen computer.
 
+Elke voorgestelde cue heeft nu **▶ Beluister uitgaand** en **▶ Beluister
+inkomend**. De Idea Board leest het bijbehorende lokale genormaliseerde
+WAV-fragment, springt naar de opgegeven cue en stopt aan het einde van
+het gekozen overgangsvenster. De preview blijft in de browser op je
+eigen machine; `file://`-bronlinks zijn relatief en er worden geen
+muziekbestanden geüpload.
+
+**Let op:** je luistert naar de twee afzonderlijke nummers op hun gekozen
+cue, **niet** naar een al gerenderde crossfade. Na het toepassen moet je
+de nieuwe overgang eerst met MixLabs bestaande Studio-engine renderen
+om werkelijk de gemengde overgang te beluisteren. Als een combinatie
+terugspringt naar een al afgespeeld stuk van het tussenliggende nummer,
+zal de browser de JSON-export blokkeren en je een andere cue laten kiezen.
+
+
 De pagina bevat per bestaand nummerpaar de **originele handmatige
 cuekeuze** en tot vier nieuwe ideeën uit de werkelijke RMS-energie.
 Alternatieven worden gerangschikt op het absolute dBFS-verschil tussen
