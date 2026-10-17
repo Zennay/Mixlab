@@ -189,10 +189,20 @@ def inspect(baseline: str, candidates: list[str]) -> dict:
     paths = (baseline, *candidates)
     identities = tuple(_admit_regular_path(path) for path in paths)
     report = compare_wavs(baseline, candidates, window_ms=WINDOW_MS)
-    paired = {
-        f"candidate-{index:02d}": _paired_phase_fractions(baseline, candidate)
-        for index, candidate in enumerate(candidates, 1)
-    }
+    # A canonically detected RMS confound or mono input cannot produce a
+    # meaningful stereo A/B verdict. Avoid a costly redundant second PCM
+    # read rather than trying to rehabilitate invalid listening evidence.
+    paired = {}
+    for index, candidate in enumerate(candidates, 1):
+        row = report["candidates"][index - 1]
+        if (row.get("level_comparable_for_blind_ab") is True
+                and report["baseline"].get("channels") == 2
+                and row["metrics"].get("channels") == 2):
+            paired[f"candidate-{index:02d}"] = _paired_phase_fractions(
+                baseline, candidate
+            )
+        else:
+            paired[f"candidate-{index:02d}"] = None
     if tuple(_admit_regular_path(path) for path in paths) != identities:
         raise ValueError("private PCM source changed during QA scan")
     return assess(report, paired)
