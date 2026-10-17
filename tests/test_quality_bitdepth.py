@@ -577,6 +577,16 @@ class ResolutionTests(unittest.TestCase):
         self.assertIs(report["candidates"][0]["coarse_resolution_review"], False)
         self.assertEqual(1, object_path.calls)
 
+    def test_pathlike_single_resolution_failure_never_leaks_private_exception(self):
+        class UntrustedPath:
+            def __fspath__(self):
+                raise RuntimeError("PRIVATE_TRACK_FILENAME_DO_NOT_LOG")
+
+        with self.assertRaises(ValueError) as context:
+            bitdepth.inspect_ab(UntrustedPath(), [self.good])
+        self.assertNotIn("PRIVATE_TRACK_FILENAME", str(context.exception))
+        self.assertIn("details withheld", str(context.exception))
+
     def test_non_regular_and_missing_sources_do_not_leak_path(self):
         for path in [self.root / "not-found-private.wav", self.root]:
             with self.assertRaises(ValueError) as ctx:
