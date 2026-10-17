@@ -257,6 +257,60 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
         self.rejected()
 
+
+    def test_mono_copy_of_stereo_left_channel_is_not_a_new_recording(self):
+        # Evaluation pair 1 is genuine stereo; development stays mono.
+        for i in (0, 1):
+            original = self.eva_dir / f"clip-{i:02d}.wav"
+            self._to_stereo(original)
+            sha = hashlib.sha256(original.read_bytes()).hexdigest()
+            self.eva["tracks"][i]["sha256"] = sha
+            self.study["pairs"][0][("a" if i == 0 else "b") + "_sha256"] = sha
+        self.freeze()
+        with wave.open(str(self.eva_dir / "clip-00.wav"), "rb") as reader:
+            interleaved = reader.readframes(reader.getnframes())
+        mono = b"".join(struct.pack("<h", left)
+                        for left, right in struct.iter_unpack("<hh", interleaved))
+        target = self.dev_dir / "clip-00.wav"
+        with wave.open(str(target), "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(mono)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.rejected()
+
+    def test_stereo_with_one_copied_channel_and_other_original_is_contamination(self):
+        self._prepare_stereo_pair()
+        source = self.eva_dir / "clip-00.wav"
+        destination = self.dev_dir / "clip-00.wav"
+        with wave.open(str(source), "rb") as reader:
+            donor = reader.readframes(reader.getnframes())
+        with wave.open(str(destination), "rb") as reader:
+            previous = reader.readframes(reader.getnframes())
+        donor_left = [frame[0] for frame in struct.iter_unpack("<hh", donor)]
+        original_right = [frame[1] for frame in struct.iter_unpack("<hh", previous)]
+        mixed = b"".join(struct.pack("<hh", left, right)
+                         for left, right in zip(donor_left, original_right))
+        with wave.open(str(destination), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(mixed)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(
+            destination.read_bytes()).hexdigest()
+        self.rejected()
+
+    def test_mono_and_stereo_independent_sources_do_not_trigger_cross_channel(self):
+        for i in (0, 1):
+            target = self.eva_dir / f"clip-{i:02d}.wav"
+            self._to_stereo(target)
+            new_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+            self.eva["tracks"][i]["sha256"] = new_sha
+            self.study["pairs"][0][("a" if i == 0 else "b") + "_sha256"] = new_sha
+        self.freeze()
+        self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
+
     def test_transform_overflow_omits_unrepresentable_signed16_forms(self):
         # -32768 cannot be negated and 16384 cannot be doubled in PCM16.
         raw = struct.pack("<hh", -32768, 16384)
