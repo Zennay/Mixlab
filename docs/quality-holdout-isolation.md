@@ -75,8 +75,9 @@ study, and mutates one input at a time: same WAV; different container
 checksum but same decoded PCM; altered recording with reused recording ID;
 reused track ID; repeated evaluation recording; rehashed frozen-source
 forgeries; wrong pair orientation; identical audible PCM cropped into a distinct longer WAV inside either library, and shared silence that must not trigger a false positive; unselected evaluation additions;
-missing partitions or rights metadata; bad pinned ID; malformed JSON; and
-redaction in actual CLI subprocesses.
+missing partitions or rights metadata; bad pinned ID; malformed JSON;
+stream-block-spanning reused PCM; actual source mutation after substring
+screening but before the final rescan; and redaction in CLI subprocesses.
 
 The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
