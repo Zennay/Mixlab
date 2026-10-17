@@ -79,30 +79,32 @@ also apply in single-pair mode.
 
 ## Evidence and limits
 
-* Inspect two grids of **250ms non-overlapping full windows**, per channel.
-  The second grid starts **125ms later** (half a window, using integral sample
-  rounding). Both sets of means are collected in **one single PCM read**; no
-  additional private audio scan. Ignore incomplete windows on either grid.
-  The phase shift prevents a low-level, sustained one-second offset starting
-  halfway between fixed boundaries from being marked inconclusive merely
-  because the first grid contains only three full biased windows.
+* Inspect **four grids** of 250ms non-overlapping full windows per channel
+  at nominal **0, 62.5, 125 and 187.5 ms** phase offsets (actual shifts use
+  integer frame rounding at the source sample rate). All four sets of means
+  are accumulated in **one streaming PCM read**, without rereading or storing
+  private samples. Ignore incomplete windows on every grid. The additional
+  quarter phases catch a low-amplitude, exactly-one-second DC offset starting
+  at 62.5ms that *both* original 0/125ms grids would otherwise mark as
+  inconclusive. Other arbitrary start times are not guaranteed to be caught.
 * **Baseline DC:** absolute 250ms mean >=3% of full scale for at least four
   successive windows (one second).
 * **Candidate excess:** absolute candidate window mean >=3% **and** the
   absolute difference from the same baseline window >=2.5% of full scale,
   again in at least four successive windows.
-* Evaluate four consecutive **complete 250ms windows in either grid**
-  (one full second). No credit is given for half-windows. The delayed grid
+* Evaluate four consecutive **complete 250ms windows in any grid**
+  (one full second). No credit is given for partial windows. A phase grid
   contributes **nothing** if fewer than four complete windows exist, so a
   clean one-second recording still returns a conclusive `false`.
 * Return `true` for sustained evidence, `null` for too little evidence
   (including a suspicious sub-second run), otherwise `false`. An aggregate
   `warning` is true if either side warns, unknown if any side is unknown
   without a warning, and false only if all per-channel checks are clear.
-* JSON includes `window_phase_shift_ms: 125` with the original
-  `complete_windows` count describing the unshifted grid. No time positions
-  or audio samples are published. Both the single and batch reports use the
-  same shifted-grid logic and thresholds.
+* JSON retains `window_phase_shift_ms: 125` for backward compatibility
+  and adds `window_grid_offsets_ms: [0.0, 62.5, 125.0, 187.5]`;
+  `complete_windows` still describes the unshifted grid. The metadata
+  describes **fixed analysis grids**, not private sample positions or audio.
+  Single and batch reports use identical grid logic and thresholds.
 * JSON contains only format properties, threshold definitions and booleans;
   **no source paths, hashes, waveform data, sample positions or audio**.
   Descriptive exit code 0, `--strict` exit 2 when warning/unknown, malformed
