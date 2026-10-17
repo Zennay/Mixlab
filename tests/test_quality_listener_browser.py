@@ -192,7 +192,7 @@ class BrowserFormTests(unittest.TestCase):
         except subprocess.TimeoutExpired:
             self.fail("bounded synthetic Chrome WAV loading timed out")
         self.assertEqual(done.returncode, 0, "Offline Chromium WAV load failed")
-        match = re.search(r'<html\\b[^>]*data-mixlab-audio-check="([^"]+)"',
+        match = re.search(r'<html\b[^>]*data-mixlab-audio-check="([^"]+)"',
                           done.stdout, flags=re.IGNORECASE)
         self.assertIsNotNone(match, "offline Chrome media status marker was not rendered")
         self.assertEqual(match.group(1), "pass", "browser failed to decode a local WAV")
