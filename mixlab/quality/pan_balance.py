@@ -84,6 +84,8 @@ def inspect(baseline, candidate):
         sum_sq = [[0, 0], [0, 0]]
         count = 0
         active_windows = 0
+        active_streak_frames = 0
+        longest_active_streak_frames = 0
         consecutive_shift_frames = 0
         longest_shift_frames = 0
         max_shift = 0.0
@@ -106,6 +108,8 @@ def inspect(baseline, candidate):
                     floor = (MIN_ACTIVE_RMS * 32768) ** 2 * count
                     if all(value >= floor for pair in sum_sq for value in pair):
                         active_windows += 1
+                        active_streak_frames += count
+                        longest_active_streak_frames = max(longest_active_streak_frames, active_streak_frames)
                         db_a = 10 * math.log10(sum_sq[0][0] / sum_sq[0][1])
                         db_b = 10 * math.log10(sum_sq[1][0] / sum_sq[1][1])
                         delta = abs(db_b - db_a)
@@ -117,6 +121,7 @@ def inspect(baseline, candidate):
                         else:
                             consecutive_shift_frames = 0
                     else:
+                        active_streak_frames = 0
                         consecutive_shift_frames = 0
                     sum_sq = [[0, 0], [0, 0]]
                     count = 0
@@ -124,13 +129,19 @@ def inspect(baseline, candidate):
         # Remainder <250ms is deliberately non-decisive, never counted as 1 second.
         _unchanged(a)
         _unchanged(b)
+        # Distinguish insufficient evidence from a conclusive negative result.
+        enough_active_audio = longest_active_streak_frames * 1000 >= WARN_PERSIST_MS * rate
+        status = ("insufficient_active_audio" if not enough_active_audio else
+                  "review_pan_balance" if warned else "no_sustained_pan_bias_detected")
         return {
             "schema_version": 1,
             "format": {"sample_rate": rate, "frames": frames, "channels": 2},
             "active_windows": active_windows,
+            "longest_continuous_active_ms": round(longest_active_streak_frames * 1000 / rate),
+            "evidence_status": status,
             "max_pan_balance_delta_db": round(max_shift, 3) if active_windows else None,
             "longest_sustained_shift_ms": round(longest_shift_frames * 1000 / rate),
-            "stereo_pan_confound_review": bool(warned),
+            "stereo_pan_confound_review": bool(warned) if enough_active_audio else None,
             "interpretation": "technical_screen_only_not_musical_preference",
         }
 
