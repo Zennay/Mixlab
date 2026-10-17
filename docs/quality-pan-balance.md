@@ -190,6 +190,13 @@ still matches its original renderer `output_sha256` receipt after
 inspection. Families are also checked for distinct PCM outputs so a
 stale/reused render cannot trivially pass the integration test.
 
+A complementary renderer fixture uses **genuinely off-centre stereo**
+(left/right level ratio 2:1), maintained in both rights-free source clips.
+All DSP families must preserve this *relative* balance compared with the
+actual M1 baseline, rather than mistakenly treating artistic panning as a
+new candidate-specific defect. This is an explicit false-positive control
+with the existing DSP and PCM quantization in the loop.
+
 A second real renderer fixture creates a normal `hard_cut` candidate
 and a separate intentionally shifted PCM artifact (left x2, right x0.5
 within headroom). The normal variant must pass, while the altered
