@@ -557,3 +557,24 @@ The control is intentionally **not** a complete CSS/HTML/JavaScript
 security audit; browser render inspection, strict
 \`--require-generated-html\`, permission-cleared tracks and independent
 review are still required for a frozen human study.
+
+
+### Cross-component regression on an exact quality PR head
+
+The quality-only PR workflow normally discovers only `tests/test_quality.py`.
+Its quality regression now includes one **bounded companion-suite smoke
+check** that invokes `python -m unittest discover -s tests -p
+'test_[!q]*.py' -v` on the **same exact checked-out PR source SHA**.
+The pattern excludes `test_quality.py` to avoid recursively invoking
+the quality test while covering the remaining synthetic analysis, CLI,
+DSP, engine, evaluation, ingest and JSON ingest-safety modules. The
+child process has a 150-second wall-clock timeout, returns no private
+audio, and fails the parent quality job if any companion suite fails
+or zero tests are discovered. This augments technical integration
+coverage without editing the integration-owned GitHub workflow or
+loading the memory-constrained VPS.
+
+Passing this check is **still not** the signed-off full-suite run on
+the *exact final squash-merged main commit*, a self-hosted VPS proof,
+an independent audit, or blinded listener evidence. It should not
+be used to claim M1 has closed.
