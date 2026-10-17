@@ -173,3 +173,28 @@ channel. Even though no positive pan anomaly is established for the quiet
 clip, the mixed group returns exit 3 (not clean 0) in `--fail-on-review`
 mode. Normal diagnostic mode still emits a successful anonymous JSON report,
 not a musical-preference judgment.
+
+## Actual M1 renderer integration (rights-free fixture)
+
+The focused suite additionally invokes the **existing real**
+`mixlab.engine.render()` for every M1 transition family
+(`baseline`, `bass_swap`, `echo_exit`, `hard_cut`) using two
+original synthetic stereo source WAVs. It does not fake the renderer,
+call a heavy source separator, train a model, or publish music.
+
+Each real output uses the same deliberately balanced left/right source
+channels. Group pan preflight compares the rendered baseline with
+the other families, proves adequate audible stereo evidence, checks that
+there is no false pan imbalance, and verifies that each private render
+still matches its original renderer `output_sha256` receipt after
+inspection. Families are also checked for distinct PCM outputs so a
+stale/reused render cannot trivially pass the integration test.
+
+A second real renderer fixture creates a normal `hard_cut` candidate
+and a separate intentionally shifted PCM artifact (left x2, right x0.5
+within headroom). The normal variant must pass, while the altered
+variant must trigger a sustained relative pan review in the API **and**
+exit 3 in strict batch CLI mode. Both return only anonymous technical
+fields. This is deterministic DSP integration proof, **not** rights
+evidence, an acoustic perceptual loudness measurement or independent
+human-blinded DJ-preference proof.
