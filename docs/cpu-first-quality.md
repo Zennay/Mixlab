@@ -433,3 +433,23 @@ this is a **review-for-independent-transition** warning, not proof of
 plagiarism, a listening preference or an overall DJ quality score.
 The extra scan uses bounded RAM, no model, no audio edits and no
 private-data uploads.
+
+
+### Exact polarity inversion as a blind A/B near-duplicate
+
+The bounded PCM16 pass also computes a *private* sign-inverted PCM
+fingerprint. A candidate whose **every mono or stereo sample is the
+exact negative** of a baseline or previous candidate receives
+`polarity_inverted_pcm_inspect_for_reused_audio` and a neutral
+`polarity_inverted_pcm_of` reference. Exact unchanged PCM still takes
+precedence, including silence and dual-mono. For any input containing
+the un-negatable signed PCM16 sample `-32768`, inverted identity is
+reported as unavailable rather than silently wrapping/clipping the
+sample and claiming exact equivalence. The scanner works in bounded
+4096-frame chunks, without emitting raw PCM, sample coordinates,
+private hashes, source paths or listener answer keys.
+
+Whole-wave polarity inversion can be an intentional processing choice
+and may matter when blended with other signals. This is only a
+technical **reused-audio inspection warning**, not proof of musical
+equivalence, perceptual quality, ownership or a listening preference.
