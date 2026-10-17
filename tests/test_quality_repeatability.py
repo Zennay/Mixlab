@@ -708,6 +708,20 @@ class RepeatabilityTests(unittest.TestCase):
             ):
                 verify_repeatability(self.a, alias / intended.name)
 
+        # Lexical normalization must not erase a symlink component before
+        # applying O_NOFOLLOW. The kernel would resolve alias/.. by first
+        # following alias; collapsing it in abspath() silently bypasses the
+        # parent-directory symlink check.
+        disguised = alias / ".." / parent.name / intended.name
+        with patch.object(
+            wave.Wave_read, "readframes",
+            side_effect=AssertionError("PCM read after unsafe lexical collapse")
+        ):
+            with self.assertRaisesRegex(
+                RepeatabilityError, "^invalid, changed or incompatible source$"
+            ):
+                verify_repeatability(self.a, disguised)
+
         nested = self.root / "nested"
         nested.mkdir()
         middle = nested / "alias"
