@@ -218,6 +218,47 @@ class PrivateFdGuardTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "details withheld"):
                     validate_private_pcm16(self.source, block_frames=requested)
 
+    def test_full_stream_validator_rejects_truncation_mid_read(self):
+        # Deterministic race: the source passes header admission, then the
+        # underlying file is cut after the first block read.
+        original_read = wave.Wave_read.readframes
+        changed = [False]
+
+        def truncate_after_first_read(reader, count):
+            data = original_read(reader, count)
+            if not changed[0]:
+                changed[0] = True
+                with open(self.source, "r+b") as stream:
+                    stream.truncate(44 + 8)
+            return data
+
+        with patch.object(wave.Wave_read, "readframes", new=truncate_after_first_read):
+            with self.assertRaisesRegex(ValueError, "details withheld") as result:
+                validate_private_pcm16(self.source, block_frames=10)
+        self.assertTrue(changed[0])
+        self.assertNotIn(str(self.root), str(result.exception))
+
+    def test_full_stream_validator_rejects_same_size_replacement_mid_read(self):
+        # The old descriptor still reads valid PCM after the named path was
+        # replaced. The successful read must not certify the *new* path.
+        replacement = self.root / "fresh-private.wav"
+        make_wav(replacement)
+        original_read = wave.Wave_read.readframes
+        changed = [False]
+
+        def replace_after_first_read(reader, count):
+            data = original_read(reader, count)
+            if not changed[0]:
+                changed[0] = True
+                os.replace(replacement, self.source)
+            return data
+
+        with patch.object(wave.Wave_read, "readframes", new=replace_after_first_read):
+            with self.assertRaisesRegex(ValueError, "details withheld") as result:
+                validate_private_pcm16(self.source, block_frames=10)
+        self.assertTrue(changed[0])
+        self.assertNotIn(str(self.root), str(result.exception))
+
     def test_standalone_cli_redacts_path_and_is_deterministic(self):
         cmd = [sys.executable, "-m", "mixlab.quality.fd_guard", str(self.source)]
         first = subprocess.run(cmd, capture_output=True, text=True)
