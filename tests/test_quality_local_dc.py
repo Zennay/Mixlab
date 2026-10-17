@@ -48,6 +48,147 @@ class LocalDCQualityTests(unittest.TestCase):
         self.base = Path(self.tmp.name) / "baseline.wav"
         self.alt = Path(self.tmp.name) / "candidate.wav"
 
+    def _batch_candidate(self, index: int, *, offset: int = 0, duration=4, rate=RATE) -> Path:
+        path = Path(self.tmp.name) / f"choice-{index:03d}.wav"
+        _wav(path, duration=duration, rate=rate,
+             offsets=[[offset] * int(rate * duration)])
+        return path
+
+    def test_batch_two_candidates_are_anon_and_ordered(self):
+        _wav(self.base)
+        first = self._batch_candidate(1, offset=3400)
+        second = self._batch_candidate(2)
+        result = local_dc.inspect_batch(self.base, [first, second])
+        self.assertEqual([r["candidate_id"] for r in result["candidates"]],
+                         ["candidate-001", "candidate-002"])
+        self.assertEqual([r["warning"] for r in result["candidates"]], [True, False])
+        self.assertIs(result["warning"], True)
+        self.assertNotIn(str(self.tmp.name), json.dumps(result))
+        self.assertNotIn("_identity", result)
+
+    def test_batch_scans_baseline_exactly_once(self):
+        _wav(self.base)
+        candidates = [self._batch_candidate(i) for i in range(3)]
+        real = local_dc._scan_private_pcm
+        seen = []
+        def capture(path):
+            seen.append(str(path))
+            return real(path)
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=capture):
+            local_dc.inspect_batch(self.base, candidates)
+        self.assertEqual(seen, [str(self.base), *(str(path) for path in candidates)])
+
+    def test_batch_eight_candidates_allowed_nine_rejected(self):
+        _wav(self.base)
+        candidates = [self._batch_candidate(i) for i in range(9)]
+        result = local_dc.inspect_batch(self.base, candidates[:8])
+        self.assertEqual(result["candidate_count"], 8)
+        self.assertEqual(result["candidates"][-1]["candidate_id"], "candidate-008")
+        with self.assertRaisesRegex(ValueError, "1..8"):
+            local_dc.inspect_batch(self.base, candidates)
+
+    def test_batch_requires_at_least_one_candidate(self):
+        _wav(self.base)
+        with self.assertRaises(ValueError):
+            local_dc.inspect_batch(self.base, [])
+
+    def test_batch_rejects_baseline_and_candidate_alias_before_pcm(self):
+        _wav(self.base)
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+            with self.assertRaisesRegex(ValueError, "distinct identities"):
+                local_dc.inspect_batch(self.base, [self.base])
+
+    def test_batch_rejects_two_candidate_hardlinks_before_pcm(self):
+        _wav(self.base)
+        first = self._batch_candidate(1)
+        duplicate = Path(self.tmp.name) / "alias.wav"
+        os.link(first, duplicate)
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+            with self.assertRaisesRegex(ValueError, "distinct identities"):
+                local_dc.inspect_batch(self.base, [first, duplicate])
+
+    def test_batch_rejects_mismatched_frames_before_pcm(self):
+        _wav(self.base)
+        bad = self._batch_candidate(1, duration=2)
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+            with self.assertRaisesRegex(ValueError, "shapes must match"):
+                local_dc.inspect_batch(self.base, [bad])
+
+    def test_batch_rejects_corrupt_wav_before_pcm(self):
+        _wav(self.base)
+        broken = Path(self.tmp.name) / "private-corrupt.wav"
+        broken.write_bytes(b"RIFF" + b"X" * 50)
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+            with self.assertRaises(ValueError):
+                local_dc.inspect_batch(self.base, [broken])
+
+    def test_batch_total_pcm_frames_limit_before_decode(self):
+        _wav(self.base)
+        paths = [self._batch_candidate(i) for i in range(2)]
+        with mock.patch.object(local_dc, "MAX_BATCH_FRAMES", 2 * RATE * DURATION):
+            with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+                with self.assertRaisesRegex(ValueError, "resource admission"):
+                    local_dc.inspect_batch(self.base, paths)
+
+    def test_batch_physical_file_bytes_limit_before_decode(self):
+        _wav(self.base)
+        paths = [self._batch_candidate(i) for i in range(2)]
+        with mock.patch.object(local_dc, "MAX_BATCH_BYTES", 120_000):
+            with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
+                with self.assertRaisesRegex(ValueError, "resource admission"):
+                    local_dc.inspect_batch(self.base, paths)
+
+    def test_batch_late_baseline_mutation_rejected_without_partial_json(self):
+        _wav(self.base)
+        paths = [self._batch_candidate(i) for i in range(2)]
+        real = local_dc._scan_private_pcm
+        count = 0
+        def mutate(path):
+            nonlocal count
+            data = real(path)
+            count += 1
+            if count == 2:
+                with open(self.base, "ab") as out:
+                    out.write(b"CHANGED")
+            return data
+        with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=mutate):
+            with self.assertRaisesRegex(ValueError, "pair inspection"):
+                local_dc.inspect_batch(self.base, paths)
+
+    def test_batch_cli_strict_and_output_redaction(self):
+        _wav(self.base)
+        one = self._batch_candidate(1, offset=3400)
+        two = self._batch_candidate(2)
+        cmd = [sys.executable, "-m", "mixlab.quality.local_dc",
+               str(self.base), str(one), str(two), "--batch", "--strict"]
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertEqual(done.stderr, "")
+        payload = json.loads(done.stdout)
+        self.assertEqual(payload["candidate_count"], 2)
+        self.assertIs(payload["warning"], True)
+        self.assertNotIn(str(self.tmp.name), done.stdout)
+
+    def test_batch_cli_incomplete_args_redact_all_paths(self):
+        _wav(self.base)
+        candidate = self._batch_candidate(1)
+        secret = str(Path(self.tmp.name) / "PRIVATE_BROKEN_CHOICE.wav")
+        cmd = [sys.executable, "-m", "mixlab.quality.local_dc", str(self.base),
+               str(candidate), secret, "--batch"]
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 3)
+        self.assertEqual(done.stdout, "")
+        self.assertNotIn(str(self.tmp.name), done.stderr)
+
+    def test_batch_rejects_multiple_candidates_without_opt_in(self):
+        _wav(self.base)
+        paths = [self._batch_candidate(i) for i in range(2)]
+        cmd = [sys.executable, "-m", "mixlab.quality.local_dc",
+               str(self.base), *map(str, paths)]
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        self.assertEqual(done.returncode, 3)
+        self.assertEqual(done.stdout, "")
+
     def test_same_path_pair_rejected(self):
         _wav(self.base)
         with self.assertRaisesRegex(ValueError, "distinct regular files"):
