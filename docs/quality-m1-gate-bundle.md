@@ -198,36 +198,42 @@ filesystem when conducting real blinded human studies.
 
 ## Stop duplicated listening examples from counting as independent pairs
 
-The external M1 gate does **not** treat the renderer's source-ID claims as
-authentication of actual music: a source hash may be self-declared while
-different supposed pairs reuse the exact same listening WAV. If identical
-`output_sha256` commitments appear across two **distinct frozen pairs**,
-the private, already-verified pack is admitted as *structurally valid* but the
-combined technical result becomes `REVIEW_REQUIRED` with the anonymous
-reason `identical-render-across-frozen-pairs`.
+A frozen study can claim independent source IDs even when it has reused an
+identical audio rendition across distinct music pairs. Upstream checksum
+binding proves that **each file matches the claimed render**, not that the
+different files contain different audible material.
 
-This extra check runs on the original, independently verified private render
-metadata *only after* the existing freeze validator has hashed the actual WAV
-files. It reports a boolean and a generic reason, never the original checksum,
-audio bytes, trial names, pair IDs, track IDs or reviewer answers. Duplicate
-content within a single pair is handled separately by baseline-vs-candidate
-quality checks; the cross-pair rule does not mistake the two legal sides of
-one trial for independent music examples.
+After the full genuine frozen-study verifier has validated every WAV, the
+combined private M1 gate streams the review WAVs through MixLab's **existing
+bounded official ingest scanner** and compares their *PCM-only SHA256*
+fingerprints, which include the PCM format and ignore unrelated WAV headers.
+A PCM fingerprint repeated across **different** frozen pairs triggers an
+anonymous methodological `REVIEW_REQUIRED` hold with reason
+`identical-render-across-frozen-pairs` and the boolean
+`cross_pair_duplicate_render_review=true`. It is a privacy-safe technical
+warning, not corrupt-data exit 2 or proof that a listener copied answers.
 
-The real-file regression deliberately copies the verified baseline WAV from
-one frozen trial into a different trial, updates that render's actual SHA,
-recomputes the genuine receipt/pack identity and resubmits three complete
-synthetic ballots. Both upstream `verify_pack` and pinned study binding
-still accept this checksum-consistent pack. The new cross-pair screen must
-force a methodological HOLD instead of counting the repeated audio as
-independent support. A separate unchanged distinct-WAV control remains
-unflagged. Pure contract tests reject forged non-boolean flags.
+No PCM bytes are retained, sent to a service or included in report output.
+The report includes no checksum, trial, source, track, reviewer pseudonym or
+private path. The module additionally compares the file's independently
+computed SHA against the already checksum-bound private render receipt.
+Sampling remains bounded by the same **2,000,000 frames / 32 MiB WAV** limits
+enforced by the rest of the product. After the complete bundle, its original
+snapshot and binding verification runs again to refuse persistent tampering.
 
-**Limitation:** exact file-level checksum equality only. Different WAV
-headers, equal PCM re-encoded in another container or perceptually identical
-re-renders can evade this *fast* duplicate check. The study remains
-source-rights- and human-independence-UNVERIFIED; a clear technical screen
-is not a statistically or musically validated result.
+Synthetic original-PCM regression studies rebuild the genuine private receipt,
+answer binding and reviewer ballots to prove that upstream `verify_pack` and
+`verify_study_pack_binding` accept a packet which reuses the actual baseline
+in a **different** frozen pair. The new gate must hold even if the WAV file
+has innocuous non-PCM container differences. A same-pair candidate==baseline
+no-op is instead screened by the existing within-trial audio-confound check
+and must **not** create the cross-pair independence warning.
+
+**Limitation:** only *exact PCM sample equality* is tested. Re-encoded audio
+with different samples, channel remixing, gain changes, or perceptually
+identical but non-bit-exact transitions can evade this check. It does not
+authenticate licenses, actual source tracks, human identities, independent
+musical preference or M1 completion. The benchmark remains human-blocked.
 
 ## CI queue cost and newest-source evidence
 
