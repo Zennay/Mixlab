@@ -95,6 +95,17 @@ class IngestPreflightTypesTests(unittest.TestCase):
         manifest["pairs"].append(json.loads(json.dumps(manifest["pairs"][0])))
         self._assert_rejected_without_audio(manifest, "Duplicate pair id")
 
+    def test_declared_pair_tempo_mismatch_preflights_without_pcm(self):
+        manifest = json.loads(json.dumps(self.original))
+        manifest["pairs"][0]["bpm"] = 121
+        self._assert_rejected_without_audio(manifest, "equal source tempos")
+
+    def test_declared_pair_partition_conflict_preflights_without_pcm(self):
+        manifest = json.loads(json.dumps(self.original))
+        manifest["tracks"][0]["partition"] = "development"
+        manifest["tracks"][1]["partition"] = "evaluation"
+        self._assert_rejected_without_audio(manifest, "crosses dataset partitions")
+
     def test_valid_pair_preflight_preserves_fixture(self):
         manifest, tracks = validate_library(self.manifest)
         self.assertEqual(len(manifest["pairs"]), len(self.original["pairs"]))
