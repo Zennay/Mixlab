@@ -109,6 +109,46 @@ class ListenerControlTests(unittest.TestCase):
         self.mutate('</fieldset>', '<audio controls preload="none" src="extra.wav"></audio></fieldset>')
         self.reject()
 
+    def test_browser_inert_wrappers_are_rejected(self):
+        for wrapper in ("template", "noscript", "textarea", "xmp", "plaintext"):
+            with self.subTest(wrapper=wrapper):
+                write_review(self.path, ["trial-001", "trial-002"], "a" * 64)
+                self.mutate('<fieldset data-trial="trial-001">',
+                            f'<{wrapper}><fieldset data-trial="trial-001">')
+                self.reject()
+
+    def test_event_handler_on_audio_or_submit_is_rejected(self):
+        for before, after in (
+            ('<audio controls', '<audio onplay="alert(1)" controls'),
+            ('<button>', '<button onclick="alert(1)">'),
+        ):
+            with self.subTest(element=before):
+                write_review(self.path, ["trial-001", "trial-002"], "a" * 64)
+                self.mutate(before, after)
+                self.reject()
+
+    def test_inline_css_hiding_and_positive_tab_reorder_are_rejected(self):
+        for before, after in (
+            ('<label>A<audio', '<label style="display:none">A<audio'),
+            ('<button>', '<button tabindex="999">'),
+        ):
+            with self.subTest(element=before):
+                write_review(self.path, ["trial-001", "trial-002"], "a" * 64)
+                self.mutate(before, after)
+                self.reject()
+
+    def test_form_action_cannot_upload_private_answers(self):
+        self.mutate('<form data-pack-id=', '<form action="https://example.invalid/ratings" data-pack-id=')
+        self.reject()
+
+    def test_external_script_disallowed(self):
+        self.mutate('<script>', '<script src="https://example.invalid/remote.js">')
+        self.reject()
+
+    def test_trailing_inert_markup_rejected(self):
+        self.mutate('</html>', '<template>hidden answers</template></html>')
+        self.reject()
+
     def test_valid_one_trial(self):
         write_review(self.path, ["trial-001"], "f" * 64)
         self.assertEqual(check_review_controls(self.path)["trial_count"], 1)
