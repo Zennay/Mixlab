@@ -607,6 +607,8 @@ class SpectralBalanceTests(unittest.TestCase):
             with wave.open(str(path), "rb") as inp:
                 values = array("h")
                 values.frombytes(inp.readframes(inp.getnframes()))
+            if sys.byteorder != "little":
+                values.byteswap()
             for idx in range(6000 * 2, len(values)):
                 values[idx] = 0
             if sys.byteorder != "little":
