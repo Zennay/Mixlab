@@ -1,11 +1,12 @@
 """Offline, permission-declared music import into MixLab's canonical PCM16 sources.
 
-Source file formats need an *already installed* local FFmpeg and ffprobe.
-No downloads, streaming URLs, network uploads, model inference or new dependencies.
+Canonical 44.1kHz PCM16 WAV input uses stdlib only (including mono->stereo).
+Other formats require already-installed local FFmpeg+FFprobe; no downloads or uploads.
 """
 from __future__ import annotations
 
 import argparse
+from array import array
 import hashlib
 import json
 import math
@@ -14,6 +15,8 @@ from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import subprocess
+import sys
+import wave
 
 from .cueprep import (
     ID, SHA, MAX_SOURCE_BYTES, MAX_TRACK_SECONDS, _digest,
@@ -147,6 +150,77 @@ def _transcode(source, target, ffmpeg, timeout_seconds):
     target.chmod(0o600)
 
 
+
+def _canonical_pcm16_wav(path, expected_sha):
+    """Prefer exact local WAV if FFmpeg is absent or unnecessary.
+
+    A source WAV still passes the full single-descriptor PCM validator,
+    declared content hash, size, sample-rate and channel-budget admission.
+    Other WAV layouts/codecs continue through opt-in installed FFmpeg.
+    """
+    if path.suffix.lower() != ".wav":
+        return None
+    try:
+        info = _inspect_source(path, expected_sha)
+    except (ValueError, OSError):
+        return None
+    if info["rate"] != OUTPUT_RATE or info["channels"] not in (1, 2):
+        return None
+    return info
+
+
+def _copy_canonical_pcm(source, target, info, expected_identity):
+    """Write a metadata-free canonical stereo WAV without third-party tools.
+
+    Keep the original PCM sample values. For mono WAV, duplicate samples
+    into left/right rather than fabricating time or pitch transformations.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(source, flags)
+    except OSError as exc:
+        raise ValueError("Cannot reopen authenticated local WAV") from exc
+    with os.fdopen(fd, "rb") as stream:
+        if _file_identity(os.fstat(stream.fileno())) != expected_identity:
+            _error("WAV source changed after preflight")
+        try:
+            with wave.open(stream, "rb") as reader:
+                if (reader.getnchannels(), reader.getsampwidth(),
+                        reader.getframerate(), reader.getnframes()) != (
+                    info["channels"], 2, OUTPUT_RATE, info["frames"]
+                ):
+                    _error("WAV source format changed before normalization")
+                with target.open("xb") as output:
+                    os.fchmod(output.fileno(), 0o600)
+                    with wave.open(output, "wb") as writer:
+                        writer.setparams((2, 2, OUTPUT_RATE, info["frames"],
+                                          "NONE", "not compressed"))
+                        remaining = info["frames"]
+                        while remaining:
+                            count = min(4096, remaining)
+                            block = reader.readframes(count)
+                            if len(block) != count * 2 * info["channels"]:
+                                _error("Local WAV truncated during normalization")
+                            if info["channels"] == 1:
+                                mono = array("h")
+                                mono.frombytes(block)
+                                if sys.byteorder != "little":
+                                    mono.byteswap()
+                                stereo = array("h")
+                                for sample in mono:
+                                    stereo.extend((sample, sample))
+                                if sys.byteorder != "little":
+                                    stereo.byteswap()
+                                block = stereo.tobytes()
+                            writer.writeframesraw(block)
+                            remaining -= count
+        except (wave.Error, EOFError) as exc:
+            raise ValueError("Local WAV is not valid PCM16") from exc
+        if (_file_identity(os.fstat(stream.fileno())) != expected_identity
+                or _file_identity(source.lstat()) != expected_identity):
+            _error("WAV source changed during normalization")
+
+
 def _checked_tools():
     ffprobe = shutil.which("ffprobe")
     ffmpeg = shutil.which("ffmpeg")
@@ -235,24 +309,33 @@ def import_library(spec_path, destination, *, timeout_seconds=600):
     for parent in (destination, *destination.parents):
         if (parent / ".git").exists():
             _error("Never import private audio into a source-code repository")
-    ffprobe, ffmpeg = _checked_tools()
+    ffprobe = ffmpeg = None
 
     # Cheap admission and hash-pin ALL source tracks before creating output.
     prepared = []
     for record in records:
         path = _regular_source(base, record.get("path"))
         sha, identity = _fingerprint(path, record["sha256"])
-        duration = _format_metadata(path, ffprobe)
-        prepared.append((record, path, sha, identity, duration))
+        direct = _canonical_pcm16_wav(path, sha)
+        if direct is not None:
+            duration = direct["frames"] / direct["rate"]
+        else:
+            if not ffprobe or not ffmpeg:
+                ffprobe, ffmpeg = _checked_tools()
+            duration = _format_metadata(path, ffprobe)
+        prepared.append((record, path, sha, identity, duration, direct))
 
     destination.mkdir(mode=0o700)
     try:
         audio_dir = destination / "audio"
         audio_dir.mkdir(mode=0o700)
         imported_tracks, receipts = [], []
-        for record, source, sha, identity, duration in prepared:
+        for record, source, sha, identity, duration, direct in prepared:
             target = audio_dir / (record["id"] + ".wav")
-            _transcode(source, target, ffmpeg, timeout_seconds)
+            if direct is not None:
+                _copy_canonical_pcm(source, target, direct, identity)
+            else:
+                _transcode(source, target, ffmpeg, timeout_seconds)
             current_sha, current_identity = _fingerprint(source, sha)
             if current_identity != identity or current_sha != sha:
                 _error("Original audio changed during conversion")
@@ -279,7 +362,9 @@ def import_library(spec_path, destination, *, timeout_seconds=600):
                              "normalized_sha256": wav_sha, "source_format": source.suffix.lower(),
                              "declared_duration_seconds": duration,
                              "normalized_frames": info["frames"],
-                             "transcoding": "ffmpeg PCM16 stereo at 44100 Hz; source metadata stripped"})
+                             "transcoding": ("stdlib PCM16 stereo at 44100 Hz; source metadata stripped"
+                                             if direct is not None else
+                                             "ffmpeg PCM16 stereo at 44100 Hz; source metadata stripped")})
         result = {"schema_version": 1, "purpose": spec.get("purpose", "development-pilot"),
                   "tracks": imported_tracks, "pairs": [
                       {**p, "a_start_seconds": p.get("a_start_seconds", 0),
