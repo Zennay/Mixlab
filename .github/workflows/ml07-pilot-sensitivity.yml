@@ -1,0 +1,316 @@
+name: MixLab ML-07 frozen pilot pair sensitivity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/pilot_sensitivity.py"
+      - "tests/test_quality_pilot_sensitivity.py"
+      - "docs/quality-pilot-sensitivity.md"
+      - ".github/workflows/ml07-pilot-sensitivity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml07-pilot-sensitivity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pilot-evidence:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Frozen pair sensitivity (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout immutable exact source without persistent credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify actual triggered SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Setup pinned Python matrix
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Execute pair-sign reference and real PCM aggregation tests under cap
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/pilot_sensitivity.py tests/test_quality_pilot_sensitivity.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_pilot_sensitivity.py' -v
+
+      - name: Read-only checkout of pinned real ML-05 frozen study producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: e512d8fc2eae79efe765dc9a523105fad68a196f
+          path: upstream-pr71
+          persist-credentials: false
+      - name: Full pinned study render, 3 synthetic raters and omitted-pair sensitivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-pr71 rev-parse HEAD)" = "e512d8fc2eae79efe765dc9a523105fad68a196f"
+          cp mixlab/quality/pilot_sensitivity.py upstream-pr71/mixlab/quality/pilot_sensitivity.py
+          cp mixlab/quality/study_binding.py upstream-pr71/mixlab/quality/study_binding.py
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+
+          spec = importlib.util.spec_from_file_location(
+              "real_pinned_ml05_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              receipt, evidence, trials = verify_pack(fixture.pack)
+              assert len(trials) == 5
+              assert evidence["study_id"] == fixture.study_doc["study_id"]
+              votes = []
+              for reviewer in range(3):
+                  path = fixture.root / f"independent-synthetic-{reviewer}.json"
+                  path.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"synthetic-{reviewer:02d}",
+                      "ratings": [
+                          {"trial": tid, "preference":
+                           ("A" if row["A"] != "baseline" else "B")}
+                          for tid, row in sorted(trials.items())
+                      ],
+                  }))
+                  votes.append(path)
+              original = aggregate(fixture.pack, votes)
+              assert original["reviewers"] == 3
+              assert original["counts"]["candidate"] == 15
+              report = inspect_real_pilot(
+                  fixture.study, fixture.pack, fixture.study_doc["study_id"], votes)
+              # The actual producer fixture selects 5 frozen pairs from only
+              # SIX source recordings, so track reuse is inevitable. Even
+              # though all 15 listener votes are for candidates, reporting
+              # a 1/32 independent-pair tail would be methodologically false.
+              assert report["shared_source_across_pairs_detected"] is True
+              assert report["one_sided_pair_sign_reference_probability"] is None
+              assert report["worst_leave_one_pair_out_reference_probability"] is None
+              assert report["minimum_data_for_pair_reference"] is False
+              assert report["pair_sensitivity_review_required"] is True
+              assert report["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(report)
+              assert receipt["pack_id"] not in json.dumps(report)
+              print("Real pinned ML-05: valid 5-pair/10-WAV and 15/15 simulated candidate votes, but six shared sources => no independent-pair sign reference; HOLD")
+          finally:
+              fixture.tearDownClass()
+          PY
+
+      - name: Independently sourced real producer five-pair fragility proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import json
+          import math
+          from mixlab.cli import digest, dump
+          from mixlab.engine import write_wav
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.evaluation.study import freeze, write_exclusive
+          from mixlab.evaluation.study_pack import build
+          from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location(
+              "ml05_five_pair_producer", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              candidate_path = fixture.root / "candidates.json"
+              candidate_doc = json.loads(candidate_path.read_text())
+              library_doc = json.loads(fixture.manifest.read_text())
+              # The native fixture starts with six synthetic PCM sources.
+              # Add four new, physically distinct WAV files to freeze five
+              # disjoint source pairs with max_track_uses=1.
+              for index in range(6, 10):
+                  path = fixture.manifest.parent / f"t{index}.wav"
+                  rate = 8000
+                  frequency = 100.0 + index * 17.5
+                  write_wav(path, rate, [
+                      (.2 * math.sin(2 * math.pi * frequency * i / rate),)
+                      for i in range(rate * 5)])
+                  sha = digest(path)
+                  library_doc["tracks"].append({
+                      "id": f"t{index}", "path": path.name, "sha256": sha,
+                      "bpm": 120.0, "rights": "synthetic",
+                      "provenance": "Independent procedural proof fixture"})
+                  candidate_doc["tracks"].append({
+                      "id": f"t{index}", "sha256": sha, "bpm": 120.0,
+                      "key": ("C major", "G major", "A minor", "F major")[index - 6],
+                      "key_source": "manual", "split": "evaluation",
+                      "rights": "synthetic"})
+              new_candidates = fixture.root / "independent-candidates.json"
+              new_candidates.write_text(json.dumps(candidate_doc))
+              study = None
+              for seed in range(30):
+                  try:
+                      study = freeze(new_candidates, 5, seed, max_track_uses=1)
+                      break
+                  except ValueError:
+                      continue
+              assert study is not None, "Could not generate independent five-pair fixture"
+              assert len({pair[key] for pair in study["pairs"]
+                          for key in ("a_sha256", "b_sha256")}) == 10
+              new_study = fixture.root / "independent-study.json"
+              write_exclusive(new_study, study)
+              library_doc["pairs"] = [
+                  {"id": f"{pair['a']}-{pair['b']}", "a": pair["a"], "b": pair["b"],
+                   "a_start": 1.0, "b_start": 0.0, "bpm": 120.0, "beats": 4}
+                  for pair in study["pairs"]]
+              new_manifest = fixture.manifest.parent / "independent-library.json"
+              dump(new_manifest, library_doc)
+              pack = fixture.root / "disjoint-five-pair-pack"
+              build(new_manifest, new_study, pack, seed=3)
+              receipt, evidence, trials = verify_pack(pack)
+              assert len(trials) == 5 and evidence["study_id"] == study["study_id"]
+              files = []
+              for reviewer in range(3):
+                  rating = fixture.root / f"disjoint-reviewer-{reviewer}.json"
+                  rating.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"disjoint-synthetic-{reviewer}",
+                      "ratings": [
+                          {"trial": tid, "preference":
+                           ("A" if row["A"] != "baseline" else "B")}
+                          for tid, row in sorted(trials.items())]}))
+                  files.append(rating)
+              assert aggregate(pack, files)["counts"]["candidate"] == 15
+              report = inspect_real_pilot(new_study, pack, study["study_id"], files)
+              assert report["shared_source_across_pairs_detected"] is False
+              assert report["one_sided_pair_sign_reference_probability"] == 1 / 32
+              assert report["worst_leave_one_pair_out_reference_probability"] == 1 / 16
+              assert report["one_pair_omission_removes_nominal_signal"] is True
+              assert report["pair_sensitivity_review_required"] is True
+              assert report["milestone_pass"] is False
+              assert receipt["pack_id"] not in json.dumps(report)
+              print("Real ML-05, ten disjoint synthetic WAV sources: 15/15 votes -> 5/5 pairs 1/32; omit any pair -> 1/16, technical HOLD")
+          finally:
+              fixture.tearDownClass()
+          PY
+
+      - name: Upper-budget ten-pair twenty-source real renderer proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          import math
+          from mixlab.cli import digest, dump
+          from mixlab.engine import write_wav
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.evaluation.study import freeze, write_exclusive
+          from mixlab.evaluation.study_pack import build
+          from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+
+          spec = importlib.util.spec_from_file_location(
+              "real_ten_pair_ml05_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              candidates = json.loads((fixture.root / "candidates.json").read_text())
+              library = json.loads(fixture.manifest.read_text())
+              keys = ("C major", "G major", "A minor", "D minor", "E major")
+              for index in range(6, 20):
+                  path = fixture.manifest.parent / f"unique-{index}.wav"
+                  rate = 8000
+                  tone = 93.0 + index * 13.7
+                  write_wav(path, rate, [
+                      (.22 * math.sin(2 * math.pi * tone * frame / rate),)
+                      for frame in range(5 * rate)])
+                  sha = digest(path)
+                  library["tracks"].append({
+                      "id": f"unique-{index}", "path": path.name,
+                      "sha256": sha, "bpm": 120.0,
+                      "rights": "synthetic", "provenance": "Procedural ten-pair QA"})
+                  candidates["tracks"].append({
+                      "id": f"unique-{index}", "sha256": sha, "bpm": 120.0,
+                      "key": keys[index % len(keys)], "key_source": "manual",
+                      "rights": "synthetic", "split": "evaluation"})
+              candidate_path = fixture.root / "twenty-original-sources.json"
+              candidate_path.write_text(json.dumps(candidates))
+              frozen = None
+              for seed in range(50):
+                  try:
+                      frozen = freeze(candidate_path, 10, seed, max_track_uses=1)
+                      break
+                  except ValueError:
+                      continue
+              assert frozen is not None, "Could not select 10 disjoint frozen pairs"
+              assert len(frozen["pairs"]) == 10
+              assert len({pair[key] for pair in frozen["pairs"]
+                          for key in ("a_sha256", "b_sha256")}) == 20
+              frozen_path = fixture.root / "twenty-source-study.json"
+              write_exclusive(frozen_path, frozen)
+              library["pairs"] = [
+                  {"id": f"{pair['a']}-{pair['b']}", "a": pair["a"], "b": pair["b"],
+                   "a_start": 1.0, "b_start": 0.0, "bpm": 120.0, "beats": 4}
+                  for pair in frozen["pairs"]]
+              manifest = fixture.manifest.parent / "twenty-source-library.json"
+              dump(manifest, library)
+              pack = fixture.root / "disjoint-ten-pair-pack"
+              build(manifest, frozen_path, pack, seed=4)
+              receipt, evidence, trials = verify_pack(pack)
+              assert len(trials) == 10
+              assert receipt["render_count"] == 20
+              assert evidence["study_id"] == frozen["study_id"]
+              raters = []
+              for reviewer in range(3):
+                  path = fixture.root / f"ten-pair-synthetic-rater-{reviewer}.json"
+                  path.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"tenpair-{reviewer}",
+                      "ratings": [
+                          {"trial": tid, "preference":
+                           ("A" if trial["A"] != "baseline" else "B")}
+                          for tid, trial in sorted(trials.items())],
+                  }))
+                  raters.append(path)
+              assert aggregate(pack, raters)["counts"]["candidate"] == 30
+              result = inspect_real_pilot(frozen_path, pack, frozen["study_id"], raters)
+              assert result["shared_source_across_pairs_detected"] is False
+              assert result["frozen_pair_count"] == 10
+              assert result["one_sided_pair_sign_reference_probability"] == 1 / 1024
+              assert result["worst_leave_one_pair_out_reference_probability"] == 1 / 512
+              assert result["one_pair_omission_removes_nominal_signal"] is False
+              assert result["human_musical_preference_proven"] is False
+              assert result["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(result)
+              print("Real ML-05 upper bound: ten frozen pairs, twenty disjoint PCM sources, 30 synthetic votes, 1/1024 vs 1/512; NEVER milestone-pass")
+          finally:
+              fixture.tearDownClass()
+          PY
