@@ -37,6 +37,12 @@ _RESOURCE_ATTRIBUTES = frozenset({
     "href", "srcset", "action", "formaction", "poster", "background",
     "cite", "manifest", "xlink:href", "data",
 })
+# Playback manipulation in a custom listener page can bias A/B responses
+# even when both audio src paths are local and correctly labelled.
+_AUDIO_PLAYBACK_BIAS_ATTRIBUTES = frozenset({
+    "autoplay", "muted", "loop",
+})
+_HIDDEN_LISTENER_ATTRIBUTES = frozenset({"hidden", "inert"})
 
 
 class _ReviewPageLinks(HTMLParser):
@@ -63,7 +69,11 @@ class _ReviewPageLinks(HTMLParser):
         # unknown resource-bearing tags or event-handler attributes.
         if (tag in _EMBED_ELEMENTS
                 or any(k.startswith("on") or k in _RESOURCE_ATTRIBUTES
-                       or k == "style" for k in attributes)
+                       or k == "style" or k in _HIDDEN_LISTENER_ATTRIBUTES
+                       for k in attributes)
+                or (tag == "audio" and any(
+                    k in _AUDIO_PLAYBACK_BIAS_ATTRIBUTES for k in attributes
+                ))
                 or (tag == "script" and (attributes or "src" in attributes))
                 or (tag == "meta" and (attributes.get("http-equiv") or "").lower() == "refresh")
                 or (tag != "audio" and "src" in attributes)):

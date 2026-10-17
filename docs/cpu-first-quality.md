@@ -96,6 +96,17 @@ browser tried the remote source. Rejection is fail-closed even if the duplicate
 values agree. CLI errors remain path- and payload-free. The strict official
 HTML regeneration check is still recommended before any private listener pack.
 
+The default static page preflight now also rejects playback-altering HTML
+`autoplay`, `muted` and `loop` on audio players and `hidden` / `inert`
+on any listener-page element. Otherwise a modified listening form could
+show identical, valid A/B audio paths while playing an option silently,
+starting it unexpectedly, repeating it or hiding the choice. Ordinary
+`controls` and `preload="none"` remain accepted, including the official
+offline generator. This catches common accidental A/B presentation
+biases but is **not** an arbitrary inline-JavaScript/CSS inspection or
+proof of equivalent listening conditions. Use `--require-generated-html`
+for frozen official studies and an independent human review.
+
 The static review-page check rejects external resource tags such as
 `iframe`, `img`, `link` and `script src`, remote navigation/form
 attributes, event-handler attributes and CSS `@import` / `url(...)`.
