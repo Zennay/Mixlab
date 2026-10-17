@@ -85,6 +85,9 @@ def _scan(source):
     reader = source["reader"]
     eligible = [0] * channels
     trailing_zero = [0] * channels
+    # Fixed 256-bin per-channel low-byte histograms catch shifted 8-bit
+    # amplitude lattices whose bottom byte is e.g. 37 rather than zero.
+    low_byte_histogram = [[0] * 256 for _ in range(channels)]
     # A 100 ms bucket with >=32 high-level samples is only a diagnostic;
     # stronger sustained occupancy is required before a conclusive result.
     window_counts = [{} for _ in range(channels)]
@@ -105,7 +108,9 @@ def _scan(source):
                 value = values[position * channels + channel]
                 if abs(value) >= ACTIVE_ABS:
                     eligible[channel] += 1
-                    if (value & 255) == 0:
+                    residue = value & 255
+                    low_byte_histogram[channel][residue] += 1
+                    if residue == 0:
                         trailing_zero[channel] += 1
                     counts = window_counts[channel]
                     counts[window_index] = counts.get(window_index, 0) + 1
@@ -130,6 +135,7 @@ def _scan(source):
             longest_streak = max(longest_streak, streak)
             previous = w
         evidenced = eligible[channel] >= MIN_ELIGIBLE and longest_streak >= MIN_ACTIVE_WINDOWS
+        dominant_count = max(low_byte_histogram[channel])
         output.append({
             "evidenced": evidenced,
             "active_windows": len(present),
@@ -137,6 +143,9 @@ def _scan(source):
             "longest_sustained_window_run": longest_streak,
             "eligible_samples": eligible[channel],
             "low_byte_zero_samples": trailing_zero[channel],
+            "dominant_low_byte_samples": dominant_count,
+            "dominant_low_byte_fraction": round(dominant_count / eligible[channel], 6)
+            if evidenced else None,
             "low_byte_zero_fraction": round(trailing_zero[channel] / eligible[channel], 6)
             if evidenced else None,
         })
@@ -145,8 +154,10 @@ def _scan(source):
 
 def _coarse_loss(base, candidate):
     """Compare exact integer counts, never presentation-rounded fractions."""
-    return (20 * base["low_byte_zero_samples"] <= 7 * base["eligible_samples"]
-            and 200 * candidate["low_byte_zero_samples"] >= 199 * candidate["eligible_samples"])
+    baseline_concentrated = base.get("dominant_low_byte_samples", base["low_byte_zero_samples"])
+    candidate_concentrated = candidate.get("dominant_low_byte_samples", candidate["low_byte_zero_samples"])
+    return (20 * baseline_concentrated <= 7 * base["eligible_samples"]
+            and 200 * candidate_concentrated >= 199 * candidate["eligible_samples"])
 
 
 def inspect_ab(baseline, candidates):
@@ -206,7 +217,7 @@ def inspect_ab(baseline, candidates):
                 "per_channel_review": per_channel,
             })
         return {
-            "metric": "pcm16_low_byte_collapse_vs_baseline_v1",
+            "metric": "pcm16_low_byte_lattice_vs_baseline_v2",
             "technical_proxy_only": True,
             "channels": shape[0],
             "sample_rate": shape[1],
