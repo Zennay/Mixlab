@@ -177,6 +177,12 @@ class PrivateFdGuardTests(unittest.TestCase):
                 self.assertEqual(0, len(payload) % 4)
                 frames_seen += len(payload) // 4
             self.assertEqual(2_000_000, frames_seen)
+        # The new user-facing read-only preflight must also consume exactly
+        # the 2M-frame stereo maximum within its fixed block budget.
+        report = validate_private_pcm16(self.source)
+        self.assertEqual(2_000_000, report["frames"])
+        self.assertEqual(2, report["channels"])
+        self.assertTrue(report["pcm16_payload_complete"])
 
     def test_more_than_two_million_frames_rejected_from_header(self):
         # A sparse extension avoids allocating >4 MiB sample arrays.
