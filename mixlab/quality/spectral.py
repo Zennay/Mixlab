@@ -149,6 +149,7 @@ def scan_spectral_proxy(
         "_rms": rms,
         # Only used privately to flag aliases / hardlinks in a blind pack.
         "_source_key": (before.st_dev, before.st_ino),
+        "_source_stat_identity": _source_identity(before),
         "_channels": [
             (
                 math.sqrt(low / total) if total else None,
@@ -183,6 +184,10 @@ def compare_spectral_balance(
 
     reference = scan_spectral_proxy(baseline)
     rows = []
+    # Revalidate every participant *after* the whole comparison, not just
+    # each WAV at its own scan end. An early baseline can otherwise change
+    # while a later candidate is being decoded, invalidating the A/B report.
+    source_snapshots = [(os.fspath(baseline), reference["_source_stat_identity"])]
     seen_sources = {reference["_source_key"]}
     scanned_frames = reference["frames"]
     for index, candidate in enumerate(candidates, 1):
@@ -194,6 +199,7 @@ def compare_spectral_balance(
             expected_format=(reference["sample_rate"], reference["channels"], reference["frames"]),
         )
         scanned_frames += current["frames"]
+        source_snapshots.append((os.fspath(candidate), current["_source_stat_identity"]))
         if any(current[key] != reference[key] for key in ("sample_rate", "channels", "frames")):
             raise ValueError("A/B sample rate, channel count or frame count differs")
         warnings = []
@@ -265,6 +271,17 @@ def compare_spectral_balance(
             **deltas,
             "warnings": warnings,
         })
+    # Final best-effort all-input stability gate. Reject stale baseline or
+    # early-candidate observations; no partial JSON can be emitted on error.
+    for source_path, snapshot in source_snapshots:
+        try:
+            current_stat = os.stat(source_path, follow_symlinks=False)
+        except OSError as exc:
+            raise ValueError("A/B input changed during comparison") from exc
+        if (not stat.S_ISREG(current_stat.st_mode)
+                or _source_identity(current_stat) != snapshot):
+            raise ValueError("A/B input changed during comparison")
+
     return {
         "schema_version": 1,
         "method": "first_order_energy_ratio_proxy_not_lufs_or_calibrated_spectrum",
