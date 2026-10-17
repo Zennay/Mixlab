@@ -15,9 +15,19 @@ Only private, locally authorized PCM16 uncompressed mono/stereo WAV sources
 are accepted. Read caps match ML-07: <=32 MiB, <=2,000,000 frames, rate
 8–96 kHz, **at most 8 candidates and 8,000,000 aggregate frames across
 baseline plus candidates**. Each candidate's remaining frame allowance is
-checked from its WAV header *before* streaming any PCM. The candidate's\nsample rate, channel count and frame count are also checked against the\nbaseline's verified header before candidate decoding, so an invalid A/B\npair does not consume the candidate's full scan budget. Each source is opened as one no-follow,
+checked from its WAV header *before* streaming any PCM. The candidate's
+sample rate, channel count and frame count are also checked against the
+baseline's verified header before candidate decoding, so an invalid A/B
+pair does not consume the candidate's full scan budget. Each source is opened as one no-follow,
 nonblocking file descriptor (where supported), must be a regular file, and is
-checked for size/inode/timestamp change before closing. PCM is read in blocks
+checked for size/inode/timestamp change before closing. It also
+checks that the *pathname still names that same regular inode* at the end.
+This detects ordinary concurrent pathname replacement, unlink, symlink
+substitution or editing while a scan is running, instead of reporting old
+FD contents as if they came from the newly named source. This is a
+best-effort preflight guard, **not** an atomic immutable filesystem
+snapshot, defense against hostile timestamp restoration, or a guarantee
+that the pathname remains unchanged after scanning. PCM is read in blocks
 of 4096 frames, with O(channels) filter state and no waveform retention.
 Malformed/truncated/mismatched sources cause sanitized status 3, not a
 published partial report. A regular-file snapshot is **not** a hostile
@@ -72,6 +82,15 @@ Use the main quality DC, RMS, discontinuity and duration screens alongside
 this one; inspect flagged candidates by ear. It makes no music-preference
 or release decisions.
 
+The scanner also retains only a **private (device, inode)** pair for
+each opened regular WAV. If a candidate reuses the baseline's *same file*
+or a previous candidate's inode (e.g. a hardlink), it emits the neutral
+`same_input_file_inspect_for_blind_noop` warning. Two independent files
+with identical PCM are **not** asserted to be the same file by this
+metadata check; the separate ML-07 PCM-identity scanner is required to
+catch copied audio or transformed duplicates. Private inode numbers and
+paths are excluded from JSON.
+
 The default magnitude warning threshold is **6 dB** for either proxy. A
 strictly positive finite `--threshold-db` up to 24 is accepted. Silence
 below the existing ML-07 -55 dBFS RMS criterion and unresolved near-zero
@@ -81,7 +100,8 @@ downmixing; a separate stereo/mono check is still required.
 
 The JSON has only a synthetic candidate-01 numbering, generic warning
 codes, format/duration facts, rounded global RMS and three energy ratios
-per source, aggregate A/B deltas, eight-span mismatch *fractions*\n(not envelopes), and the explicit human-preference gate.
+per source, aggregate A/B deltas, eight-span mismatch *fractions*
+(not envelopes), and the explicit human-preference gate.
 It never outputs source paths, song metadata, candidate identity, PCM
 samples, window envelopes or hashes. Invalid CLI arguments are redacted
 even when a user supplies a sensitive malformed option value. The
@@ -95,7 +115,11 @@ and prints no JSON. Argument errors fail **2** with no JSON.
 signals for RMS-matched bass/high-content shift, gain-only invariance,
 stereo, multiple anonymized candidates, silent comparisons, sample-format
 mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
-non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, matched-RMS midrange depletion,\nmidrange time reordering, stereo channel-frequency swaps with\nglobally identical energies, stereo gain invariance, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
+same-inode/hardlink reuse, concurrent path replacement/unlink, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
+shifts, stereo temporal gain invariance, matched-RMS midrange depletion,
+midrange time reordering, stereo channel-frequency swaps with
+globally identical energies, stereo gain invariance, silent spans, strict warning exit
+and CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
 
