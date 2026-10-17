@@ -229,6 +229,61 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertEqual(6, len(reads))
         self.assertFalse(self.other.exists())
 
+    def test_baseline_mutated_after_its_scan_rejects_entire_report(self):
+        original = wave.Wave_read.readframes
+        reads = []
+
+        def mutate_early_baseline(reader, count):
+            reads.append(count)
+            # The fourth read is the first candidate's PCM block.
+            if len(reads) == 4:
+                replacement = self.dir / "REPLACEMENT_PRIVATE.wav"
+                make_wav(replacement, freq=5000)
+                os.replace(replacement, self.base)
+            return original(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", mutate_early_baseline):
+            with self.assertRaisesRegex(ValueError, "A/B input changed"):
+                self.report()
+        self.assertEqual(6, len(reads))
+
+    def test_first_candidate_mutated_during_second_candidate_is_rejected(self):
+        third = self.dir / "PRIVATE_THIRD.wav"
+        make_wav(third)
+        original = wave.Wave_read.readframes
+        reads = []
+
+        def mutate_early_candidate(reader, count):
+            reads.append(count)
+            # First candidate completed at read six; the first PCM block
+            # of candidate two replaces its earlier sibling's pathname.
+            if len(reads) == 7:
+                replacement = self.dir / "REPLACEMENT_PRIVATE.wav"
+                make_wav(replacement, freq=5000)
+                os.replace(replacement, self.other)
+            return original(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", mutate_early_candidate):
+            with self.assertRaisesRegex(ValueError, "A/B input changed"):
+                compare_spectral_balance(self.base, [self.other, third])
+        self.assertEqual(9, len(reads))
+
+    def test_final_snapshot_rejects_delayed_symlink_substitution(self):
+        other_backup = self.dir / "PRIVATE_OLD.wav"
+        original = wave.Wave_read.readframes
+        reads = []
+
+        def substitute_finished_baseline(reader, count):
+            reads.append(count)
+            if len(reads) == 4:
+                self.base.rename(other_backup)
+                self.base.symlink_to(other_backup)
+            return original(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", substitute_finished_baseline):
+            with self.assertRaisesRegex(ValueError, "A/B input changed"):
+                self.report()
+
     def test_silence_is_never_misrepresented_as_comparable(self):
         make_wav(self.other, gain=0)
         row = self.report()["candidates"][0]
