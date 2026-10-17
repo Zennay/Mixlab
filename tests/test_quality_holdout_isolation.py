@@ -17,7 +17,9 @@ import unittest
 from unittest import mock
 import wave
 
-from mixlab.quality.holdout_isolation import audit_holdout_isolation
+from mixlab.quality.holdout_isolation import (
+    audit_holdout_isolation, _pcm_exact_transform_variants,
+)
 
 
 def _canonical_sha(data):
@@ -179,6 +181,88 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.assertNotEqual(self.dev["tracks"][0]["sha256"],
                             self.eva["tracks"][0]["sha256"])
         self.rejected()
+
+
+    def _gain_variant(self, gain):
+        source = self.eva_dir / "clip-00.wav"
+        target = self.dev_dir / "clip-00.wav"
+        with wave.open(str(source), "rb") as reader:
+            samples = struct.unpack("<" + "h" * reader.getnframes(),
+                                    reader.readframes(reader.getnframes()))
+        with wave.open(str(target), "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(b"".join(struct.pack("<h", int(value * gain))
+                                        for value in samples))
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    def test_inverse_and_exact_gain_edited_copies_are_contamination(self):
+        for factor in (-1, 2, -2):
+            with self.subTest(gain=factor):
+                self._gain_variant(factor)
+                self.assertNotEqual(self.dev["tracks"][0]["sha256"],
+                                    self.eva["tracks"][0]["sha256"])
+                self.rejected()
+
+    def test_nonexact_gain_does_not_claim_an_identical_pcm_excerpt(self):
+        # Not acoustic similarity; 1.5x gain is deliberately not represented
+        # by the exact integer-transform family and must not become a false
+        # asserted clip reuse on distinct PCM bytes.
+        self._gain_variant(1.5)
+        self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
+
+    def _to_stereo(self, path):
+        with wave.open(str(path), "rb") as reader:
+            mono = struct.unpack("<" + "h" * reader.getnframes(),
+                                 reader.readframes(reader.getnframes()))
+        frames = b"".join(struct.pack(
+            "<hh", value, value // 3 + (30 if i % 2 else -30))
+            for i, value in enumerate(mono))
+        with wave.open(str(path), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(frames)
+
+    def _prepare_stereo_pair(self):
+        for group, directory in ((self.dev, self.dev_dir),
+                                 (self.eva, self.eva_dir)):
+            for index in (0, 1):
+                path = directory / f"clip-{index:02d}.wav"
+                self._to_stereo(path)
+                sha = hashlib.sha256(path.read_bytes()).hexdigest()
+                group["tracks"][index]["sha256"] = sha
+                if group is self.eva:
+                    self.study["pairs"][0][("a" if index == 0 else "b") + "_sha256"] = sha
+        self.freeze()
+
+    def test_stereo_source_pair_accepts_independent_channels(self):
+        self._prepare_stereo_pair()
+        self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
+
+    def test_stereo_channel_swapped_eval_copy_rejected_in_development(self):
+        self._prepare_stereo_pair()
+        source = self.eva_dir / "clip-00.wav"
+        target = self.dev_dir / "clip-00.wav"
+        with wave.open(str(source), "rb") as reader:
+            frames = reader.readframes(reader.getnframes())
+        swapped = b"".join(struct.pack("<hh", right, left)
+                           for left, right in struct.iter_unpack("<hh", frames))
+        with wave.open(str(target), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(swapped)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.rejected()
+
+    def test_transform_overflow_omits_unrepresentable_signed16_forms(self):
+        # -32768 cannot be negated and 16384 cannot be doubled in PCM16.
+        raw = struct.pack("<hh", -32768, 16384)
+        self.assertEqual(_pcm_exact_transform_variants(raw, 1), {raw})
+        with self.assertRaises(ValueError):
+            _pcm_exact_transform_variants(b"\\x01", 1)
 
     def test_different_remaster_pcm_with_same_recording_identity_fails(self):
         self.dev["tracks"][0]["recording_id"] = self.eva["tracks"][0]["recording_id"]
