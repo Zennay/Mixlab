@@ -11,7 +11,7 @@ import wave
 from mixlab.quality import compare_wavs
 
 
-def fixture(path, *, frames=128, channels=2):
+def fixture(path, *, frames=128, channels=2, rate=8000):
     samples = array("h", [
         int(1200 * ((i % 29) - 14) / 14)
         for i in range(frames) for _ in range(channels)
@@ -21,7 +21,7 @@ def fixture(path, *, frames=128, channels=2):
     with wave.open(str(path), "wb") as dst:
         dst.setnchannels(channels)
         dst.setsampwidth(2)
-        dst.setframerate(8000)
+        dst.setframerate(rate)
         dst.writeframes(samples.tobytes())
 
 
@@ -41,7 +41,7 @@ class BatchAdmissionTests(unittest.TestCase):
         with patch.object(quality, "MAX_COMPARE_TOTAL_SOURCE_BYTES", combined - 1):
             with patch.object(quality, "_scan_wav_with_digest",
                               side_effect=AssertionError("PCM scanned before admission")):
-                with patch.object(quality, "private_wav_frame_count",
+                with patch.object(quality, "private_wav_format",
                                   side_effect=AssertionError("Header scanned before byte gate")):
                     with self.assertRaisesRegex(ValueError, "total input byte budget"):
                         compare_wavs(self.base, [self.other])
@@ -85,7 +85,7 @@ class BatchAdmissionTests(unittest.TestCase):
 
     def test_input_changed_during_header_admission_refused_pre_pcm(self):
         import mixlab.quality as quality
-        native = quality.private_wav_frame_count
+        native = quality.private_wav_format
         seen = 0
 
         def changed_after_header(path, *, max_bytes):
@@ -98,13 +98,47 @@ class BatchAdmissionTests(unittest.TestCase):
                     handle.write(b"\x77\x66")
             return result
 
-        with patch.object(quality, "private_wav_frame_count",
+        with patch.object(quality, "private_wav_format",
                           side_effect=changed_after_header):
             with patch.object(quality, "_scan_wav_with_digest",
                               side_effect=AssertionError("PCM scanned after mutation")):
                 with self.assertRaisesRegex(ValueError, "changed during quality comparison"):
                     compare_wavs(self.base, [self.other])
         self.assertEqual(2, seen)
+
+    def test_single_input_frame_limit_rejects_before_any_pcm_read(self):
+        import mixlab.quality as quality
+        fixture(self.base, frames=64)
+        with patch.object(quality, "MAX_SOURCE_FRAMES", 100):
+            with patch.object(quality, "_scan_wav_with_digest",
+                              side_effect=AssertionError("PCM decoded")):
+                with self.assertRaisesRegex(ValueError, "Frames must be"):
+                    compare_wavs(self.base, [self.other])
+
+    def test_trailing_candidate_duration_mismatch_fails_before_baseline_decode(self):
+        import mixlab.quality as quality
+        third = self.root / "PRIVATE_duration_mismatch.wav"
+        fixture(third, frames=129)
+        with patch.object(quality, "_scan_wav_with_digest",
+                          side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "Candidate 2 frames differs"):
+                compare_wavs(self.base, [self.other, third])
+
+    def test_sample_rate_mismatch_fails_before_any_pcm_read(self):
+        import mixlab.quality as quality
+        fixture(self.other, rate=16000)
+        with patch.object(quality, "_scan_wav_with_digest",
+                          side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "Candidate 1 sample_rate differs"):
+                compare_wavs(self.base, [self.other])
+
+    def test_channel_layout_mismatch_fails_before_any_pcm_read(self):
+        import mixlab.quality as quality
+        fixture(self.other, channels=1)
+        with patch.object(quality, "_scan_wav_with_digest",
+                          side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "Candidate 1 channels differs"):
+                compare_wavs(self.base, [self.other])
 
     def test_pathless_error_on_byte_or_frame_budget_breach(self):
         import mixlab.quality as quality
