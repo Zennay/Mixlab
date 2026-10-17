@@ -5,6 +5,7 @@ on:
     paths:
       - 'mixlab/quality/reviewer_export_parity.py'
       - 'tests/test_quality_reviewer_export_parity.py'
+      - 'tests/test_quality_reviewer_parity_browser.py'
       - 'docs/quality-reviewer-export-parity.md'
       - '.github/workflows/ml07-reviewer-parity.yml'
   workflow_dispatch:
@@ -47,3 +48,11 @@ jobs:
           ulimit -v 196608
           python -m compileall -q mixlab/quality/reviewer_export_parity.py tests/test_quality_reviewer_export_parity.py
           /usr/bin/time -v python -m unittest discover -s tests -p test_quality_reviewer_export_parity.py -v
+      - name: Chromium DOM and real offline JSON-export parity
+        if: matrix.python-version == '3.13'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v google-chrome || command -v google-chrome-stable || command -v chromium
+          python -m compileall -q tests/test_quality_reviewer_parity_browser.py
+          /usr/bin/time -v python -m unittest discover -s tests -p test_quality_reviewer_parity_browser.py -v
