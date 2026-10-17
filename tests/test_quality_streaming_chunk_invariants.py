@@ -366,7 +366,7 @@ class StreamingChunkInvariants(unittest.TestCase):
             writer.setframerate(rate)
             left_right = struct.pack("<hh", 4200, -5100)
             write_segment(writer, gap_start, left_right)
-            write_segment(writer, gap_frames, b"\\x00" * 4)
+            write_segment(writer, gap_frames, bytes(4))
             write_segment(writer, count - gap_start - gap_frames, left_right)
 
         self.assertLess(path.stat().st_size, 32 * 1024 * 1024)
