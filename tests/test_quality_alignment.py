@@ -35,6 +35,26 @@ def pattern():
             for i in range(16000)]
 
 
+def regional_pattern():
+    """Nonperiodic transient accents every 500ms, constant non-silent floor."""
+    out = [2000] * 32000
+    for segment in range(8):
+        for onset in (640 + (segment % 3) * 160,
+                      2240 + (segment % 2) * 120):
+            start = segment * 4000 + onset
+            out[start:start + 120] = [25000] * 120
+    return out
+
+
+def second_half_delayed(samples, *, shift_frames=640):
+    """Keep the first 2s unchanged and delay only the remaining 2s."""
+    out = samples[:16000]
+    for start in range(16000, 32000, 4000):
+        piece = samples[start:start + 4000]
+        out += [2000] * shift_frames + piece[:4000 - shift_frames]
+    return out
+
+
 class EnvelopeAlignmentTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -75,7 +95,8 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         make_wav(self.other, flat)
         row = self.row()
         self.assertIsNone(row["temporal_envelope_shift_risk"])
-        self.assertEqual(["microtiming_alignment_inconclusive_inspect"], row["warnings"])
+        self.assertIn("microtiming_alignment_inconclusive_inspect", row["warnings"])
+        self.assertIn("regional_timing_alignment_inconclusive_inspect", row["warnings"])
 
     def test_too_short_audio_abstains(self):
         make_wav(self.base, self.samples[:2400])
@@ -216,6 +237,68 @@ class EnvelopeAlignmentTests(unittest.TestCase):
                 out.writeframesraw(tail.tobytes())
         result = compare_envelopes(self.base, [self.other])
         self.assertIsNone(result["candidates"][0]["temporal_envelope_shift_risk"])
+
+
+    def test_regional_drift_catches_only_later_timing_offset(self):
+        reference = regional_pattern()
+        make_wav(self.base, reference)
+        make_wav(self.other, second_half_delayed(reference))
+        row = self.row()
+        self.assertIs(row["regional_timing_shift_risk"], True)
+        self.assertIn("regional_timing_shift_inspect_not_tempo_estimate",
+                      row["warnings"])
+        report = json.dumps(compare_envelopes(self.base, [self.other]))
+        self.assertNotIn(str(self.folder.name), report)
+        self.assertNotIn("lag_ms", report)
+        self.assertNotIn("segment_index", report)
+        self.assertNotIn("correlation", report)
+
+    def test_regional_drift_is_symmetric_in_source_order(self):
+        reference = regional_pattern()
+        candidate = second_half_delayed(reference)
+        make_wav(self.base, reference)
+        make_wav(self.other, candidate)
+        before = self.row()
+        make_wav(self.base, candidate)
+        make_wav(self.other, reference)
+        after = self.row()
+        self.assertIs(before["regional_timing_shift_risk"], True)
+        self.assertIs(after["regional_timing_shift_risk"], True)
+
+    def test_regional_clean_when_same_rhythm_under_uniform_gain(self):
+        samples = regional_pattern()
+        make_wav(self.base, samples)
+        make_wav(self.other, [round(x * .85) for x in samples])
+        row = self.row()
+        self.assertIs(row["regional_timing_shift_risk"], False)
+        self.assertNotIn("regional_timing_shift_inspect_not_tempo_estimate",
+                         row["warnings"])
+
+    def test_global_shift_is_not_mislabeled_as_regional_drift(self):
+        samples = regional_pattern()
+        offset = 640
+        make_wav(self.base, samples)
+        make_wav(self.other, samples[-offset:] + samples[:-offset])
+        row = self.row()
+        self.assertIsNot(row["regional_timing_shift_risk"], True)
+
+    def test_single_shifted_region_is_not_called_persistent_drift(self):
+        samples = regional_pattern()
+        altered = samples.copy()
+        start = 16000
+        altered[start:start + 4000] = [2000] * 640 + samples[start:start + 3360]
+        make_wav(self.base, samples)
+        make_wav(self.other, altered)
+        self.assertIsNot(self.row()["regional_timing_shift_risk"], True)
+
+    def test_regions_unchanged_on_multiple_private_candidates(self):
+        samples = regional_pattern()
+        make_wav(self.base, samples)
+        make_wav(self.other, second_half_delayed(samples))
+        row1, row2 = compare_envelopes(self.base,
+                                       [self.other, self.base])["candidates"]
+        self.assertIs(row1["regional_timing_shift_risk"], True)
+        self.assertIs(row2["regional_timing_shift_risk"], False)
 
 if __name__ == "__main__":
     unittest.main()
