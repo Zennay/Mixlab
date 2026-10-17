@@ -73,6 +73,12 @@ def _verified_study(path, expected_study_id):
         track_pair = frozenset((row["a"], row["b"]))
         if track_pair in seen:
             _fail()
+        # Validate hash types before using user-controlled values as
+        # dictionary keys. A list/dict source digest must fail as ValueError,
+        # not escape as TypeError with private parser context.
+        for field in ("a_sha256", "b_sha256"):
+            if not isinstance(row.get(field), str) or _SHA.fullmatch(row[field]) is None:
+                _fail()
         seen.add(track_pair)
         families[row["candidate_family"]] += 1
         for label in ("a", "b"):
@@ -87,9 +93,6 @@ def _verified_study(path, expected_study_id):
                 _fail()
             id_to_source[tid] = sha
             source_to_id[sha] = tid
-        for field in ("a_sha256", "b_sha256"):
-            if not isinstance(row.get(field), str) or _SHA.fullmatch(row[field]) is None:
-                _fail()
         for field in ("a_bpm", "b_bpm"):
             val = row.get(field)
             if type(val) not in (int, float) or not math.isfinite(val) or not 30 <= val <= 300:
