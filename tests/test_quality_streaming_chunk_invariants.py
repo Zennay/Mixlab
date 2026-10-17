@@ -9,6 +9,7 @@ from __future__ import annotations
 from array import array
 import json
 import math
+import random
 from pathlib import Path
 import struct
 import sys
@@ -295,6 +296,47 @@ class StreamingChunkInvariants(unittest.TestCase):
                               rows[2]["warnings"])
                 self.assertFalse(comparison["contains_source_paths_or_audio"])
                 self.assertNotIn(str(self.root), json.dumps(comparison))
+
+    def test_seeded_dropouts_do_not_depend_on_internal_chunk_alignment(self):
+        # Boundary tests at just 4095/4096 can overfit: protect against
+        # accidental state reset at *all* interior offsets in a deterministic
+        # sparse sample, with both just-below and exact 50ms fenceposts.
+        rng = random.Random(0x7B0C2026)
+        offsets = {CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK - 1}
+        offsets.update(rng.sample(range(1200, FRAMES - 500), 16))
+        for start in sorted(offsets):
+            for length in (399, 400):
+                with self.subTest(start=start, samples=length):
+                    path = self._make(f"seeded-{start}-{length}.wav", 2,
+                                      gap=start, gap_frames=length)
+                    report = scan_wav(path)
+                    self.assertEqual(report["short_interior_pcm_dropout_risk"],
+                                     length == 400)
+                    self.assertFalse(report["interior_silent_gap_risk"])
+                    self.assertEqual(report["frames"], FRAMES)
+
+    def test_global_rms_15db_fencepost_across_chunk_boundary(self):
+        # The canonical preflight is an RMS diagnostic, not loudness:
+        # a 1.5dB tolerance should remain stable after an arbitrary
+        # 4096-frame read split, even when A/B PCM has a different RIFF body.
+        for channels in (1, 2):
+            base = self._make(f"reference-level-{channels}.wav", channels,
+                              amplitude=4000)
+            low = self._make(f"near-level-{channels}.wav", channels,
+                             amplitude=4700, extra_chunk=True)
+            high = self._make(f"over-level-{channels}.wav", channels,
+                              amplitude=4800, extra_chunk=True)
+            report = compare_wavs(base, [low, high])
+            with self.subTest(channels=channels):
+                self.assertTrue(
+                    report["candidates"][0]["level_comparable_for_blind_ab"])
+                self.assertFalse(
+                    report["candidates"][1]["level_comparable_for_blind_ab"])
+                self.assertLess(abs(report["candidates"][0]["rms_delta_db_vs_baseline"]), 1.5)
+                self.assertGreater(abs(report["candidates"][1]["rms_delta_db_vs_baseline"]), 1.5)
+                self.assertIn("rms_level_mismatch_not_lufs",
+                              report["candidates"][1]["warnings"])
+                self.assertNotIn(str(self.root), json.dumps(report))
 
     def test_truncation_in_each_streaming_read_rejected(self):
         # A valid header can still lie about available source frames.
