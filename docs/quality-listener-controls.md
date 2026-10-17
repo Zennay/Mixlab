@@ -197,3 +197,56 @@ renderer-to-evaluation smoke independently verifies checksum-bound renders
 and browser-created **synthetic** JSON ratings. **No automated CI output
 certifies real audible listening, assistive technology accessibility,
 legal rights, human preference, or M1 milestone completion.**
+
+## Single-command frozen pilot technical admission
+
+Instead of individually running disconnected checks before a pilot, the QA
+branch exposes:
+
+```sh
+python3 -m mixlab.quality.pilot_preflight /private/frozen-pack \
+  --study /private/frozen-study.json \
+  --expected-study-id THE_64_HEX_SHA256_PINNED_OUTSIDE_THE_PACK
+```
+
+**Do not copy the study ID out of editable pack metadata.** It must be
+independently recorded *before* a real listening session. All three inputs
+are private and never printed in reports/errors. The gate composes:
+
+1. The official generated review form (required controls, labels, frozen
+   JavaScript and stylesheet, no mutable extra scripts).
+2. The strict private PCM review-pack scanner, with official HTML identity,
+   public receipt binding and A/B WAV integrity.
+3. The frozen 5–10 pair preregistration identity and private study/render
+   metadata consistency, checked against the independently supplied ID.
+
+Exit code **0** means **technical_gate=pass** only when *all* constituent
+checks are consistent and **no PCM warning or cross-trial duplication**
+was found. Exit **2** means `technical_gate=hold`: the structure and pinned
+metadata are consistent, but technical audio or blinding warnings need
+review. Exit **3** means invalid/unbound source or malformed options, with
+a single sanitized private-path-free diagnostic and no JSON output.
+
+JSON output contains **only** anonymous aggregate counts and booleans.
+It never publishes pack IDs, source hashes, trial-level private statistics,
+filenames, reviewer codes, answer assignments, or audio.
+
+Even a technical PASS always declares:
+`actual_source_rights_independently_authenticated=false`,
+`actual_source_audio_authenticated=false`,
+`independent_listeners_verified=false`,
+`human_preference_proven=false`, `release_authorized=false`,
+`milestone_pass=false`.
+
+This gate therefore cannot autonomously move MixLab out of M1. Source
+licenses, a real browser/assistive-tech review, independent 3+ listeners,
+and actual DJ preference remain **external approval gates**. The pilot
+tool is deliberately not imported into the shared renderer/CLI or ML-05
+owner files, to avoid parallel ownership conflicts.
+
+The hosted CI additionally exercises the gate against a real five-pair
+procedural frozen-study fixture already covered by the independent
+study-binding contract, including corrupt PCM, modified HTML, forged
+study IDs, sanitized CLI arguments, and simulated clean vs warning
+technical summaries. No real music, permission claims, or rating data
+is collected.
