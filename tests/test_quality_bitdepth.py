@@ -77,6 +77,39 @@ class ResolutionTests(unittest.TestCase):
         threshold_base = {"eligible_samples": 2_000_000, "low_byte_zero_samples": 700_000}
         self.assertTrue(bitdepth._coarse_loss(threshold_base, clear_candidate))
 
+    def test_constant_nonzero_low_byte_quantization_lattice_is_reviewed(self):
+        # An 8-bit-shifted signal with a fixed PCM offset has low byte 37,
+        # not zero, but still contains only 256-level quantization steps.
+        original = array.array("h")
+        original.frombytes(samples())
+        shifted = array.array("h", ((value // 256) * 256 + 37 for value in original))
+        if sys.byteorder != "little":
+            shifted.byteswap()
+        wav(self.bad, shifted.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
+        self.assertEqual([True, True], result["per_channel_review"])
+
+    def test_only_right_channel_has_nonzero_offset_lattice(self):
+        original = array.array("h")
+        original.frombytes(samples())
+        for index in range(1, len(original), 2):
+            original[index] = original[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            original.byteswap()
+        wav(self.bad, original.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
+        self.assertEqual([False, True], result["per_channel_review"])
+
+    def test_smooth_fixed_offset_without_quantization_stays_clear(self):
+        original = array.array("h")
+        original.frombytes(samples())
+        shifted = array.array("h", (value + 37 for value in original))
+        if sys.byteorder != "little":
+            shifted.byteswap()
+        wav(self.bad, shifted.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
+        self.assertEqual([False, False], result["per_channel_review"])
+
     def test_single_channel_regression_detected(self):
         wav(self.bad, samples(collapse=True, right_only=True))
         result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
