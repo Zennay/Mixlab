@@ -178,6 +178,57 @@ class SpectralBalanceTests(unittest.TestCase):
         for item in (str(self.dir), self.base.name, self.other.name, third.name):
             self.assertNotIn(item, out)
 
+    def test_same_inode_baseline_and_hardlink_candidates_flag_blind_noop(self):
+        alias = self.dir / "PRIVATE_HARDLINK.wav"
+        os.link(self.base, alias)
+        report = compare_spectral_balance(self.base, [self.base, alias])
+        for row in report["candidates"]:
+            self.assertIn("same_input_file_inspect_for_blind_noop", row["warnings"])
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.dir), serialized)
+        self.assertNotIn("PRIVATE_HARDLINK", serialized)
+        self.assertNotIn("_source_key", serialized)
+        strict = self.cli(self.base, alias, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertIn("same_input_file_inspect_for_blind_noop", strict.stdout)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_concurrent_candidate_path_replacement_fails_closed(self):
+        # Baseline uses three 4096-frame reads. Replace the candidate name
+        # during its first read; its existing FD still points to OLD PCM.
+        replacement = self.dir / "new_private.wav"
+        make_wav(replacement, freq=5000)
+        original = wave.Wave_read.readframes
+        reads = []
+
+        def replace_during_read(reader, count):
+            reads.append(count)
+            if len(reads) == 4:
+                os.replace(replacement, self.other)
+            return original(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", replace_during_read):
+            with self.assertRaisesRegex(ValueError, "pathname changed"):
+                self.report()
+        self.assertEqual(6, len(reads))
+        self.assertEqual(12000, scan_spectral_proxy(self.other)["frames"])
+
+    def test_concurrent_candidate_unlink_fails_closed(self):
+        original = wave.Wave_read.readframes
+        reads = []
+
+        def unlink_during_read(reader, count):
+            reads.append(count)
+            if len(reads) == 4:
+                self.other.unlink()
+            return original(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", unlink_during_read):
+            with self.assertRaisesRegex(ValueError, "pathname changed"):
+                self.report()
+        self.assertEqual(6, len(reads))
+        self.assertFalse(self.other.exists())
+
     def test_silence_is_never_misrepresented_as_comparable(self):
         make_wav(self.other, gain=0)
         row = self.report()["candidates"][0]
