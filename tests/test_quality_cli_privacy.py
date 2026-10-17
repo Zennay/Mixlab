@@ -66,6 +66,23 @@ class PrivateQualityCLIErrorTests(unittest.TestCase):
         missing = self.root / ("missing-" + self.secret + ".wav")
         self.assert_redacted(self.run_cli(self.base, missing), exit_code=3)
 
+    def test_nonregular_audio_inputs_do_not_block_or_follow_links(self):
+        # A FIFO's st_size is zero: wave.open() otherwise waits for its WAV
+        # header indefinitely. Input preflight must refuse before opening it.
+        linked = self.root / ("linked-" + self.secret + ".wav")
+        linked.symlink_to(self.base)
+        directory = self.root / ("directory-" + self.secret + ".wav")
+        directory.mkdir()
+        for nonregular in (linked, directory):
+            with self.subTest(input_kind=nonregular.name.split("-")[0]):
+                self.assert_redacted(self.run_cli(self.base, nonregular), exit_code=3)
+                self.assert_redacted(self.run_cli(nonregular, self.candidate), exit_code=3)
+        if hasattr(__import__("os"), "mkfifo"):
+            fifo = self.root / ("fifo-" + self.secret + ".wav")
+            __import__("os").mkfifo(fifo)
+            self.assert_redacted(self.run_cli(self.base, fifo), exit_code=3)
+            self.assert_redacted(self.run_cli(fifo, self.candidate), exit_code=3)
+
     def test_successful_synthetic_audio_still_emits_only_anonymous_json(self):
         process = self.run_cli(self.base, self.candidate)
         self.assertEqual(process.returncode, 0, process.stderr)
