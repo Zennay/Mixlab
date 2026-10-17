@@ -910,6 +910,12 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 and not stereo_window_channel_level_confound_risk
                 and not ab_mono_fold_down_level_confound_risk
                 and not ab_mono_fold_down_window_level_confound_risk
+                # Even if BOTH sides cancel perfectly, their identical
+                # global/window RMS is no evidence of usable mono playback.
+                and (base["channels"] != 2 or (
+                    base["mono_fold_down_loss_db"] is not None
+                    and metrics["mono_fold_down_loss_db"] is not None
+                ))
             ),
         })
     # Do not publish a result if any baseline or candidate changed at any
