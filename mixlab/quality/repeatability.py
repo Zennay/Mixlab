@@ -127,7 +127,9 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
         if (not isinstance(recipe.get("family"), str)
                 or not recipe["family"]
                 or not positive_number(recipe.get("bpm"))
-                or not positive_number(recipe.get("beats"))
+                or not 30 <= recipe["bpm"] <= 300
+                or type(recipe.get("beats")) is not int
+                or not 1 <= recipe["beats"] <= 64
                 or not positive_number(receipt.get("duration_seconds"))
                 or not positive_number(receipt.get("gain_linear"))
                 or any(type(positions.get(part)) is not int
@@ -135,6 +137,37 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
                 or any(not isinstance(receipt.get(part), str)
                        or not receipt[part] for part in (
                            "alignment_source", "tempo_source"))):
+            raise RepeatabilityError(_ERROR)
+        # Independently recompute physical facts from actual admitted PCM
+        # shape and the same deterministic Recipe timing/gain conventions.
+        # Do not accept even two IDENTICALLY forged contradictory receipts.
+        bpm, beats = recipe["bpm"], recipe["beats"]
+        gain_db = recipe.get("gain_db")
+        if (type(gain_db) not in (float, int)
+                or not math.isfinite(gain_db) or not -60 <= gain_db <= 0):
+            raise RepeatabilityError(_ERROR)
+        for key in ("a_start", "b_start"):
+            start = recipe.get(key)
+            if (type(start) not in (float, int)
+                    or not math.isfinite(start) or not 0 <= start <= MAX_FRAMES / rate):
+                raise RepeatabilityError(_ERROR)
+        for key in ("a_bpm", "b_bpm"):
+            declared = recipe.get(key)
+            if declared is not None and (
+                type(declared) not in (float, int)
+                or not math.isfinite(declared)
+                or abs(declared - bpm) > 1e-9
+            ):
+                raise RepeatabilityError(_ERROR)
+        duration_expected = frames / rate
+        gain_expected = 10 ** (gain_db / 20)
+        if (round(beats * 60 / bpm * rate) != frames
+                or not math.isclose(receipt["duration_seconds"], duration_expected,
+                                    rel_tol=1e-12, abs_tol=1e-12)
+                or not math.isclose(receipt["gain_linear"], gain_expected,
+                                    rel_tol=1e-12, abs_tol=1e-12)
+                or any(positions[side] != round(recipe[key] * rate)
+                       for side, key in (("a", "a_start"), ("b", "b_start")))):
             raise RepeatabilityError(_ERROR)
         # Bind the semantic render contract; intentionally exclude the
         # output pathname, the output hash and block_frames. Block sizes may
