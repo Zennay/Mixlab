@@ -917,6 +917,44 @@ class QualityTests(unittest.TestCase):
         page.write_text(clean)
         self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
 
+    def test_review_page_rejects_playback_bias_attributes_without_changing_audio_links(self):
+        # Autoplay/loop/mute alter what the listener hears without changing
+        # the neutral WAV paths; hidden/inert containers can remove a choice.
+        review = self.root / "playback-biased-review"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x * .9) for x in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        altered = (
+            clean.replace('<audio src="trial-001-A.wav"',
+                          '<audio autoplay src="trial-001-A.wav"'),
+            clean.replace('<audio src="trial-001-A.wav"',
+                          '<audio muted src="trial-001-A.wav"'),
+            clean.replace('<audio src="trial-001-A.wav"',
+                          '<audio loop src="trial-001-A.wav"'),
+            clean.replace('<fieldset data-trial', '<fieldset hidden data-trial'),
+            clean.replace('<fieldset data-trial', '<fieldset inert data-trial'),
+            '<div hidden>' + clean + '</div>',
+        )
+        for html in altered:
+            with self.subTest(case=html[:90]):
+                page.write_text(html)
+                with self.assertRaisesRegex(ValueError, "audio links"):
+                    inspect_review_pack(review)
+                cli = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, cli.returncode)
+                self.assertFalse(cli.stdout)
+                self.assertNotIn(str(self.root), cli.stderr)
+        # The normal official player attributes must remain safe to inspect.
+        page.write_text(clean.replace('<audio src=', '<audio controls preload="none" src='))
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
