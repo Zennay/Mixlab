@@ -27,7 +27,13 @@ substitution or editing while a scan is running, instead of reporting old
 FD contents as if they came from the newly named source. This is a
 best-effort preflight guard, **not** an atomic immutable filesystem
 snapshot, defense against hostile timestamp restoration, or a guarantee
-that the pathname remains unchanged after scanning. PCM is read in blocks
+that the pathname remains unchanged after scanning. The same stat identity
+of **all** earlier A/B inputs (baseline and each candidate) is also checked
+at the end of the *entire* candidate comparison. If an earlier input is
+renamed, edited, unlinked or turned into a symlink while a later candidate
+is being scanned, the report fails as a whole (sanitized exit 3), rather
+than publishing mixed-time evidence. This adds bounded metadata checks
+only and does not keep extra PCM in memory. PCM is read in blocks
 of 4096 frames, with O(channels) filter state and no waveform retention.
 Malformed/truncated/mismatched sources cause sanitized status 3, not a
 published partial report. A regular-file snapshot is **not** a hostile
@@ -115,7 +121,9 @@ and prints no JSON. Argument errors fail **2** with no JSON.
 signals for RMS-matched bass/high-content shift, gain-only invariance,
 stereo, multiple anonymized candidates, silent comparisons, sample-format
 mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
-same-inode/hardlink reuse, concurrent path replacement/unlink, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
+same-inode/hardlink reuse, concurrent path replacement/unlink,
+full-comparison early-baseline/candidate mutation and symlink-substitution
+rejection, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
 shifts, stereo temporal gain invariance, matched-RMS midrange depletion,
 midrange time reordering, stereo channel-frequency swaps with
 globally identical energies, stereo gain invariance, silent spans, strict warning exit
