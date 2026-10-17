@@ -81,7 +81,7 @@ def _locate_data_chunk(stream, size):
 
 
 @contextmanager
-def admitted_pcm16(path, *, seen_inodes=None):
+def admitted_pcm16(path, *, seen_inodes=None, require_neutral_container=False):
     """Yield a WAV reader tied to one regular, bounded, non-symlink descriptor.
 
     Linux/POSIX only: O_NOFOLLOW and O_NONBLOCK are mandatory. The caller must
@@ -90,6 +90,8 @@ def admitted_pcm16(path, *, seen_inodes=None):
     This detects ordinary replacements/edits; it cannot authenticate a hostile
     filesystem or prove the musical content has not been edited upstream.
     """
+    if type(require_neutral_container) is not bool:
+        raise ValueError(_ERROR)
     if (not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_NONBLOCK")
             or not hasattr(os, "O_CLOEXEC")):
         raise ValueError(_ERROR)
@@ -124,6 +126,13 @@ def admitted_pcm16(path, *, seen_inodes=None):
             # An attacker can fit millions of empty RIFF chunks below
             # 32 MiB; do not let wave.open walk an unbounded header chain.
             data_start, data_bytes = _locate_data_chunk(stream, before.st_size)
+            # Strict neutrality is opt-in: the public blind WAVs should
+            # contain only the canonical fmt(16) and PCM data chunks. This
+            # rejects pre/post-data labels and hidden trailing bytes; ordinary
+            # private masters may intentionally contain legitimate metadata.
+            if (require_neutral_container and
+                    (data_start != 44 or before.st_size != 44 + data_bytes)):
+                raise ValueError(_ERROR)
             try:
                 reader = wave.open(stream, "rb")
             except (wave.Error, EOFError, OSError, ValueError, struct.error):
@@ -158,7 +167,8 @@ def admitted_pcm16(path, *, seen_inodes=None):
             os.close(fd)
 
 
-def validate_private_pcm16(path, *, block_frames=4096):
+def validate_private_pcm16(path, *, block_frames=4096,
+                           require_neutral_container=False):
     """Check every declared PCM frame on the admitted FD, without writing audio.
 
     This optional source-integrity preflight does not replace the full RIFF
@@ -166,7 +176,9 @@ def validate_private_pcm16(path, *, block_frames=4096):
     """
     if (type(block_frames) is not int or not 1 <= block_frames <= 4096):
         raise ValueError(_ERROR)
-    with admitted_pcm16(path) as reader:
+    with admitted_pcm16(
+        path, require_neutral_container=require_neutral_container
+    ) as reader:
         rate = reader.getframerate()
         channels = reader.getnchannels()
         frames = reader.getnframes()
@@ -177,9 +189,12 @@ def validate_private_pcm16(path, *, block_frames=4096):
             if len(raw) != count * channels * 2:
                 raise ValueError(_ERROR)
             remaining -= count
-    return {"screen": "ml07-single-fd-pcm16-integrity-v1",
-            "sample_rate": rate, "channels": channels, "frames": frames,
-            "pcm16_payload_complete": True, "human_listening_required": True}
+    result = {"screen": "ml07-single-fd-pcm16-integrity-v1",
+              "sample_rate": rate, "channels": channels, "frames": frames,
+              "pcm16_payload_complete": True, "human_listening_required": True}
+    if require_neutral_container:
+        result["neutral_container_verified"] = True
+    return result
 
 
 
@@ -194,7 +209,7 @@ def _consume_pcm16(reader, *, block_frames=4096):
         remaining -= count
 
 
-def validate_private_ab_group(paths):
+def validate_private_ab_group(paths, *, require_neutral_container=False):
     """Strict offline A/B input-group integrity preflight.
 
     Open every participant once, check *all* headers and aggregate limits
@@ -206,7 +221,12 @@ def validate_private_ab_group(paths):
         raise ValueError(_ERROR)
     with ExitStack() as stack:
         identities = set()
-        readers = [stack.enter_context(admitted_pcm16(path, seen_inodes=identities)) for path in paths]
+        readers = [
+            stack.enter_context(admitted_pcm16(
+                path, seen_inodes=identities,
+                require_neutral_container=require_neutral_container
+            )) for path in paths
+        ]
         header = (readers[0].getframerate(), readers[0].getnchannels(), readers[0].getnframes())
         for reader in readers[1:]:
             if (reader.getframerate(), reader.getnchannels(), reader.getnframes()) != header:
@@ -215,12 +235,15 @@ def validate_private_ab_group(paths):
             raise ValueError(_ERROR)
         for reader in readers:
             _consume_pcm16(reader)
-    return {
+    result = {
         "screen": "ml07-single-fd-ab-group-integrity-v1",
         "sample_rate": header[0], "channels": header[1], "frames": header[2],
         "candidate_count": len(paths) - 1, "shape_comparable": True,
         "pcm16_payloads_complete": True, "human_listening_required": True,
     }
+    if require_neutral_container:
+        result["neutral_container_verified"] = True
+    return result
 
 
 class _PrivateParser(argparse.ArgumentParser):
@@ -234,14 +257,22 @@ def main(argv=None):
     parser.add_argument("source", help="Private local PCM16 WAV (never echoed)")
     parser.add_argument("candidates", nargs="*", help="Private candidate WAVs for --ab-group")
     parser.add_argument("--ab-group", action="store_true", help="Preflight baseline plus 1..7 A/B candidates")
+    parser.add_argument("--require-neutral-container", action="store_true",
+                        help="Reject metadata, extra chunks and bytes outside canonical PCM WAV")
     arguments = parser.parse_args(argv)
     if bool(arguments.candidates) != arguments.ab_group:
         parser.error("Mode mismatch")
     try:
         if arguments.ab_group:
-            report = validate_private_ab_group([arguments.source, *arguments.candidates])
+            report = validate_private_ab_group(
+                [arguments.source, *arguments.candidates],
+                require_neutral_container=arguments.require_neutral_container
+            )
         else:
-            report = validate_private_pcm16(arguments.source)
+            report = validate_private_pcm16(
+                arguments.source,
+                require_neutral_container=arguments.require_neutral_container
+            )
     except (OSError, ValueError, EOFError, wave.Error, struct.error):
         parser.exit(3, "Private WAV admission rejected (details withheld)\\n")
     print(json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False))
