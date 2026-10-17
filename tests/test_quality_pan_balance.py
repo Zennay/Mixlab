@@ -164,7 +164,6 @@ class PanBalanceTests(unittest.TestCase):
         invalid_argvs = [
             [],
             [str(self.a)],
-            [str(self.a), str(self.b), str(self.root / "SECRET.EXTRA.WAV")],
             [str(self.a), str(self.b), "--unexpected=" + str(self.root / "SECRET.WAV")],
         ]
         for argv in invalid_argvs:
@@ -313,6 +312,99 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(invalid.returncode, 2)
         for receipt in (clean, reviewed, default, unknown, invalid):
             self.assertNotIn(str(self.root), receipt.stdout + receipt.stderr)
+
+    def test_group_two_candidates_scanned_anonymously_against_one_baseline(self):
+        wav(self.a)
+        wav(self.b, left=8000, right=2000)
+        other = self.root / "third private clip.wav"
+        wav(other, left=2000, right=2000)
+        result = pan_balance.inspect_batch(self.a, [self.b, other])
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["total_source_frames"], 3 * 8000)
+        self.assertEqual([r["candidate_id"] for r in result["candidates"]],
+                         ["candidate-01", "candidate-02"])
+        self.assertTrue(result["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        self.assertFalse(result["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertEqual(pan_balance.inspect_batch(self.a, [self.b])["candidate_count"], 1)
+
+    def test_group_prevalidates_every_shape_before_reading_first_pcm_sample(self):
+        wav(self.a)
+        wav(self.b)
+        other = self.root / "late malformed.wav"
+        wav(other, rate=16000)
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("Decoded before group preflight")):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect_batch(self.a, [self.b, other])
+
+    def test_group_rejects_duplicate_candidate_before_pcm(self):
+        wav(self.a)
+        wav(self.b)
+        alias = self.root / "duplicated hardlink.wav"
+        alias.hardlink_to(self.b)
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("Decoded before group alias check")):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect_batch(self.a, [self.b, alias])
+
+    def test_group_candidate_count_and_total_frames_bound_before_decode(self):
+        wav(self.a, frames=2_000_000)
+        others = []
+        for n in range(4):
+            candidate = self.root / f"private group-{n}.wav"
+            wav(candidate, frames=2_000_000)
+            others.append(candidate)
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("Decoded over-budget audio")):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect_batch(self.a, others)
+        with mock.patch.object(pan_balance, "_admit",
+                               side_effect=AssertionError("Admitted too many candidates")):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect_batch(self.a, ["private.wav"] * 8)
+
+    def test_group_rechecks_first_candidate_after_later_render_scan(self):
+        wav(self.a)
+        wav(self.b)
+        other = self.root / "last.wav"
+        wav(other)
+        orig = pan_balance._measure_open_pair
+        counter = 0
+
+        def mutate_previous_after_second(*args):
+            nonlocal counter
+            result = orig(*args)
+            counter += 1
+            if counter == 2:
+                wav(self.b, left=5000)
+            return result
+
+        with mock.patch.object(pan_balance, "_measure_open_pair",
+                               side_effect=mutate_previous_after_second):
+            with self.assertRaises(ValueError):
+                pan_balance.inspect_batch(self.a, [self.b, other])
+
+    def test_group_cli_strict_mode_returns_three_for_any_review_or_abstention(self):
+        wav(self.a)
+        wav(self.b)
+        third = self.root / "third.wav"
+        wav(third)
+        base = [sys.executable, "-m", "mixlab.quality.pan_balance",
+                str(self.a), str(self.b), str(third), "--fail-on-review"]
+        clean = subprocess.run(base, capture_output=True, text=True)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.assertEqual(json.loads(clean.stdout)["candidate_count"], 2)
+        wav(third, left=8000, right=2000)
+        warning = subprocess.run(base, capture_output=True, text=True)
+        self.assertEqual(warning.returncode, 3)
+        self.assertEqual(json.loads(warning.stdout)["candidates"][1]["candidate_id"],
+                         "candidate-02")
+        wav(third, frames=6000)
+        bad = subprocess.run(base, capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 2)
+        for output in (clean, warning, bad):
+            self.assertNotIn(str(self.root), output.stdout + output.stderr)
 
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
