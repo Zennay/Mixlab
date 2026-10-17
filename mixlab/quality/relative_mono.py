@@ -56,6 +56,7 @@ def assess(
             and candidate["silent_window_fraction"] <= MAX_SILENT_WINDOW_FRACTION
             and baseline["rms_dbfs"] is not None
             and candidate["rms_dbfs"] is not None
+            and shared is not None
         )
         if not adequate:
             status = "insufficient_stereo_evidence"
@@ -65,9 +66,6 @@ def assess(
             # *before* the costly aligned scan. Do not collapse this
             # explicit HOLD into "insufficient stereo evidence".
             status = "rms_level_confound"
-            delta = None
-        elif shared is None:
-            status = "insufficient_stereo_evidence"
             delta = None
         else:
             base_risk, candidate_risk = shared
@@ -191,20 +189,31 @@ def inspect(baseline: str, candidates: list[str]) -> dict:
     paths = (baseline, *candidates)
     identities = tuple(_admit_regular_path(path) for path in paths)
     report = compare_wavs(baseline, candidates, window_ms=WINDOW_MS)
-    # A canonically detected RMS confound or mono input cannot produce a
-    # meaningful stereo A/B verdict. Avoid a costly redundant second PCM
-    # read rather than trying to rehabilitate invalid listening evidence.
+    # Clear format, duration or silence admission failures already
+    # require abstention. Skip the expensive paired read for those cases,
+    # but *not* merely for a loudness mismatch: a sparse RMS-confounded
+    # candidate can also have zero credible common-frame phase evidence.
+    base = report["baseline"]
+    base_admissible = (
+        base["channels"] == 2
+        and base["duration_seconds"] >= MIN_DURATION_SECONDS
+        and base["silent_window_fraction"] <= MAX_SILENT_WINDOW_FRACTION
+        and base["rms_dbfs"] is not None
+    )
     paired = {}
     for index, candidate in enumerate(candidates, 1):
         row = report["candidates"][index - 1]
-        if (row.get("level_comparable_for_blind_ab") is True
-                and report["baseline"].get("channels") == 2
-                and row["metrics"].get("channels") == 2):
-            paired[f"candidate-{index:02d}"] = _paired_phase_fractions(
-                baseline, candidate
-            )
-        else:
-            paired[f"candidate-{index:02d}"] = None
+        data = row["metrics"]
+        candidate_admissible = (
+            data["channels"] == 2
+            and data["duration_seconds"] >= MIN_DURATION_SECONDS
+            and data["silent_window_fraction"] <= MAX_SILENT_WINDOW_FRACTION
+            and data["rms_dbfs"] is not None
+        )
+        paired[f"candidate-{index:02d}"] = (
+            _paired_phase_fractions(baseline, candidate)
+            if base_admissible and candidate_admissible else None
+        )
     if tuple(_admit_regular_path(path) for path in paths) != identities:
         raise ValueError("private PCM source changed during QA scan")
     return assess(report, paired)
