@@ -147,6 +147,14 @@ class EnergyOnsetProvider:
 
 class ManualProvider:
     """Explicit human annotations, kept separate from measured provider output."""
+    def __setattr__(self, name, value):
+        # MappingProxyType prevents item mutation. Prevent rebinding the
+        # attributes as well: a new config under an old cache version would
+        # otherwise silently change the meaning of a manual analysis.
+        if name in ("config", "version") and name in self.__dict__:
+            raise AttributeError("Versioned manual analysis settings are immutable")
+        super().__setattr__(name, value)
+
     def __init__(self, bpm, first_beat=0., downbeats=(), phrases=(), key=None, annotator=""):
         number(bpm, "bpm", 30, 300)
         number(first_beat, "first beat", 0, 250)
