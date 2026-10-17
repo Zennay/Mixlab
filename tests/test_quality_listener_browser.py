@@ -131,6 +131,35 @@ def _synthetic_pcm_wav(path: Path, *, sample_rate=8000, channels=2):
         wav.writeframes(pcm)
 
 
+_FULL_DECODE_SCRIPT = r"""
+(() => {
+  const result = value => {
+    document.documentElement.dataset.mixlabFullDecodeCheck = value;
+  };
+  try {
+    const raw = atob('__PCM_BASE64__');
+    const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+    // OfflineAudioContext does not require a physical playback device.
+    // decodeAudioData must parse ALL frames and produce non-silent PCM.
+    const context = new OfflineAudioContext(2, 3200, 8000);
+    context.decodeAudioData(bytes.buffer).then(buffer => {
+      const left = buffer.getChannelData(0);
+      const right = buffer.getChannelData(1);
+      const ok = buffer.sampleRate === 8000 &&
+        buffer.numberOfChannels === 2 && buffer.length === 3200 &&
+        Math.abs(left[100]) > 0.01 &&
+        Math.abs(left[100] + right[100]) < 0.001 &&
+        Math.abs(left[100]) < 1 &&
+        buffer.duration >= 0.39 && buffer.duration <= 0.41;
+      result(ok ? 'pass' : 'fail');
+    }).catch(() => result('fail'));
+  } catch (error) {
+    result('fail');
+  }
+})();
+"""
+
+
 _PLAYBACK_SCRIPT = r"""
 (() => {
   const clip = document.querySelector('fieldset audio');
@@ -471,6 +500,45 @@ class BrowserFormTests(unittest.TestCase):
         phase = stage.group(1) if stage else "no-stage"
         self.assertEqual(marker.group(1), "pass",
                          f"browser did not accept local PCM play request (phase: {phase})")
+
+    def test_browser_decodes_full_synthetic_pcm_without_audio_hardware(self):
+        """Full WebAudio PCM decode with a corrupt-data negative control."""
+        raw_wav = self.root / "synthetic-full-decode.wav"
+        _synthetic_pcm_wav(raw_wav, channels=2)
+        good_pcm = raw_wav.read_bytes()
+
+        def inspect(encoded, label):
+            page = self.root / ("decode-" + label + ".html")
+            script = _FULL_DECODE_SCRIPT.replace("__PCM_BASE64__", encoded)
+            page.write_text("<!doctype html><html lang='en'><script>" + script +
+                            "</script></html>", encoding="utf-8")
+            args = [
+                _BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+                "--disable-dev-shm-usage", "--disable-background-networking",
+                "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+                "--disable-sync", "--virtual-time-budget=4000",
+                "--user-data-dir=" + str(self.root / ("decode-profile-" + label)),
+                "--dump-dom", page.as_uri(),
+            ]
+            env = dict(os.environ)
+            env["HOME"] = str(self.root)
+            try:
+                done = subprocess.run(args, capture_output=True, text=True,
+                                      timeout=35, env=env)
+            except subprocess.TimeoutExpired:
+                self.fail("bounded Chromium offline decode timed out")
+            self.assertEqual(done.returncode, 0, "Chromium decode process failed")
+            match = re.search(
+                r'<html\\b[^>]*data-mixlab-full-decode-check="([^"]+)"',
+                done.stdout, flags=re.IGNORECASE
+            )
+            self.assertIsNotNone(match, "browser PCM decoder marker missing")
+            return match.group(1)
+
+        self.assertEqual(inspect(base64.b64encode(good_pcm).decode("ascii"),
+                                 "valid"), "pass")
+        self.assertEqual(inspect(base64.b64encode(b"not-a-wav").decode("ascii"),
+                                 "invalid"), "fail")
 
 
 if __name__ == "__main__":
