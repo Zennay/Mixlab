@@ -172,6 +172,22 @@ are constant-space and computed in the existing 4096-frame stream. It does not p
 creative anti-phase signal is defective. The primary ML-07 PCM/phase
 scanner remains necessary.
 
+A further **eight-span stereo channel-band timing** screen catches a
+different blind-comparability confound: bass and treble may trade sides
+over time, even though each channel's *whole-track* band energies and
+each span's *overall stereo* spectrum remain unchanged. For each of the
+8 private spans, each stereo channel retains only running low/mid/high
+energy sums and total energy (at most 64 floating-point accumulators).
+A/B matched, mutually audible, resolved channels are compared using
+the existing >=9dB temporal proxy threshold. At least 2 changed spans
+and >=25% of at least 3 eligible spans produce an anonymous
+`stereo_temporal_<band>_channel_spectral_shift_inspect` warning and
+a single aggregate mismatch fraction per band (or `null` when there
+is insufficient comparable evidence). No L/R direction, exact time
+position, PCM, source path, envelopes or per-source channel details
+are published. Intentional stereo automation is permitted creatively;
+this is an inspect-only warning.
+
 These filters are deliberately cheap, have gradual/overlapping responses,
 and are sensitive to DC, onsets and very short excerpts. The numbers are
 **not** disjoint frequency-band percentages, calibrated spectrum, true peak,
