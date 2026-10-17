@@ -254,19 +254,22 @@ def inspect_batch(baseline: str | os.PathLike[str],
                         "candidate_excess_bias_warning": result["candidate_excess_bias_warning"]})
     for entry in admitted:
         _verify_pair_source(entry["source"], entry["identity"])
-    states = [flag for item in details for flag in [item["warning"]]]
-    states += _compare_scans(ref, ref)["baseline_bias_warning"]
+    baseline_result = _compare_scans(ref, ref)
+    states = [item["warning"] for item in details]
+    states.extend(baseline_result["baseline_bias_warning"])
     overall = True if True in states else (None if None in states else False)
     return {
         "check": "local-dc-bias-batch-v1",
         "warning": overall,
-        "baseline_bias_warning": _compare_scans(ref, ref)["baseline_bias_warning"],
+        "baseline_bias_warning": baseline_result["baseline_bias_warning"],
         "channels": ref["channels"],
         "sample_rate": ref["sample_rate"],
         "frames": ref["frames"],
         "candidate_count": len(details),
         "candidates": details,
         "window_ms": WINDOW_MS,
+        "complete_windows": ref["window_count"],
+        "thresholds": baseline_result["thresholds"],
         "interpretation": "Technical DC confound only; not musical preference.",
     }
 
