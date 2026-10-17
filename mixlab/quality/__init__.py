@@ -163,6 +163,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             first_prominent_frame_by_channel = [None] * channels
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
+            window_channel_sample_sums = [0] * channels
+            # Private bounded per-window channel means; no PCM, positions,
+            # per-window curves, or source paths enter the JSON report.
+            dc_window_means = []
             window_mid_sum_squares = 0.0
             window_samples = 0
             window_peaks = []
@@ -193,6 +197,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
 
             def finish_window():
                 nonlocal window_sum_squares, window_channel_sum_squares, window_mid_sum_squares, window_samples
+                nonlocal window_channel_sample_sums
                 nonlocal silent_windows, windows, eligible_stereo_windows, phase_risk_windows
                 nonlocal partial_channel_loss_windows
                 nonlocal seen_audible_window, leading_silence_frames
@@ -200,6 +205,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
                     window_peaks.append(wrms)
+                    frames_in_window = window_samples // channels
+                    dc_window_means.append(tuple(
+                        sample_sum / frames_in_window / 32768
+                        for sample_sum in window_channel_sample_sums
+                    ))
                     if channels == 2:
                         frames_in_window = window_samples // channels
                         mono_fold_down_window_peaks.append(
@@ -239,6 +249,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     windows += 1
                     window_sum_squares = 0
                     window_channel_sum_squares = [0] * channels
+                    window_channel_sample_sums = [0] * channels
                     window_mid_sum_squares = 0.0
                     window_samples = 0
 
@@ -375,6 +386,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                         sum_squares += sample * sample
                         channel_sum_squares[ch] += sample * sample
                         window_channel_sum_squares[ch] += sample * sample
+                        window_channel_sample_sums[ch] += sample
                         sum_samples[ch] += sample
                         if previous is not None:
                             jump = abs(sample - previous[ch])
@@ -536,7 +548,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     ), edge_trimmed_pcm.digest(), tuple(
         fingerprint.digest() if fingerprint is not None else None
         for fingerprint in edge_transformed_pcm
-    ), channel_window_peaks, mono_fold_down_window_peaks
+    ), channel_window_peaks, mono_fold_down_window_peaks, dc_window_means
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -545,7 +557,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _, _, _, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _, _, _, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -704,6 +716,25 @@ def _ab_dc_offset_mismatch(baseline: dict, candidate: dict) -> tuple[float, bool
     return round(max_difference, 6), max_difference > AB_DC_OFFSET_MISMATCH_FS
 
 
+def _ab_window_dc_offset_mismatch(
+    base: list[tuple[float, ...]], candidate: list[tuple[float, ...]],
+    baseline_rms: list[float], candidate_rms: list[float]
+) -> tuple[float | None, bool]:
+    """Summarize sustained local DC differences without exposing envelopes."""
+    if not (len(base) == len(candidate) == len(baseline_rms) == len(candidate_rms)):
+        raise ValueError("Candidate DC window count differs from baseline")
+    audible = 0
+    mismatched = 0
+    for prior, new, prior_rms, new_rms in zip(base, candidate, baseline_rms, candidate_rms):
+        if max(prior_rms, new_rms) < SILENT_WINDOW_RMS:
+            continue
+        audible += 1
+        if any(abs(x - y) > AB_DC_OFFSET_MISMATCH_FS for x, y in zip(prior, new)):
+            mismatched += 1
+    fraction = round(mismatched / audible, 6) if audible else None
+    return fraction, audible >= 3 and mismatched / audible >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -755,7 +786,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             raise ValueError("Quality comparison exceeds the total PCM frame budget")
     if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
         raise ValueError("Private WAV input changed during quality comparison")
-    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest, _, base_channel_windows, base_fold_down_windows = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest, _, base_channel_windows, base_fold_down_windows, base_dc_windows = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
@@ -763,7 +794,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     seen_trimmed_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest, transformed_trimmed_digests, candidate_channel_windows, candidate_fold_down_windows = (
+        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest, transformed_trimmed_digests, candidate_channel_windows, candidate_fold_down_windows, candidate_dc_windows = (
             _scan_wav_with_digest(candidate, window_ms=window_ms)
         )
         for field in ("sample_rate", "channels", "frames"):
@@ -778,6 +809,13 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         )
         if ab_dc_offset_mismatch_risk:
             warnings.append("ab_channel_dc_offset_mismatch_inspect_for_clicks")
+        ab_dc_window_mismatch_fraction, ab_dc_window_mismatch_risk = (
+            _ab_window_dc_offset_mismatch(
+                base_dc_windows, candidate_dc_windows, base_windows, candidate_windows
+            )
+        )
+        if ab_dc_window_mismatch_risk:
+            warnings.append("ab_temporal_dc_offset_mismatch_inspect_for_clicks")
         short_window_level_mismatch_fraction, short_window_level_mismatch_risk, audible_level_windows = _short_window_level_confound(
             base_windows, candidate_windows
         )
@@ -931,6 +969,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "rms_delta_db_vs_baseline": level_difference,
             "ab_max_channel_dc_offset_delta_fs": ab_max_channel_dc_offset_delta_fs,
             "ab_dc_offset_mismatch_risk": ab_dc_offset_mismatch_risk,
+            "ab_dc_window_mismatch_fraction": ab_dc_window_mismatch_fraction,
+            "ab_dc_window_mismatch_risk": ab_dc_window_mismatch_risk,
             "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
             "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
             "stereo_channel_level_confound_risk": stereo_channel_level_confound_risk,
@@ -968,6 +1008,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 and not ab_mono_fold_down_window_level_confound_risk
                 and not mono_playback_level_confound_risk
                 and not ab_dc_offset_mismatch_risk
+                and not ab_dc_window_mismatch_risk
                 # Even if BOTH sides cancel perfectly, their identical
                 # global/window RMS is no evidence of usable mono playback.
                 and (base["channels"] != 2 or (
