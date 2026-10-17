@@ -15,7 +15,7 @@ import stat
 import sys
 import wave
 
-from . import MAX_SOURCE_BYTES, MAX_SOURCE_FRAMES, SILENT_WINDOW_RMS
+from . import ACTIVE_CHANNEL_RMS, MAX_SOURCE_BYTES, MAX_SOURCE_FRAMES, SILENT_WINDOW_RMS
 
 LOW_PASS_HZ = 180
 HIGH_PASS_HZ = 2500
@@ -171,6 +171,14 @@ def scan_spectral_proxy(
     }
 
 
+def _severe_stereo_channel_loss(metrics: dict) -> bool:
+    """One channel near-silent while the other carries substantial energy."""
+    if metrics["channels"] != 2:
+        return False
+    levels = [channel[3] for channel in metrics["_channels"]]
+    return (min(levels) < SILENT_WINDOW_RMS and max(levels) > ACTIVE_CHANNEL_RMS)
+
+
 def compare_spectral_balance(
     baseline: str | Path, candidates: list[str | Path], *, threshold_db: float = DEFAULT_THRESHOLD_DB
 ) -> dict:
@@ -205,6 +213,8 @@ def compare_spectral_balance(
         warnings = []
         if current["_source_key"] in seen_sources:
             warnings.append("same_input_file_inspect_for_blind_noop")
+        if _severe_stereo_channel_loss(reference) or _severe_stereo_channel_loss(current):
+            warnings.append("stereo_channel_near_silence_inspect")
         seen_sources.add(current["_source_key"])
         deltas = {}
         if reference["_rms"] < SILENT_WINDOW_RMS or current["_rms"] < SILENT_WINDOW_RMS:
