@@ -217,3 +217,100 @@ jobs:
           finally:
               fixture.tearDownClass()
           PY
+
+      - name: Upper-budget ten-pair twenty-source real renderer proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          import math
+          from mixlab.cli import digest, dump
+          from mixlab.engine import write_wav
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.evaluation.study import freeze, write_exclusive
+          from mixlab.evaluation.study_pack import build
+          from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+
+          spec = importlib.util.spec_from_file_location(
+              "real_ten_pair_ml05_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              candidates = json.loads((fixture.root / "candidates.json").read_text())
+              library = json.loads(fixture.manifest.read_text())
+              keys = ("C major", "G major", "A minor", "D minor", "E major")
+              for index in range(6, 20):
+                  path = fixture.manifest.parent / f"unique-{index}.wav"
+                  rate = 8000
+                  tone = 93.0 + index * 13.7
+                  write_wav(path, rate, [
+                      (.22 * math.sin(2 * math.pi * tone * frame / rate),)
+                      for frame in range(5 * rate)])
+                  sha = digest(path)
+                  library["tracks"].append({
+                      "id": f"unique-{index}", "path": path.name,
+                      "sha256": sha, "bpm": 120.0,
+                      "rights": "synthetic", "provenance": "Procedural ten-pair QA"})
+                  candidates["tracks"].append({
+                      "id": f"unique-{index}", "sha256": sha, "bpm": 120.0,
+                      "key": keys[index % len(keys)], "key_source": "manual",
+                      "rights": "synthetic", "split": "evaluation"})
+              candidate_path = fixture.root / "twenty-original-sources.json"
+              candidate_path.write_text(json.dumps(candidates))
+              frozen = None
+              for seed in range(50):
+                  try:
+                      frozen = freeze(candidate_path, 10, seed, max_track_uses=1)
+                      break
+                  except ValueError:
+                      continue
+              assert frozen is not None, "Could not select 10 disjoint frozen pairs"
+              assert len(frozen["pairs"]) == 10
+              assert len({pair[key] for pair in frozen["pairs"]
+                          for key in ("a_sha256", "b_sha256")}) == 20
+              frozen_path = fixture.root / "twenty-source-study.json"
+              write_exclusive(frozen_path, frozen)
+              library["pairs"] = [
+                  {"id": f"{pair['a']}-{pair['b']}", "a": pair["a"], "b": pair["b"],
+                   "a_start": 1.0, "b_start": 0.0, "bpm": 120.0, "beats": 4}
+                  for pair in frozen["pairs"]]
+              manifest = fixture.manifest.parent / "twenty-source-library.json"
+              dump(manifest, library)
+              pack = fixture.root / "disjoint-ten-pair-pack"
+              build(manifest, frozen_path, pack, seed=4)
+              receipt, evidence, trials = verify_pack(pack)
+              assert len(trials) == 10
+              assert receipt["render_count"] == 20
+              assert evidence["study_id"] == frozen["study_id"]
+              raters = []
+              for reviewer in range(3):
+                  path = fixture.root / f"ten-pair-synthetic-rater-{reviewer}.json"
+                  path.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"tenpair-{reviewer}",
+                      "ratings": [
+                          {"trial": tid, "preference":
+                           ("A" if trial["A"] != "baseline" else "B")}
+                          for tid, trial in sorted(trials.items())],
+                  }))
+                  raters.append(path)
+              assert aggregate(pack, raters)["counts"]["candidate"] == 30
+              result = inspect_real_pilot(frozen_path, pack, frozen["study_id"], raters)
+              assert result["shared_source_across_pairs_detected"] is False
+              assert result["frozen_pair_count"] == 10
+              assert result["one_sided_pair_sign_reference_probability"] == 1 / 1024
+              assert result["worst_leave_one_pair_out_reference_probability"] == 1 / 512
+              assert result["one_pair_omission_removes_nominal_signal"] is False
+              assert result["human_musical_preference_proven"] is False
+              assert result["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(result)
+              print("Real ML-05 upper bound: ten frozen pairs, twenty disjoint PCM sources, 30 synthetic votes, 1/1024 vs 1/512; NEVER milestone-pass")
+          finally:
+              fixture.tearDownClass()
+          PY
