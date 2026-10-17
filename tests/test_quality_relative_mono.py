@@ -124,6 +124,32 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["status"], "non_independent_ab_audio")
         self.assertFalse(result["milestone_pass"])
 
+    def test_swapped_second_candidate_is_held_without_rejecting_first(self):
+        _wave(self.base, mode="alternate")
+        first = self.root / "first-new-stereo.wav"
+        second = self.root / "swapped-first-stereo.wav"
+        _wave(first, mode="stereo")
+        _wave(second, mode="stereo-swapped")
+        report = inspect(str(self.base), [str(first), str(second)])
+        self.assertEqual(
+            [row["status"] for row in report["candidates"]],
+            ["no_new_sustained_mono_cancellation_detected", "non_independent_ab_audio"],
+        )
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_inverted_second_candidate_is_held_without_rejecting_first(self):
+        _wave(self.base, mode="alternate")
+        first = self.root / "first-new.wav"
+        second = self.root / "inverted-first.wav"
+        _wave(first, mode="normal")
+        _wave(second, mode="polarity")
+        report = inspect(str(self.base), [str(first), str(second)])
+        self.assertEqual(
+            [row["status"] for row in report["candidates"]],
+            ["no_new_sustained_mono_cancellation_detected", "non_independent_ab_audio"],
+        )
+        self.assertNotIn(str(self.root), json.dumps(report))
+
     def test_polarity_inverted_audio_is_not_independent_transition(self):
         _wave(self.base, mode="normal")
         _wave(self.candidate, mode="polarity")
