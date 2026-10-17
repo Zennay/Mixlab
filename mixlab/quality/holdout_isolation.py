@@ -59,6 +59,36 @@ def _snapshot(manifest, tracks):
 
 
 
+
+def _pcm_exact_transform_variants(raw: bytes, channels: int) -> set[bytes]:
+    """Exact integer-PCM transformations, deliberately not acoustic matching.
+
+    Detect reuse after stereo L/R exchange, signed polarity inversion, and
+    precise 2x gain, including their combinations. Fail closed on signed16
+    overflow by *omitting* the impossible transform. No lossy quantization or
+    guessed gain ratio: positive hits are byte-identical genuine PCM reuse.
+    """
+    if channels not in (1, 2) or len(raw) % (channels * 2):
+        _refuse()
+    source = array("h")
+    source.frombytes(raw)
+    frames = tuple(source)
+    candidates = {raw}
+    for stereo_swap in ((False, True) if channels == 2 else (False,)):
+        if stereo_swap:
+            values = [value for i in range(0, len(frames), 2)
+                      for value in (frames[i + 1], frames[i])]
+        else:
+            values = frames
+        for gain in (1, -1, 2, -2):
+            if not all(-32768 <= value * gain <= 32767 for value in values):
+                continue
+            output = array("h", (value * gain for value in values))
+            candidates.add(output.tobytes())
+    return candidates
+
+
+
 def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     """Bounded exact audible excerpt reuse screen, no fingerprints disclosed.
 
@@ -66,6 +96,8 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     that is byte-for-byte reused is enough to hold for provenance review.
     This catches clips cut from a longer source with different container and
     full-file PCM digests, *provided their sample rate/channels still match*.
+    Anchors also cover exact polarity inversion, L/R swap, and 2x gain
+    combinations; these are deterministic PCM operations, not music matching.
 
     At most 3 anchored windows per source and at most 50 total sources;
     all source reads are streamed through the validated single-FD PCM reader.
@@ -93,8 +125,9 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                 # false leakage from common zeros, padding and quiet tails.
                 if sum(abs(sample) for sample in values) < 512 * len(values):
                     continue
-                by_format.setdefault((rate, channels), []).append(
-                    (group, tid, pcm))
+                for variant in _pcm_exact_transform_variants(pcm, channels):
+                    by_format.setdefault((rate, channels), []).append(
+                        (group, tid, variant))
 
     for group, tracks in groups:
         for tid, track in tracks.items():
