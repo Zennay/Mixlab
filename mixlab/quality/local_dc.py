@@ -81,7 +81,7 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
         final = path.lstat()
         if not stat.S_ISREG(final.st_mode) or _identity(final) != _identity(before):
             raise ValueError("private WAV path changed during scanning")
-        return {"channels": channels, "sample_rate": rate, "frames": frames,
+        return {"_identity": _identity(before), "channels": channels, "sample_rate": rate, "frames": frames,
                 "window_count": len(means), "means": means}
     except (OSError, EOFError, wave.Error, struct.error, OverflowError) as exc:
         raise ValueError("private WAV could not be safely inspected") from None
@@ -104,6 +104,15 @@ def _run_state(flags: list[bool], *, enough_windows: bool) -> bool | None:
     return False
 
 
+def _verify_pair_source(source: str | os.PathLike[str], expected: tuple[int, ...]) -> None:
+    try:
+        after = Path(source).lstat()
+        if not stat.S_ISREG(after.st_mode) or _identity(after) != expected:
+            raise ValueError("private WAV changed during pair inspection")
+    except OSError:
+        raise ValueError("private WAV changed during pair inspection") from None
+
+
 def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str]) -> dict:
     """Compare equal-length PCM16 sources without exposing either location."""
     ref = _scan_private_pcm(baseline)
@@ -124,7 +133,7 @@ def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str])
              for old, new in zip(ref["means"], alt["means"])],
             enough_windows=n >= MIN_SUSTAINED_WINDOWS,
         ))
-    all_states = baseline_states + excess_states
+    _verify_pair_source(baseline, ref["_identity"])\n    _verify_pair_source(candidate, alt["_identity"])\n    all_states = baseline_states + excess_states
     warning = True if True in all_states else (None if None in all_states else False)
     return {
         "check": "local-dc-bias-v1",
@@ -143,8 +152,15 @@ def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str])
     }
 
 
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # argparse's default error includes unknown option values, possibly
+        # absolute private audio paths. Never let it write usage or arguments.
+        raise ValueError("Invalid options")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline, private local DC bias preflight")
+    parser = _PrivateArgumentParser(description="Offline, private local DC bias preflight")
     parser.add_argument("baseline")
     parser.add_argument("candidate")
     parser.add_argument("--strict", action="store_true",
