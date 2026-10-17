@@ -38,7 +38,7 @@ def _capture(value):
 
 
 def _shape(row, *, trials, reviewers, count_field, reviewer_field):
-    if (type(row) is not dict or row.get("schema_version") != 1
+    if (type(row) is not dict or type(row.get("schema_version")) is not int\n            or row["schema_version"] != 1
             or row.get("milestone_pass") is not False
             or type(row.get(count_field)) is not int
             or row[count_field] != trials
@@ -56,7 +56,7 @@ def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, ra
     """
     if type(rating_count) is not int or not 3 <= rating_count <= 5:
         _fail()
-    if (type(binding) is not dict or binding.get("schema_version") != 1
+    if (type(binding) is not dict or type(binding.get("schema_version")) is not int\n            or binding["schema_version"] != 1
             or binding.get("study_pack_metadata_consistent_with_pinned_id") is not True
             or binding.get("milestone_pass") is not False
             or type(binding.get("trial_count")) is not int
