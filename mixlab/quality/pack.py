@@ -227,16 +227,38 @@ def _verify_neutral_public_wav(path: Path) -> None:
         if (len(riff) != 12 or riff[:4] != b"RIFF" or riff[8:] != b"WAVE"
                 or int.from_bytes(riff[4:8], "little") + 8 != size):
             raise ValueError("Review public WAV has invalid RIFF bounds")
+        block_align = None
         for expected in (b"fmt ", b"data"):
             chunk = source.read(8)
             if len(chunk) != 8 or chunk[:4] != expected:
                 raise ValueError("Review public WAV contains unexpected RIFF chunks")
             length = int.from_bytes(chunk[4:8], "little")
             if ((expected == b"fmt " and length != 16)
-                    or (expected == b"data" and length % 2)
                     or length > size - source.tell()):
                 raise ValueError("Review public WAV has invalid PCM chunk bounds")
-            source.seek(length + length % 2, 1)
+            if expected == b"fmt ":
+                # wave.open() accepts inconsistent byte_rate/block_align.
+                # Such headers can conceal metadata or play differently on
+                # other clients despite valid-looking sample diagnostics.
+                fmt = source.read(16)
+                if len(fmt) != 16:
+                    raise ValueError("Review public WAV has invalid PCM chunk bounds")
+                encoding = int.from_bytes(fmt[0:2], "little")
+                channels = int.from_bytes(fmt[2:4], "little")
+                rate = int.from_bytes(fmt[4:8], "little")
+                byte_rate = int.from_bytes(fmt[8:12], "little")
+                block_align = int.from_bytes(fmt[12:14], "little")
+                bits_per_sample = int.from_bytes(fmt[14:16], "little")
+                if (encoding != 1 or channels not in (1, 2)
+                        or not 8000 <= rate <= 96000
+                        or bits_per_sample != 16
+                        or block_align != 2 * channels
+                        or byte_rate != rate * block_align):
+                    raise ValueError("Review public WAV has inconsistent PCM format metadata")
+            else:
+                if length % block_align:
+                    raise ValueError("Review public WAV has incomplete PCM frames")
+                source.seek(length, 1)
         if source.tell() != size:
             raise ValueError("Review public WAV contains extra payload or metadata")
 

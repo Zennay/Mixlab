@@ -1259,6 +1259,59 @@ class QualityTests(unittest.TestCase):
         self.assertNotIn("isolated_sample_impulse_inspect_for_clicks",
                          report["candidates"][0]["warnings"])
 
+    def test_public_stereo_wav_requires_consistent_pcm_header_and_full_frames(self):
+        # Python's wave reader may accept bogus byte rates/block sizes.
+        # A listener's player can interpret those headers differently.
+        review = self.root / "canonical-header-review"
+        review.mkdir()
+        a, b = review / "trial-001-A.wav", review / "trial-001-B.wav"
+        stereo = [x for sample in self.samples for x in (sample, sample)]
+        wav(a, stereo, channels=2)
+        wav(b, stereo, channels=2)
+        original = a.read_bytes()
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+        modifications = (
+            (28, bytes(4)),  # byte_rate disagrees with 8000*4
+            (32, bytes(2)),  # invalid block_align
+            (32, (2).to_bytes(2, "little")),  # nominally mono alignment
+            (20, (3).to_bytes(2, "little")),  # IEEE float, not PCM16
+            (34, (8).to_bytes(2, "little")),  # inconsistent bit depth
+            (24, bytes(4)),  # impossible sample rate
+        )
+        for offset, replacement in modifications:
+            with self.subTest(offset=offset, replacement=replacement):
+                changed = bytearray(original)
+                changed[offset:offset + len(replacement)] = replacement
+                a.write_bytes(changed)
+                with patch("mixlab.quality.pack.compare_wavs",
+                           side_effect=AssertionError("PCM scanned before RIFF validation")):
+                    with self.assertRaisesRegex(ValueError, "inconsistent PCM format metadata"):
+                        inspect_review_pack(review)
+                a.write_bytes(original)
+
+        # Stereo data contains an extra 16-bit word: wave.open() may silently
+        # discard it because it is not a complete four-byte stereo frame.
+        extra = bytearray(original + bytes([0x12, 0x34]))
+        extra[4:8] = (len(extra) - 8).to_bytes(4, "little")
+        old_data_size = int.from_bytes(extra[40:44], "little")
+        extra[40:44] = (old_data_size + 2).to_bytes(4, "little")
+        a.write_bytes(extra)
+        with wave.open(str(a), "rb") as source:
+            self.assertEqual(len(self.samples), source.getnframes())
+        with patch("mixlab.quality.pack.compare_wavs",
+                   side_effect=AssertionError("PCM scanned before RIFF validation")):
+            with self.assertRaisesRegex(ValueError, "incomplete PCM frames"):
+                inspect_review_pack(review)
+        invalid = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(3, invalid.returncode)
+        self.assertFalse(invalid.stdout)
+        self.assertNotIn(str(self.root), invalid.stderr)
+        a.write_bytes(original)
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)

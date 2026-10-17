@@ -347,3 +347,23 @@ coordinates or raw audio. Highly percussive or deliberately synthesized
 single-frame sounds may be legitimate: warnings require human listening and
 are never interpreted as musical preference, clipping proof or an overall
 quality score.
+
+
+### Canonical PCM16 header consistency for published review audio
+
+Beyond forbidding extra RIFF metadata, each neutral `trial-###-A/B.wav`
+must have internally consistent **little-endian PCM16** `fmt ` fields:
+format code 1 (not floating-point), 1–2 channels, sample rate 8–96 kHz,
+16 bits per sample, `block_align = channels × 2`, and
+`byte_rate = sample_rate × block_align`. The `data` chunk must
+contain a whole number of interleaved frames (`size % block_align == 0`).
+Python's `wave.open` can ignore an inconsistent byte-rate or block-align
+value and silently truncate a partial stereo frame; other players need
+not interpret those bytes identically. Rejecting such public containers
+before sample-level quality analysis prevents avoidable playback
+differences and hidden non-audio bytes inside a partial final frame.
+
+This strictness applies only to neutral *public review copies*. The
+private ingest/render contracts and original rights/permission
+requirements are unchanged. A validated header is not an authenticated
+asset signature or evidence of musical preference.
