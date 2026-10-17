@@ -62,6 +62,23 @@ class PrecisionTest(unittest.TestCase):
         wav(self.b, coarse=(0,), coarse_offset=7)
         self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
 
+    def test_detects_11_and_12_bit_equivalent_quantization(self):
+        wav(self.a)
+        for step, offset in ((32, 3), (16, 5), (128, 9)):
+            with self.subTest(step=step):
+                wav(self.b, coarse=(0,), coarse_step=step, coarse_offset=offset)
+                self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_baseline_equally_12_bit_coarse_is_not_a_precision_loss(self):
+        wav(self.a, coarse=(0,), coarse_step=16, coarse_offset=3)
+        wav(self.b, coarse=(0,), coarse_step=16, coarse_offset=5)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_eight_sample_step_is_below_conservative_detection_resolution(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_step=8, coarse_offset=3)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
     def test_detects_offset_10_bit_quantizer(self):
         wav(self.a)
         wav(self.b, coarse=(0,), coarse_step=64, coarse_offset=17)
