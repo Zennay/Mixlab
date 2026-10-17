@@ -634,6 +634,98 @@ class PrivateFdGuardTests(unittest.TestCase):
                 self.assertNotIn("SECRET_NOT_FOUND", proc.stderr)
                 self.assertNotIn(str(self.root), proc.stderr)
 
+    def test_strict_neutral_single_and_ab_report_without_private_metadata(self):
+        candidate = self.root / "private-strict-candidate.wav"
+        make_wav(candidate)
+        single = validate_private_pcm16(self.source, require_neutral_container=True)
+        group = validate_private_ab_group(
+            [self.source, candidate], require_neutral_container=True
+        )
+        self.assertTrue(single["neutral_container_verified"])
+        self.assertTrue(group["neutral_container_verified"])
+        self.assertNotIn("neutral_container_verified", validate_private_pcm16(self.source))
+        self.assertNotIn(
+            "neutral_container_verified", validate_private_ab_group([self.source, candidate])
+        )
+        self.assertNotIn(str(self.root), json.dumps([single, group]))
+
+    def test_strict_neutral_rejects_pre_data_metadata_without_changing_default(self):
+        original = self.source.read_bytes()
+        junk = b"JUNK" + struct.pack("<I", 8) + b"PRIVATE!"
+        tagged = bytearray(original[:36] + junk + original[36:])
+        tagged[4:8] = struct.pack("<I", len(tagged) - 8)
+        self.source.write_bytes(tagged)
+        self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            validate_private_pcm16(self.source, require_neutral_container=True)
+
+    def test_strict_neutral_rejects_hidden_trailers_inside_and_outside_riff(self):
+        original = self.source.read_bytes()
+        appended = b"JUNK" + struct.pack("<I", 8) + b"SECRET!!"
+        for update_riff_size in (False, True):
+            with self.subTest(inside_riff=update_riff_size):
+                augmented = bytearray(original + appended)
+                if update_riff_size:
+                    augmented[4:8] = struct.pack("<I", len(augmented) - 8)
+                self.source.write_bytes(augmented)
+                self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    validate_private_pcm16(self.source, require_neutral_container=True)
+
+    def test_strict_neutral_ab_rejects_metadata_before_any_audio_read(self):
+        candidate = self.root / "private-CANDIDATE_METADATA.wav"
+        make_wav(candidate)
+        original = candidate.read_bytes()
+        metadata = b"JUNK" + struct.pack("<I", 8) + b"SOURCE!!"
+        mutated = bytearray(original[:36] + metadata + original[36:])
+        mutated[4:8] = struct.pack("<I", len(mutated) - 8)
+        candidate.write_bytes(mutated)
+        with patch.object(wave.Wave_read, "readframes",
+                          side_effect=AssertionError("must fail before PCM reads")) as read:
+            with self.assertRaisesRegex(ValueError, "details withheld") as error:
+                validate_private_ab_group(
+                    [self.source, candidate], require_neutral_container=True
+                )
+            read.assert_not_called()
+        self.assertNotIn(str(self.root), str(error.exception))
+        self.assertTrue(validate_private_ab_group(
+            [self.source, candidate]
+        )["shape_comparable"])
+
+    def test_neutral_container_argument_must_be_boolean(self):
+        for value in (0, 1, None, "true", [], float("nan")):
+            with self.subTest(value=repr(value)):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    validate_private_pcm16(self.source, require_neutral_container=value)
+
+    def test_neutral_container_cli_group_and_single_privacy(self):
+        candidate = self.root / "PRIVATE_CANONICAL.wav"
+        make_wav(candidate)
+        commands = (
+            [str(self.source), "--require-neutral-container"],
+            ["--ab-group", str(self.source), str(candidate), "--require-neutral-container"],
+        )
+        for arguments in commands:
+            with self.subTest(group="--ab-group" in arguments):
+                proc = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.fd_guard", *arguments],
+                    capture_output=True, text=True
+                )
+                self.assertEqual(0, proc.returncode, proc.stderr)
+                self.assertTrue(json.loads(proc.stdout)["neutral_container_verified"])
+                self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
+        with open(candidate, "ab") as file:
+            file.write(b"SECRET_TRAILER")
+        proc = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.fd_guard",
+             "--ab-group", str(self.source), str(candidate), "--require-neutral-container"],
+            capture_output=True, text=True
+        )
+        self.assertEqual(3, proc.returncode)
+        self.assertFalse(proc.stdout)
+        self.assertNotIn(str(self.root), proc.stderr)
+        self.assertNotIn("SECRET", proc.stderr)
+
     def test_outputs_no_private_path_or_audio_and_no_writes(self):
         original = self.source.read_bytes()
         with admitted_pcm16(self.source) as reader:
