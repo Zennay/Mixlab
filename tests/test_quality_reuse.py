@@ -224,5 +224,34 @@ class PcmReuseTests(unittest.TestCase):
             self.row()
 
 
+    def test_temporal_stale_channel_hidden_by_global_mix_change(self):
+        stereo = [v for s in self.samples for v in (s, -s)]
+        candidate = []
+        for i, sample in enumerate(self.samples):
+            # First 3/8 windows retain L while R changes; remaining 5/8
+            # change both channels. Global L reuse is only 37.5%.
+            candidate.extend((sample if i < 6000 else -sample, sample + 50))
+        write_wav(self.baseline, stereo, channels=2)
+        write_wav(self.candidate, candidate, channels=2)
+        row = self.row()
+        self.assertNotIn("stereo_single_channel_stale_pcm_inspect", row["warnings"])
+        self.assertIn("stereo_temporal_single_channel_stale_pcm_inspect", row["warnings"])
+        self.assertEqual(0.375, row["stereo_temporal_stale_window_fraction"])
+
+    def test_one_temporal_stale_window_not_persistent(self):
+        stereo = [v for s in self.samples for v in (s, -s)]
+        candidate = []
+        for i, sample in enumerate(self.samples):
+            candidate.extend((sample if i < 2000 else -sample, sample + 50))
+        write_wav(self.baseline, stereo, channels=2)
+        write_wav(self.candidate, candidate, channels=2)
+        row = self.row()
+        self.assertEqual(0.125, row["stereo_temporal_stale_window_fraction"])
+        self.assertNotIn("stereo_temporal_single_channel_stale_pcm_inspect", row["warnings"])
+
+    def test_mono_temporal_metric_null(self):
+        self.assertIsNone(self.row()["stereo_temporal_stale_window_fraction"])
+
+
 if __name__ == "__main__":
     unittest.main()
