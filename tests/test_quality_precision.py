@@ -15,17 +15,19 @@ from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 
 
 def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
-        seed=1, rate=48000, quiet_channels=()):
+        seed=1, rate=48000, quiet_channels=(), coarse_step=256,
+        coarse_offset=0, coarse_regions=()):
     state = seed
     samples = array("h")
-    for _ in range(frames):
+    for frame in range(frames):
         for channel in range(channels):
             state = (1103515245 * state + 12345) & 0x7fffffff
             value = ((state >> 8) & 0xffff) - 32768
             if silence or channel in quiet_channels:
                 value = 0
-            elif channel in coarse:
-                value = (value // 256) * 256
+            elif channel in coarse and (not coarse_regions or
+                    min(7, (frame * 8) // frames) in coarse_regions):
+                value = (value // coarse_step) * coarse_step + coarse_offset
             samples.append(value)
     # Fixtures are little-endian PCM16, independent of test host byte order.
     if sys.byteorder != "little":
@@ -52,6 +54,39 @@ class PrecisionTest(unittest.TestCase):
         self.assertTrue(result["candidate_precision_loss_inspect"])
         self.assertEqual(result["warnings"], ["candidate_low_bit_precision_loss_inspect"])
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_detects_offset_8_bit_quantizer(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_offset=7)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_detects_offset_10_bit_quantizer(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_step=64, coarse_offset=17)
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_baseline_coarse_with_different_offset_does_not_create_false_positive(self):
+        wav(self.a, coarse=(0,), coarse_offset=5)
+        wav(self.b, coarse=(0,), coarse_offset=7)
+        self.assertIs(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"], False)
+
+    def test_two_separated_quantized_regions_are_detected(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_offset=7, coarse_regions=(0, 6))
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_one_quantized_region_does_not_establish_persistent_loss(self):
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_regions=(7,))
+        self.assertIsNone(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_regional_offset_loss_is_chunk_independent(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(1,), coarse_offset=9,
+            coarse_regions=(1, 5))
+        self.assertEqual(compare_precision(self.a, self.b, chunk_frames=1),
+                         compare_precision(self.a, self.b, chunk_frames=4096))
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
 
     def test_detects_loss_in_only_one_stereo_channel(self):
         wav(self.a, channels=2)
