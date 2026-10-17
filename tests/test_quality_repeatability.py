@@ -253,6 +253,33 @@ class RepeatabilityTests(unittest.TestCase):
         with self.assertRaises(RepeatabilityError):
             verify_repeatability(one, two, receipts=(first_receipt, second_receipt))
 
+    def test_valid_riff_metadata_may_differ_without_changing_pcm(self):
+        # A legal unknown RIFF chunk does not change playback PCM; the
+        # PCM-only mode must not turn into a whole-container byte comparator.
+        # Receipt-bound mode requires each *individual* updated WAV digest.
+        import copy
+        import hashlib
+        import struct
+
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        original = two.read_bytes()
+        self.assertEqual(b"RIFF", original[:4])
+        self.assertEqual(b"data", original[36:40])  # canonical PCM16 fixture
+        junk = b"JUNK" + struct.pack("<I", 5) + b"noise" + b"\x00"
+        modified = original[:36] + junk + original[36:]
+        modified = modified[:4] + struct.pack("<I", len(modified) - 8) + modified[8:]
+        two.write_bytes(modified)
+        with wave.open(str(two), "rb") as reader:
+            self.assertEqual(4000, reader.getnframes())
+        self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
+        with self.assertRaises(RepeatabilityError):
+            verify_repeatability(one, two, receipts=(ra, rb))
+        updated_receipt = copy.deepcopy(rb)
+        updated_receipt["output_sha256"] = hashlib.sha256(modified).hexdigest()
+        report = verify_repeatability(one, two, receipts=(ra, updated_receipt))
+        self.assertTrue(report["repeatable_pcm"])
+        self.assertTrue(report["render_receipts_consistent"])
+
     def test_receipt_recipe_input_and_output_tampering_fail_closed(self):
         import copy
         one, two, original_a, original_b = self._render_fixture_with_receipts()
