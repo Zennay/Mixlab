@@ -227,6 +227,25 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "details withheld"):
                 bitdepth.inspect_ab(self.base, candidates)
 
+    def test_unbounded_candidate_iterator_is_stopped_before_source_admission(self):
+        def candidate_stream():
+            for _ in range(8):
+                yield self.good
+            raise AssertionError("unbounded candidate stream was consumed")
+        with patch.object(bitdepth, "_open_source",
+                          side_effect=AssertionError("source open before count validation")):
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                bitdepth.inspect_ab(self.base, candidate_stream())
+
+    def test_iterator_failure_does_not_leak_private_details(self):
+        def broken_candidates():
+            yield self.good
+            raise RuntimeError("private-track-name-from-iterator")
+        with self.assertRaises(ValueError) as context:
+            bitdepth.inspect_ab(self.base, broken_candidates())
+        self.assertNotIn("private-track-name", str(context.exception))
+        self.assertIn("details withheld", str(context.exception))
+
     def test_aggregate_admission_rejects_before_read(self):
         with patch.object(bitdepth, "_scan", side_effect=AssertionError("PCM read started")):
             with self.assertRaisesRegex(ValueError, "details withheld"):
