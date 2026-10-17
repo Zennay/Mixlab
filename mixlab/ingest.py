@@ -102,28 +102,67 @@ def inspect_wav(path):
     return info
 
 def pcm_blocks(path, start=0, frames=None, block_frames=4096):
-    """Yield interleaved native int16 arrays; caller validates metadata first."""
+    """Stream bounded PCM16 from one regular descriptor, rejecting visible edits.
+
+    Unlike re-opening a previously validated filename, RIFF validation and
+    decoded PCM share the same descriptor. Post-read inode/size/mtime/ctime
+    checks detect ordinary concurrent edits and path replacement; they are
+    not an atomic snapshot against a hostile same-metadata writer.
+    """
     if type(block_frames) is not int or not 1 <= block_frames <= 65536:
         raise ValueError("Invalid block size")
-    with wave.open(str(path), "rb") as source:
-        channels = source.getnchannels()
-        if type(start) is not int or start < 0 or start > source.getnframes():
-            raise ValueError("Invalid start frame")
-        remaining = source.getnframes() - start if frames is None else frames
-        if type(remaining) is not int or remaining < 0 or start + remaining > source.getnframes():
-            raise ValueError("Invalid frame range")
-        source.setpos(start)
-        while remaining:
-            size = min(block_frames, remaining)
-            raw = source.readframes(size)
-            if len(raw) != size * channels * 2:
-                raise ValueError("Truncated WAV data")
-            values = array("h")
-            values.frombytes(raw)
-            if sys.byteorder != "little":
-                values.byteswap()
-            yield values
-            remaining -= size
+    path = Path(path)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        initial = os.lstat(path)
+        if not stat.S_ISREG(initial.st_mode):
+            raise ValueError("PCM source must be a regular file")
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("PCM source is not an accessible regular WAV") from exc
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(before.st_mode) or
+                    not 0 < before.st_size <= MAX_BYTES or
+                    _source_snapshot(initial) != _source_snapshot(before)):
+                raise ValueError("PCM source size or identity invalid")
+            try:
+                with wave.open(stream, "rb") as source:
+                    channels, width, rate, count, compression, _ = source.getparams()
+                    if (channels not in (1, 2) or width != 2 or compression != "NONE" or
+                            not 8000 <= rate <= 96000 or not 1 <= count <= MAX_FRAMES):
+                        raise ValueError("Only bounded PCM16 mono/stereo WAV is supported")
+                    if type(start) is not int or start < 0 or start > count:
+                        raise ValueError("Invalid start frame")
+                    remaining = count - start if frames is None else frames
+                    if type(remaining) is not int or remaining < 0 or start + remaining > count:
+                        raise ValueError("Invalid frame range")
+                    source.setpos(start)
+                    while remaining:
+                        size = min(block_frames, remaining)
+                        raw = source.readframes(size)
+                        if len(raw) != size * channels * 2:
+                            raise ValueError("Truncated WAV data")
+                        values = array("h")
+                        values.frombytes(raw)
+                        if sys.byteorder != "little":
+                            values.byteswap()
+                        yield values
+                        remaining -= size
+            except (wave.Error, EOFError) as exc:
+                raise ValueError("Invalid PCM16 WAV source") from exc
+            after = os.fstat(stream.fileno())
+    except OSError as exc:
+        raise ValueError("PCM source changed while reading") from exc
+    try:
+        final = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("PCM source changed while reading") from exc
+    if (not stat.S_ISREG(final.st_mode) or
+            _source_snapshot(before) != _source_snapshot(after) or
+            _source_snapshot(before) != _source_snapshot(final)):
+        raise ValueError("PCM source changed while reading")
 
 
 def _identifier(value, name):
