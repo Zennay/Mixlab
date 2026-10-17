@@ -36,7 +36,10 @@ def _source_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES) -> dict:
+def scan_spectral_proxy(
+    path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES,
+    expected_format: tuple[int, int, int] | None = None,
+) -> dict:
     """Stream a bounded regular PCM16 WAV over one file descriptor.
 
     First-order filters are intentionally cheap, deterministic proxies.
@@ -57,6 +60,10 @@ def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES
                     raise ValueError("Only uncompressed PCM16 mono/stereo WAV is supported")
                 if not 8000 <= rate <= 96000 or not 1 <= frames <= max_frames:
                     raise ValueError("Unsupported WAV rate or frame count")
+                # Check comparability at the bounded header-admission stage:
+                # do not spend CPU decoding an obviously mismatched candidate.
+                if expected_format is not None and (rate, channels, frames) != expected_format:
+                    raise ValueError("A/B WAV format mismatch")
                 low_alpha = -math.expm1(-2 * math.pi * LOW_PASS_HZ / rate)
                 high_alpha = -math.expm1(-2 * math.pi * HIGH_PASS_HZ / rate)
                 low_state = [0.0] * channels
@@ -142,7 +149,10 @@ def compare_spectral_balance(
         remaining_budget = MAX_AGGREGATE_FRAMES - scanned_frames
         if remaining_budget <= 0:
             raise ValueError("Aggregate frame budget exceeded")
-        current = scan_spectral_proxy(candidate, max_frames=min(MAX_SOURCE_FRAMES, remaining_budget))
+        current = scan_spectral_proxy(
+            candidate, max_frames=min(MAX_SOURCE_FRAMES, remaining_budget),
+            expected_format=(reference["sample_rate"], reference["channels"], reference["frames"]),
+        )
         scanned_frames += current["frames"]
         if any(current[key] != reference[key] for key in ("sample_rate", "channels", "frames")):
             raise ValueError("A/B sample rate, channel count or frame count differs")
