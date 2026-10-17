@@ -27,3 +27,7 @@ Evidence boundary: deterministic synthetic chords, cadences and drum/harmony loo
 python3 -m mixlab.analysis.tonal /private/library/clip.wav
 python3 -m mixlab.analysis.meter /private/library/clip.wav --bpm 128 --first-beat 0.31
 ```
+
+### Reference benchmark harness
+
+`python3 -m mixlab.analysis.benchmark /private/annotations/refs.json` scores the three measured providers against private manual references. Schema v1: `{"schema_version": 1, "items": [{"id", "path" (relative, beside the JSON), "sha256", "bpm", "first_beat"?, "downbeats"?, "key"?, "annotator"}]}`. The source checksum is enforced. Output has track IDs and scores only: beat F1/abstention, downbeat F1 on the verified grid (bar-phase error only) and on the estimated grid (end-to-end), and `key_report`. Annotate the whole excerpt, because unannotated trailing bars count as false positives. This harness is the M1 analysis gate measurement; synthetic references only exercise it.

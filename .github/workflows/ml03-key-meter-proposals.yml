@@ -7,6 +7,8 @@ on:
       - "mixlab/analysis/_signal.py"
       - "mixlab/analysis/tonal.py"
       - "mixlab/analysis/meter.py"
+      - "mixlab/analysis/benchmark.py"
+      - "tests/test_analysis_benchmark.py"
       - "tests/test_analysis_tonal_meter.py"
       - ".github/workflows/ml03-key-meter-proposals.yml"
   workflow_dispatch:
@@ -41,8 +43,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Compile analysis modules
-        run: python3 -m compileall -q mixlab/analysis tests/test_analysis_tonal_meter.py
+        run: python3 -m compileall -q mixlab/analysis tests/test_analysis_tonal_meter.py tests/test_analysis_benchmark.py
       - name: Synthetic key, downbeat and phrase regressions with time and RSS
-        run: /usr/bin/time -v python3 -m unittest -v tests.test_analysis_tonal_meter
+        run: /usr/bin/time -v python3 -m unittest -v tests.test_analysis_tonal_meter tests.test_analysis_benchmark
       - name: Recheck complete offline synthetic suite
         run: python3 -m unittest discover -s tests -p "test_*.py" -v
