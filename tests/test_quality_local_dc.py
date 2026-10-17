@@ -589,6 +589,82 @@ class LocalDCQualityTests(unittest.TestCase):
         offsets[start:start + length] = [level] * length
         return offsets
 
+    def _quarter_offset_dc(self, *, rate=RATE, onset_ms=62.5,
+                           duration=1, level=1100):
+        frames = rate * DURATION
+        values = [0] * frames
+        start = round(rate * onset_ms / 1000)
+        count = round(rate * duration)
+        values[start:start + count] = [level] * count
+        return values
+
+    def test_quarter_phase_detects_exact_second_missed_by_both_old_grids(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._quarter_offset_dc()])
+        ref = local_dc._scan_private_pcm(self.base)
+        alt = local_dc._scan_private_pcm(self.alt)
+        for key in ("means", "shifted_means"):
+            flags = [abs(a[0]) >= local_dc.DC_THRESHOLD and
+                     abs(a[0] - b[0]) >= local_dc.RELATIVE_THRESHOLD
+                     for a, b in zip(alt[key], ref[key])]
+            self.assertIsNone(
+                local_dc._run_state(flags, enough_windows=True),
+                msg=f"previous {key} grid unexpectedly detected DC",
+            )
+        result = local_dc.inspect(self.base, self.alt)
+        self.assertIs(result["candidate_excess_bias_warning"][0], True)
+        self.assertEqual(result["window_grid_offsets_ms"], [0.0, 62.5, 125.0, 187.5])
+
+    def test_three_quarter_phase_detects_second_between_old_grids(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._quarter_offset_dc(onset_ms=187.5)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+
+    def test_quarter_phase_detects_negative_bias(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._quarter_offset_dc(level=-1100)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+
+    def test_quarter_phase_reports_baseline_bias_without_candidate_excess(self):
+        bias = [self._quarter_offset_dc()]
+        _wav(self.base, offsets=bias)
+        _wav(self.alt, offsets=bias)
+        result = local_dc.inspect(self.base, self.alt)
+        self.assertEqual(result["baseline_bias_warning"], [True])
+        self.assertEqual(result["candidate_excess_bias_warning"], [False])
+
+    def test_quarter_phase_only_one_stereo_channel(self):
+        _wav(self.base, channels=2)
+        _wav(self.alt, channels=2, offsets=[
+            self._quarter_offset_dc(), [0] * (RATE * DURATION),
+        ])
+        result = local_dc.inspect(self.base, self.alt)
+        self.assertEqual(result["candidate_excess_bias_warning"], [True, False])
+
+    def test_quarter_phase_still_abstains_on_short_offset(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._quarter_offset_dc(duration=.875)])
+        self.assertIsNone(local_dc.inspect(self.base, self.alt)["warning"])
+
+    def test_quarter_phase_supports_11025_hz_grid_rounding(self):
+        rate = 11025
+        _wav(self.base, rate=rate)
+        _wav(self.alt, rate=rate, offsets=[self._quarter_offset_dc(rate=rate)])
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], True)
+
+    def test_quarter_phase_batch_and_single_are_consistent(self):
+        _wav(self.base)
+        _wav(self.alt, offsets=[self._quarter_offset_dc()])
+        other = self._batch_candidate(45)
+        single = local_dc.inspect(self.base, self.alt)
+        batch = local_dc.inspect_batch(self.base, [self.alt, other])
+        self.assertIs(batch["warning"], True)
+        self.assertEqual(batch["window_grid_offsets_ms"],
+                         single["window_grid_offsets_ms"])
+        self.assertEqual(batch["candidates"][0]["candidate_excess_bias_warning"],
+                         single["candidate_excess_bias_warning"])
+        self.assertEqual([x["warning"] for x in batch["candidates"]], [True, False])
+
     def test_half_window_shift_recovers_weak_full_second_dc(self):
         _wav(self.base)
         _wav(self.alt, offsets=[self._misaligned_dc()])
