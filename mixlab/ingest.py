@@ -177,7 +177,7 @@ def _object(value, name):
     return value
 
 
-def _preflight_pair_schema(pairs, track_ids):
+def _preflight_pair_schema(pairs, tracks_by_id):
     """Reject manifest recipe mistakes before private WAV/hash inspections.
 
     Format compatibility, true length and rights still require per-file
@@ -194,9 +194,13 @@ def _preflight_pair_schema(pairs, track_ids):
         seen.add(pid)
         a_id = _identifier(pair.get("a"), "pair a")
         b_id = _identifier(pair.get("b"), "pair b")
-        if a_id not in track_ids or b_id not in track_ids or a_id == b_id:
+        if a_id not in tracks_by_id or b_id not in tracks_by_id or a_id == b_id:
             raise ValueError("Pair needs distinct registered tracks")
         bpm = number(pair.get("bpm"), "pair bpm", 30, 300)
+        if bpm != tracks_by_id[a_id]["bpm"] or bpm != tracks_by_id[b_id]["bpm"]:
+            raise ValueError("Prototype requires equal source tempos; time stretching is not implemented")
+        if tracks_by_id[a_id].get("partition") != tracks_by_id[b_id].get("partition"):
+            raise ValueError("Pair crosses dataset partitions")
         beats = pair.get("beats", 8)
         if type(beats) is not int or not 1 <= beats <= 64:
             raise ValueError("beats must be an integer from 1 to 64")
@@ -391,7 +395,7 @@ def validate_library(manifest_path):
         _identifier(recording, "recording id")
         prepared.append((track, tid, path, sha, partition, recording))
 
-    _preflight_pair_schema(manifest.get("pairs"), seen_ids)
+    _preflight_pair_schema(manifest.get("pairs"), {record_id: track for track, record_id, *_ in prepared})
 
     for track, tid, path, sha, partition, recording in prepared:
         info, observed_sha = inspect_wav_and_digest(path)
