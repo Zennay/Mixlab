@@ -462,7 +462,9 @@ class RepeatabilityTests(unittest.TestCase):
         fixture = {
             "schema_version": 1,
             "engine_version": "synthetic-capacity-check-v1",
-            "recipe": {"family": "baseline", "bpm": 120, "beats": 1},
+            "recipe": {"family": "baseline", "bpm": 92.16, "beats": 64,
+                       "a_start": 0.0, "b_start": 0.0, "gain_db": 0.0,
+                       "a_bpm": None, "b_bpm": None},
             "sample_rate": 48000,
             "channels": 2,
             "frames": frames,
