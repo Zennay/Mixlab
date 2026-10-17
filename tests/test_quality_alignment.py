@@ -179,6 +179,39 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         self.assertNotIn(self.folder.name, proc.stdout + proc.stderr)
         self.assertTrue(json.loads(proc.stdout)["candidates"][0]["warnings"])
 
+    def test_cli_regional_only_warning_blocks_blind_release(self):
+        # A locally drifting but otherwise same-duration A/B pair must make
+        # --fail-on-warnings return 2 even if whole-clip lag is inconclusive.
+        base = regional_pattern()
+        make_wav(self.base, base)
+        make_wav(self.other, second_half_delayed(base))
+        proc = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.alignment",
+             str(self.base), str(self.other), "--fail-on-warnings"],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(2, proc.returncode)
+        row = json.loads(proc.stdout)["candidates"][0]
+        self.assertIs(row["regional_timing_shift_risk"], True)
+        self.assertIn("regional_timing_shift_inspect_not_tempo_estimate",
+                      row["warnings"])
+        self.assertNotIn(str(self.folder.name), proc.stdout + proc.stderr)
+
+    def test_cli_confident_regional_clean_passes_strict_preflight(self):
+        base = regional_pattern()
+        make_wav(self.base, base)
+        make_wav(self.other, [round(sample * .85) for sample in base])
+        proc = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.alignment",
+             str(self.base), str(self.other), "--fail-on-warnings"],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(0, proc.returncode)
+        row = json.loads(proc.stdout)["candidates"][0]
+        self.assertIs(row["regional_timing_shift_risk"], False)
+        self.assertEqual([], row["warnings"])
+        self.assertNotIn(str(self.folder.name), proc.stdout + proc.stderr)
+
     def test_cli_rejects_unreadable_path_without_disclosure(self):
         secret = "secret_source_filename"
         proc = subprocess.run([sys.executable, "-m", "mixlab.quality.alignment",
