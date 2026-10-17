@@ -77,12 +77,28 @@ after the baseline ended returned **true (damage)**; neither verdict had any
 shared audible evidence. [Dedicated reproduction #39039908264](https://github.com/Zennay/Mixlab/actions/runs/39039908264) confirmed the
 failure on both Python 3.13 and 3.14.
 
-The scanner now requires, separately for every mono/stereo channel, **four
-consecutive FULL 100ms intervals where both baseline and candidate have at
-least 50% active high-level frames**, and at least 4096 high-level samples
-from **each** source across that same contiguous interval. If this temporal
-intersection does not exist, the result is `null` (not `false` or `true`).
-The per-file PCM sample-rate/channel/total-frame admission still applies first.
+The scanner requires, separately for every mono/stereo channel, **four
+consecutive FULL 100ms intervals with at least 50% simultaneous high-level
+PCM activity on the exact same sample frames** and at least 4096 such
+simultaneous frames in the contiguous run. Simply proving that each WAV has
+50% activity inside each 100ms bucket is **not** enough: a baseline active
+only in the first half of every bucket and a candidate active only in the
+second half have no common audible samples, even though their bucket labels
+match. [Exact-sample-level RED #39040232719](https://github.com/Zennay/Mixlab/actions/runs/39040232719) reproduced
+false clean and false-damage results on Python 3.13 and 3.14.
+
+To reject this confound without loading whole tracks, a second synchronized,
+read-only pass rewinds the already-admitted baseline/candidate WAV descriptors,
+reads at most two 4096-frame blocks at a time, and counts sample-by-sample
+simultaneous high-level activity. It requires that same-frame temporal proof
+in addition to the existing per-file and common-window checks. Inputs remain
+unchanged; all descriptors, path ancestry and metadata are integrity-checked
+again after the entire group has been read. This bounded extra read may
+increase CPU work but retains the same fixed memory limits.
+
+If sample-level joint evidence does not exist, the result is `null` (not
+`false` or `true`). The per-file sample-rate/channel/total-frame
+admission still applies first.
 
 Any persistent region-specific degradation is evaluated on these **matched**
 windows. Whole-file residue statistics can only decide quality if baseline
