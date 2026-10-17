@@ -83,15 +83,26 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["status"], "rms_level_confound")
         self.assertFalse(result["milestone_pass"])
 
-    def test_loudness_confounded_candidate_avoids_expensive_second_pcm_scan(self):
+    def test_unambiguously_short_or_silent_pair_skips_extra_pcm_scan(self):
+        # Only strong prior evidence (short duration or full digital
+        # silence) may skip the aligned scan. Level-only confounds cannot:
+        # a sparse level mismatch might additionally lack joint frames.
+        for mode, frames in (("normal", 4000), ("silent", 12000)):
+            with self.subTest(mode=mode, frames=frames):
+                _wave(self.base, mode=mode, frames=frames)
+                _wave(self.candidate, mode=mode, frames=frames)
+                with patch("mixlab.quality.relative_mono._paired_phase_fractions",
+                           side_effect=AssertionError("unneeded second PCM read")):
+                    result = inspect(str(self.base), [str(self.candidate)])
+                self.assertEqual(result["candidates"][0]["status"],
+                                 "insufficient_stereo_evidence")
+
+    def test_sparse_loudness_confound_does_not_hide_missing_shared_frames(self):
         _wave(self.base, mode="normal")
-        _wave(self.candidate, mode="loud-normal")
-        # Once canonical streaming comparison has found an invalid 6dB
-        # level imbalance, no additional paired PCM scan can rescue it.
-        with patch("mixlab.quality.relative_mono._paired_phase_fractions",
-                   side_effect=AssertionError("unneeded second PCM read")):
-            result = inspect(str(self.base), [str(self.candidate)])
-        self.assertEqual(result["candidates"][0]["status"], "rms_level_confound")
+        _wave(self.candidate, mode="sparse-opposed")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"],
+                         "insufficient_stereo_evidence")
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
