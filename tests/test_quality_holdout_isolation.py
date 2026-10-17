@@ -163,6 +163,33 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.assertEqual(report["evaluation_track_count"], 10)
         self.assertFalse(report["milestone_pass"])
 
+
+    def _write_max_frame_source(self, count):
+        """Write 2M original PCM frames in bounded chunks (no giant buffer)."""
+        target = self.dev_dir / "clip-00.wav"
+        chunk = b"".join(struct.pack(
+            "<h", (i * 37 + 101) % 18000 - 9000
+        ) for i in range(8192))
+        remaining = count
+        with wave.open(str(target), "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            while remaining > 0:
+                take = min(remaining, 8192)
+                writer.writeframesraw(chunk[:take * 2])
+                remaining -= take
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(
+            target.read_bytes()).hexdigest()
+
+    def test_exact_two_million_pcm_frames_stream_under_existing_budget(self):
+        self._write_max_frame_source(2_000_000)
+        self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
+
+    def test_one_frame_above_source_budget_is_rejected(self):
+        self._write_max_frame_source(2_000_001)
+        self.rejected()
+
     def test_fifty_one_sources_fail_closed_even_if_each_manifest_is_valid(self):
         for i in range(2, 41):
             self.dev["tracks"].append(self._track("dev", i, 100 + i))
