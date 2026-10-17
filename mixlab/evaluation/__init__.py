@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 from ..ingest import inspect_wav_and_digest
+from ..engine import FAMILY_NAMES
 from .json_admission import load_bounded_json as _load
 
 CHOICES = {"A", "B", "Tie", "Both unusable"}
@@ -64,6 +65,11 @@ def verify_pack(root):
     render_by_pair = {}
     for row in renders:
         pair, family = row["pair"], row["family"]
+        # Families are not bound by pack_id (which hashes only the WAV
+        # digests and answer key). Prevent renamed synthetic audio from
+        # being represented as an algorithm the renderer does not support.
+        if not isinstance(pair, str) or not isinstance(family, str) or family not in FAMILY_NAMES:
+            raise ValueError("Unknown frozen render family or pair")
         if (pair,family) in render_by_pair:
             raise ValueError("Duplicate render identity")
         render_by_pair[pair,family] = row

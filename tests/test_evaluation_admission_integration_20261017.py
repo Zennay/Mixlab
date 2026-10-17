@@ -114,6 +114,44 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
+    def test_forged_candidate_family_cannot_be_reported_as_real_algorithm(self):
+        # Output hashes alone do not bind human-readable render family
+        # labels. A forged private key/evidence pair can keep every WAV
+        # untouched while inventing a fictitious 'algorithm' in results.
+        import hashlib
+        key_path = self.pack / "private" / "answer-key.json"
+        evidence_path = self.pack / "private" / "evidence.json"
+        receipt_path = self.pack / "receipt.json"
+        paths = (key_path, evidence_path, receipt_path)
+        originals = {path: path.read_bytes() for path in paths}
+        try:
+            key = json.loads(originals[key_path])
+            evidence = json.loads(originals[evidence_path])
+            receipt = json.loads(originals[receipt_path])
+            candidate = next(r["family"] for r in evidence["renders"]
+                             if r["family"] != "baseline")
+            fake = "validated-ai-stems-engine"
+            for row in evidence["renders"]:
+                if row["family"] == candidate:
+                    row["family"] = fake
+            for row in key:
+                for label in ("A", "B"):
+                    if row[label] == candidate:
+                        row[label] = fake
+            identity = {"manifest": evidence["manifest_sha256"], "answers": key,
+                        "outputs": [r["output_sha256"] for r in evidence["renders"]]}
+            pack_id = hashlib.sha256(json.dumps(
+                identity, sort_keys=True).encode()).hexdigest()
+            receipt["pack_id"] = evidence["pack_id"] = pack_id
+            key_path.write_text(json.dumps(key), encoding="utf-8")
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "family|candidate"):
+                verify_pack(self.pack)
+        finally:
+            for path in paths:
+                path.write_bytes(originals[path])
+
     def test_mutation_between_pack_verification_and_confounds_rejected(self):
         # The evaluator opens the same listening WAVs twice: once for the
         # frozen SHA check, then independently in compare_wavs. A writer
