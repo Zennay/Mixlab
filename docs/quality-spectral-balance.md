@@ -101,6 +101,20 @@ Stereo swaps may be creative or intentional; the output is an inspect
 warning, not an acoustic quality verdict, and it supplements (does not
 replace) the main PCM signed-swap and mono-fold-down checks.
 
+A **temporal stereo channel-dropout** screen adds eight private L/R energy
+accumulators (at most 16 additional floating-point sums). It detects when
+one channel is nearly silent (<-55 dBFS RMS) and the other remains active
+(>-35 dBFS RMS) in **at least two** eight-way spans in either source.
+This catches alternating L/R dropouts that can leave both *whole-file*
+channel RMS levels, global low/mid/high ratios and arithmetic mono-fold
+RMS apparently healthy. It publishes only the neutral
+`stereo_temporal_channel_dropout_inspect` warning and one
+`stereo_temporal_channel_dropout_risk` boolean; no per-source channel,
+segment position, amplitudes, envelope or identities are exposed.
+One isolated segment is deliberately below the persistent-risk gate and
+should still be checked by ear if relevant. Full-track stereo-silence
+and mono-fold tests remain separate, complementary checks.
+
 A fully or nearly silent stereo channel can also produce globally plausible
 relative band-energy ratios when the other channel remains audible. If
 either baseline or candidate has one channel below -55 dBFS RMS while the
