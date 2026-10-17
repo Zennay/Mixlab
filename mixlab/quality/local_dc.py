@@ -450,7 +450,15 @@ def main(argv: list[str] | None = None) -> int:
             result = inspect(args.baseline, args.candidate[0])
         else:
             raise ValueError("Pass --batch for multiple candidates")
-    except (Exception, SystemExit):
+    except SystemExit as finish:
+        # argparse uses exit(0) after printing its static --help usage.
+        # Preserve normal help behavior while keeping all invalid private
+        # audio filenames and malformed options behind a redacted error.
+        if finish.code == 0:
+            return 0
+        print("Invalid private WAV pair or options", file=sys.stderr)
+        return 3
+    except Exception:
         # Protect private paths even in argparse usage errors and OS exceptions.
         print("Invalid private WAV pair or options", file=sys.stderr)
         return 3
