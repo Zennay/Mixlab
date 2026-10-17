@@ -54,8 +54,9 @@ def _manual_cues_present(manifest):
                 raise ValueError("Every pair needs manually approved a_start_seconds and b_start_seconds")
         a, b = pair.get("a"), pair.get("b")
         tempo = bpm.get(a)
-        if (type(tempo) not in (int, float) or type(bpm.get(b)) not in (int, float)
-                or tempo != bpm[b]):
+        if (type(tempo) not in (int, float) or not math.isfinite(tempo)
+                or not 30 <= tempo <= 300 or type(bpm.get(b)) not in (int, float)
+                or not math.isfinite(bpm[b]) or tempo != bpm[b]):
             raise ValueError("Current Transition Studio requires matching manual BPM")
         beats = pair.get("beats", 8)
         if type(beats) is not int or not 1 <= beats <= 64:
