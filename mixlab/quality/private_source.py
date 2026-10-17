@@ -36,6 +36,17 @@ def private_path_identity(path: str | Path):
     return _file_identity(info)
 
 
+
+def private_wav_frame_count(path: str | Path, *, max_bytes: int) -> int:
+    """Admit source headers only; never decode PCM during workload planning.
+
+    Reuse the same read-only descriptor guard as the actual quality scan.
+    A subsequent report-wide identity check detects observable changes.
+    """
+    with open_verified_private_pcm16(path, max_bytes=max_bytes) as reader:
+        return reader.getnframes()
+
+
 @contextmanager
 def open_verified_private_pcm16(path: str | Path, *, max_bytes: int):
     """Open a regular, non-symlink PCM16 WAV once and verify that same fd.
