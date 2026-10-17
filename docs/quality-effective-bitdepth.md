@@ -83,6 +83,27 @@ PCM read** and reject an over-32MiB sparse input. Both Python 3.13/3.14 use
 the exact immutable checkout with a 192MiB virtual memory cap and RSS logging.
 The stress test is GitHub-hosted only: no production VPS load or imported music.
 
+## Sustained regional quantisation
+
+Whole-clip averages may hide a damaged transition sub-section: four
+consecutive 100ms windows of 8-bit quantisation embedded inside one
+otherwise healthy second affect only ~40% of the source and would not
+cross the >=99.5% whole-file lattice threshold. To avoid false clear
+results, the same bounded scan now recycles private, per-window
+modulo-4/16/256 counters and compares corresponding baseline/candidate
+100ms intervals. It flags **four consecutive sufficiently active FULL
+windows** exhibiting candidate-specific quantisation and abstains
+when a baseline alone contains four consecutive pre-degraded windows.
+Isolated glitches of up to three consecutive windows or four widely
+separated windows do not trigger a sustained fault.
+
+The privacy boundary is unchanged: internal window positions and
+amplitude-residue values never enter public JSON. Only per-channel
+tri-state outcomes are emitted. Counters are recycled per window;
+no entire-PCM buffer, model or unbounded audio-region histogram
+is retained. This is still a conservative engineering proxy and does
+not measure audibility or listener preference.
+
 ## Actual M1 engine integration (rights-free fixtures)
 
 The focused suite now invokes the real `mixlab.engine.render` on
