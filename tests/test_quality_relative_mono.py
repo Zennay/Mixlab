@@ -33,6 +33,8 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 left = right = 0
             elif mode == "opposed":
                 left, right = v, -v
+            elif mode == "loud-normal":
+                left = right = v * 2
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -71,6 +73,15 @@ class RelativeMonoTests(unittest.TestCase):
         result = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(result["candidates"][0]["status"], "candidate_introduces_mono_cancellation")
         self.assertGreaterEqual(result["candidates"][0]["added_risky_window_fraction"], .25)
+
+    def test_level_mismatch_must_not_issue_clean_relative_ab_verdict(self):
+        # Same stereo phase but 6dB difference: this is not a fair
+        # listener comparison, even though neither WAV loses in mono.
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="loud-normal")
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"], "rms_level_confound")
+        self.assertFalse(result["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
@@ -227,6 +238,23 @@ class RelativeMonoTests(unittest.TestCase):
         )
         self.assertEqual(bad.returncode, 2, bad.stderr)
         self.assertNotIn(str(self.root), bad.stdout + bad.stderr)
+
+    def test_invalid_cli_arguments_never_echo_private_sources(self):
+        # argparse normally includes unrecognized positional arguments
+        # verbatim in stderr, accidentally disclosing reviewer source paths.
+        private_path = str(self.root / "confidential-artist-and-title.wav")
+        for tail in (["--unknown", private_path], [private_path]):
+            with self.subTest(extra=tail):
+                proc = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.relative_mono",
+                     "--baseline", "private-baseline.wav",
+                     "--candidate", "private-candidate.wav", *tail],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(proc.returncode, 2)
+                self.assertNotIn(private_path, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr, "")
+                self.assertEqual(json.loads(proc.stdout)["status"], "invalid_private_pcm")
 
     def test_malformed_wav_decoder_error_is_redacted(self):
         _wave(self.candidate, mode="normal")
