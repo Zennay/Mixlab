@@ -26,28 +26,67 @@ CHUNK_FRAMES = 4096
 MAX_BATCH_CANDIDATES = 8
 MAX_BATCH_FRAMES = 8_000_000
 MAX_BATCH_BYTES = 128 * 1024 * 1024
+MAX_RIFF_CHUNKS = 1024  # bound header work on hostile metadata-only WAVs
 
 
 def _identity(st: os.stat_result) -> tuple[int, ...]:
     return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
 
 
-def _validate_riff_envelope(handle, physical_bytes: int) -> None:
-    """Reject RIFF containers with a forged length or trailing unclaimed bytes.
+def _validate_riff_envelope(handle, physical_bytes: int) -> int:
+    """Validate bounded RIFF chunk framing without decoding PCM samples.
 
-    Python's wave module can parse the declared audio frames while quietly
-    ignoring bytes appended *outside* the advertised RIFF container. That can
-    make a malformed private A/B source look clean. Validate its physical
-    envelope before opening the wave parser, without decoding any PCM.
+    A matching outer RIFF length alone is insufficient: it can conceal
+    truncated or overlapping inner chunks, duplicate audio payloads, and
+    sub-frame bytes silently dropped by WAV parsers. Visit chunk headers only,
+    never read any PCM payload, and cap how many headers are examined.
+    Return the size of the sole data chunk for frame alignment verification.
     """
-    header = handle.read(12)
-    if (len(header) != 12 or header[:4] != b"RIFF" or
-            header[8:12] != b"WAVE"):
-        raise ValueError("Invalid private RIFF/WAVE envelope")
-    declared_bytes = 8 + struct.unpack_from("<I", header, 4)[0]
-    if declared_bytes != physical_bytes:
-        raise ValueError("Private RIFF size does not match physical bytes")
-    handle.seek(0)
+    try:
+        handle.seek(0)
+        header = handle.read(12)
+        if (len(header) != 12 or header[:4] != b"RIFF" or
+                header[8:12] != b"WAVE"):
+            raise ValueError("Invalid private RIFF/WAVE envelope")
+        declared_bytes = 8 + struct.unpack_from("<I", header, 4)[0]
+        if declared_bytes != physical_bytes:
+            raise ValueError("Private RIFF size does not match physical bytes")
+
+        cursor = 12
+        fmt_seen = data_seen = False
+        data_size = None
+        for _ in range(MAX_RIFF_CHUNKS):
+            if cursor == physical_bytes:
+                break
+            if physical_bytes - cursor < 8:
+                raise ValueError("Incomplete private RIFF chunk header")
+            handle.seek(cursor)
+            chunk = handle.read(8)
+            if len(chunk) != 8:
+                raise ValueError("Truncated private RIFF chunk header")
+            tag, size = chunk[:4], struct.unpack_from("<I", chunk, 4)[0]
+            # RIFF chunks use a pad byte for odd-sized payloads.
+            next_cursor = cursor + 8 + size + (size & 1)
+            if next_cursor > physical_bytes:
+                raise ValueError("Private RIFF chunk exceeds file bounds")
+            if tag == b"fmt ":
+                if fmt_seen or data_seen:
+                    raise ValueError("Invalid duplicate/out-of-order fmt chunk")
+                fmt_seen = True
+            elif tag == b"data":
+                if data_seen or not fmt_seen:
+                    raise ValueError("Invalid duplicate/out-of-order data chunk")
+                data_seen = True
+                data_size = size
+            cursor = next_cursor
+        else:
+            raise ValueError("Too many private RIFF chunks")
+
+        if cursor != physical_bytes or not fmt_seen or not data_seen:
+            raise ValueError("Private RIFF chunk layout incomplete")
+        return data_size
+    finally:
+        handle.seek(0)
 
 
 def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
@@ -68,9 +107,11 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
             raise ValueError("private WAV outside byte bounds")
         with os.fdopen(fd, "rb", closefd=True) as handle:
             fd = None
-            _validate_riff_envelope(handle, before.st_size)
+            data_bytes = _validate_riff_envelope(handle, before.st_size)
             with wave.open(handle, "rb") as wav:
                 channels, width, rate, frames, compression, _ = wav.getparams()
+                if data_bytes != frames * channels * width:
+                    raise ValueError("Private PCM payload is not frame-aligned")
                 if channels not in (1, 2) or width != 2 or compression != "NONE":
                     raise ValueError("PCM16 mono/stereo required")
                 if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
@@ -224,9 +265,11 @@ def _admit_batch(sources: list[str | os.PathLike[str]]) -> list[dict]:
             seen.add(key)
             with os.fdopen(fd, "rb", closefd=True) as handle:
                 fd = None
-                _validate_riff_envelope(handle, actual.st_size)
+                data_bytes = _validate_riff_envelope(handle, actual.st_size)
                 with wave.open(handle, "rb") as wav:
                     channels, width, rate, frames, comp, _ = wav.getparams()
+                    if data_bytes != frames * channels * width:
+                        raise ValueError("Private PCM payload is not frame-aligned")
                     if comp != "NONE" or width != 2 or channels not in (1, 2):
                         raise ValueError("Batch requires PCM16 mono/stereo")
                     if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
