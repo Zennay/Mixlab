@@ -374,6 +374,20 @@ class BrowserFormTests(unittest.TestCase):
         self.assertEqual(aggregate_report["status"],
                          "descriptive-only-requires-independent-human-review")
 
+        # Rebuild the entire software-only experiment from the same manifest
+        # and seeded assignment. Reproducible output/answer identities are
+        # essential for review of a frozen benchmark, but synthetic seed use
+        # is deliberately NOT a blind human listening protocol.
+        second_receipt = benchmark(
+            manifest_path, self.root / "replayed-rendered-pack", seed=42
+        )
+        second = json.loads(second_receipt.read_text(encoding="utf-8"))
+        self.assertEqual(second["pack_id"], receipt["pack_id"])
+        self.assertEqual(second["trial_count"], receipt["trial_count"])
+        self.assertEqual(second["render_count"], receipt["render_count"])
+        _, _, second_trials = verify_pack(second_receipt.parent)
+        self.assertEqual(second_trials, trials)
+
 
 if __name__ == "__main__":
     unittest.main()
