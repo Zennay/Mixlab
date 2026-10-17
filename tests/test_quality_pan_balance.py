@@ -406,6 +406,43 @@ class PanBalanceTests(unittest.TestCase):
         for output in (clean, warning, bad):
             self.assertNotIn(str(self.root), output.stdout + output.stderr)
 
+    def test_exact_one_second_at_fractional_quarter_window_rates_is_decisive(self):
+        # Four 250-ms windows need alternating frame widths (e.g. 11025 Hz
+        # yields 2756, 2757, 2756, 2756). Flooring each width loses frames
+        # and falsely abstains on exactly one second of audio.
+        for rate in (8001, 11025, 16001, 22050, 44101):
+            with self.subTest(rate=rate, case="clean"):
+                wav(self.a, frames=rate, rate=rate)
+                wav(self.b, frames=rate, rate=rate)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertEqual(report["evidence_status"], "no_sustained_pan_bias_detected")
+                self.assertFalse(report["stereo_pan_confound_review"])
+                self.assertEqual(report["longest_continuous_active_ms"], 1000)
+            with self.subTest(rate=rate, case="persistent-pan"):
+                wav(self.b, frames=rate, rate=rate, left=8000, right=2000)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertEqual(report["evidence_status"], "review_pan_balance")
+                self.assertTrue(report["stereo_pan_confound_review"])
+                self.assertEqual(report["longest_sustained_shift_ms"], 1000)
+            with self.subTest(rate=rate, case="one-frame-short"):
+                wav(self.a, frames=rate - 1, rate=rate)
+                wav(self.b, frames=rate - 1, rate=rate, left=8000, right=2000)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertEqual(report["evidence_status"], "insufficient_active_audio")
+                self.assertIsNone(report["stereo_pan_confound_review"])
+
+    def test_fractional_sample_rate_group_matches_individual_results(self):
+        rate = 11025
+        wav(self.a, frames=rate, rate=rate)
+        wav(self.b, frames=rate, rate=rate, left=8000, right=2000)
+        third = self.root / "odd-rate third.wav"
+        wav(third, frames=rate, rate=rate)
+        report = pan_balance.inspect_batch(self.a, [self.b, third])
+        self.assertTrue(report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        self.assertFalse(report["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+        self.assertEqual(report["candidates"][0]["metrics"], pan_balance.inspect(self.a, self.b))
+        self.assertEqual(report["candidates"][1]["metrics"], pan_balance.inspect(self.a, third))
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
