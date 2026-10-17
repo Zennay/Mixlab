@@ -378,7 +378,7 @@ def validate_library(manifest_path):
             raise ValueError("Source path must remain within the library directory; traversal rejected")
         try:
             path = (source.parent / relative).resolve()
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError):
             # Python releases differ in whether cyclic symlinks raise
             # RuntimeError or OSError. Neither may leak a private path or
             # escape this untrusted manifest admission boundary.
