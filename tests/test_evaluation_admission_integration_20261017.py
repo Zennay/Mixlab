@@ -114,6 +114,44 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
+    def test_rehashed_nonsequential_trial_identity_is_rejected(self):
+        # Browser review/index.html lists trial-001, -002, -003. The private
+        # answer-key's hashed identity may be forged as trial-999 with matching
+        # review files, but the browser never offered trial-999 for a human.
+        import hashlib
+        import shutil
+        key_path = self.pack / "private" / "answer-key.json"
+        evidence_path = self.pack / "private" / "evidence.json"
+        receipt_path = self.pack / "receipt.json"
+        paths = (key_path, evidence_path, receipt_path)
+        originals = {path: path.read_bytes() for path in paths}
+        ghost = "trial-999"
+        original_tid = "trial-001"
+        copies = [self.pack / "review" / f"{ghost}-{label}.wav"
+                  for label in ("A", "B")]
+        try:
+            key = json.loads(originals[key_path])
+            evidence = json.loads(originals[evidence_path])
+            receipt = json.loads(originals[receipt_path])
+            key[0]["trial"] = ghost
+            identity = {"manifest": evidence["manifest_sha256"], "answers": key,
+                        "outputs": [r["output_sha256"] for r in evidence["renders"]]}
+            pack_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+            receipt["pack_id"] = evidence["pack_id"] = pack_id
+            key_path.write_text(json.dumps(key), encoding="utf-8")
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            for label, dest in zip(("A", "B"), copies):
+                shutil.copyfile(self.pack / "review" / f"{original_tid}-{label}.wav",
+                                dest)
+            with self.assertRaisesRegex(ValueError, "trial"):
+                verify_pack(self.pack)
+        finally:
+            for path in paths:
+                path.write_bytes(originals[path])
+            for dest in copies:
+                dest.unlink(missing_ok=True)
+
     def test_forged_candidate_family_cannot_be_reported_as_real_algorithm(self):
         # Output hashes alone do not bind human-readable render family
         # labels. A forged private key/evidence pair can keep every WAV

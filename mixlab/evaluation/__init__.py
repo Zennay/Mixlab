@@ -75,9 +75,15 @@ def verify_pack(root):
         render_by_pair[pair,family] = row
     trials = {}
     candidate_trials = set()
-    for row in key:
-        tid = row.get("trial")
-        if not isinstance(tid, str) or not re.fullmatch(r"trial-[0-9]{3}", tid) or tid in trials:
+    for ordinal, row in enumerate(key, 1):
+        # The current renderer emits exactly sequential trial IDs in the
+        # same order as the public review form. A rehashed 'trial-999'
+        # or reordered answer key could create a pseudo-listening trial
+        # that was never actually shown in the browser review interface.
+        if not isinstance(row, dict) or row.get("trial") != f"trial-{ordinal:03d}":
+            raise ValueError("Noncanonical frozen trial identity")
+        tid = row["trial"]
+        if tid in trials:
             raise ValueError("Invalid or duplicate trial")
         if row.get("A") == row.get("B") or sum(row.get(label) == "baseline" for label in ("A","B")) != 1:
             raise ValueError("Trial must compare baseline with one candidate")
