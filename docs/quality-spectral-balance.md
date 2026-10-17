@@ -192,12 +192,14 @@ three filtered-band L/R cross-energy sums per span alongside the
 already bounded eight-band energy bins; no new PCM frame buffers.
 Each private, audible span with meaningful filtered energy (>=0.10
 RMS ratio of whole-span energy) and <=-10dB filtered mono loss is
-counted. If **at least two** spans in either A or B are affected,
+counted. If **at least two spans in the same source** (A or B) are affected,
 `stereo_temporal_<band>_band_mono_fold_inspect` and a single public
 `stereo_temporal_<band>_band_mono_fold_risk` boolean are emitted.
 No affected times, channel polarities, source identities or
-per-source band ratios escape. One isolated span is deliberately
-below the persistent-risk gate. Synthetic tests make just two of eight
+per-source band ratios escape. One isolated span in *each* of A and B at different times is likewise
+not counted as persistent; otherwise two independent one-off effects
+would be falsely pooled into a single-source quality defect. Both cases
+remain candidates for manual listening, not proven-clean audio. Synthetic tests make just two of eight
 bass spans cancel while broadband and whole-band mono results remain
 above their warning limits; symmetrical, gain- and chunk-invariant
 control cases are included.
