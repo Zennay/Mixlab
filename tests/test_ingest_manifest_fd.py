@@ -110,15 +110,11 @@ class ManifestFDTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(self.pristine, self.manifest.read_bytes())
 
-    def test_oversized_growth_read_cap_before_parse(self):
-        # A path-swapping writer can change the size *after* admission.
-        # Every read must use a fixed upper bound even when this happens.
+    def test_manifest_reads_from_exactly_one_descriptor(self):
         from mixlab.ingest import _read_bounded_manifest
-        real_read = __import__("io").BufferedReader.read
-        # pathlib fixture itself is small, use an explicit one-byte head
-        # followed by an oversized read sentinel when the bounded fd is read.
         with mock.patch("mixlab.ingest.os.fdopen", wraps=os.fdopen) as wrapper:
-            self.assertEqual(_read_bounded_manifest(self.manifest), self.pristine.decode("utf-8"))
+            self.assertEqual(_read_bounded_manifest(self.manifest),
+                             self.pristine.decode("utf-8"))
         self.assertEqual(wrapper.call_count, 1)
 
 
