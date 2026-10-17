@@ -28,6 +28,12 @@ STEREO_CHANNEL_LOSS_MIN_FRACTION = 0.2
 # A >50% full-scale adjacent PCM step is suspicious for a splice pop,
 # but percussion and intentional cuts still require human inspection.
 SEVERE_SAMPLE_JUMP = 0.5 * 32768
+# Earlier digital clipping may have been attenuated: a repeated high-level
+# PCM plateau can persist without any sample reaching digital full-scale.
+# Warn on >=4 *exactly equal* consecutive samples above 72% full-scale.
+# Square waves and intentional sustained signals are possible false positives.
+FLAT_TOP_MIN_ABS_SAMPLE = round(0.72 * 32768)
+FLAT_TOP_MIN_CONSECUTIVE = 4
 # DC >3% full scale can reduce headroom or produce a pop when the file ends.
 DC_OFFSET_RISK = 0.03
 # Screening heuristic: a loss >= 9 dB during a non-silent stereo window
@@ -78,6 +84,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             stereo_mid_sum_squares = 0.0
             max_jump = 0
             severe_jump_count = 0
+            high_flat_top_plateau_count = 0
+            flat_top_run = [0] * channels
             previous = None
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
@@ -157,6 +165,13 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                             jump = abs(sample - previous[ch])
                             max_jump = max(max_jump, jump)
                             severe_jump_count += jump >= SEVERE_SAMPLE_JUMP
+                        if (previous is not None and sample == previous[ch]
+                                and magnitude >= FLAT_TOP_MIN_ABS_SAMPLE):
+                            flat_top_run[ch] += 1
+                        else:
+                            flat_top_run[ch] = 1
+                        if flat_top_run[ch] == FLAT_TOP_MIN_CONSECUTIVE:
+                            high_flat_top_plateau_count += 1
                     previous = frame
                     if channels == 2:
                         left, right = frame
@@ -231,6 +246,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "max_adjacent_sample_jump": round(max_jump / 32768, 6),
         "severe_adjacent_jump_count": severe_jump_count,
         "severe_sample_discontinuity_risk": severe_jump_count > 0,
+        "high_flat_top_plateau_count": high_flat_top_plateau_count,
+        "high_flat_top_plateau_risk": high_flat_top_plateau_count > 0,
         "stereo_phase_correlation": phase_correlation,
         "mono_fold_down_loss_db": mono_loss_db,
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
@@ -270,6 +287,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("dc_offset_inspect_for_headroom")
     if metrics["severe_sample_discontinuity_risk"]:
         warnings.append("severe_sample_discontinuity_inspect_for_pops")
+    if metrics["high_flat_top_plateau_risk"]:
+        warnings.append("high_flat_top_plateau_inspect_for_prior_limiting")
     return warnings
 
 
