@@ -44,7 +44,10 @@ do not supply the private answer-key folder or any recording/source library.
     python3 -m mixlab.quality.pack /private/pack/review --require-generated-html --require-receipt --fail-on-warnings
 
 The pack inspector rejects empty, incomplete, improperly named, linked or
-excessive (more than 60) trial WAV inventories. Before reading PCM samples it
+excessive (more than 60) trial WAV inventories. A valid pack must also have
+**contiguous trial IDs starting at `trial-001`** with both A and B for each;
+a partial copied pack that skips `trial-002`, for example, fails before audio
+is scanned even if the remaining files are individually valid. Before reading PCM samples it
 also enforces a **512 MiB total WAV size** and **100 million aggregate declared
 frames** across the entire review pack, in addition to existing per-WAV
 32 MiB / 2 million frame caps. It checks all filenames, regular-file sizes
