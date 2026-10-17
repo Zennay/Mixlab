@@ -67,6 +67,13 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 left = right = 25000 if 4000 <= i < 4007 else v
             elif mode == "large-jump":
                 left = right = 28000 if i == 4000 else v
+            elif mode == "dc-shift":
+                left = right = v + 1600
+            elif mode == "near-full-scale":
+                left = right = (32767 if i == frames // 2 else v)
+            elif mode == "delayed-right-125ms":
+                left = v
+                right = 0 if i < rate // 8 else v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -349,6 +356,38 @@ class RelativeMonoTests(unittest.TestCase):
         result = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(result["candidates"][0]["status"], "ab_audio_integrity_confound")
         self.assertFalse(result["milestone_pass"])
+
+    def test_dc_offset_candidate_requires_source_integrity_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="dc-shift")
+        from mixlab.quality import compare_wavs
+        source = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(source["metrics"]["dc_offset_risk"])
+        self.assertTrue(source["level_comparable_for_blind_ab"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_near_full_scale_peak_candidate_requires_integrity_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="near-full-scale")
+        from mixlab.quality import compare_wavs
+        source = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertGreater(source["metrics"]["near_full_scale_fraction"], 0)
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
+
+    def test_delayed_stereo_channel_onset_requires_review(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="delayed-right-125ms")
+        from mixlab.quality import compare_wavs
+        source = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(source["metrics"]["stereo_channel_onset_skew_risk"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertNotIn(str(self.root), json.dumps(report))
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
