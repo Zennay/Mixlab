@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 from mixlab.quality.assignment_balance import (
-    AssignmentBalanceError, audit_study_assignment, inspect_assignments,\n    propose_private_balanced_sides,
+    AssignmentBalanceError, audit_study_assignment, inspect_assignments,
+    propose_private_balanced_sides,
 )
 
 
