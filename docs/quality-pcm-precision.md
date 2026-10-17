@@ -19,14 +19,30 @@ no-follow/nonblocking flags, checked for regular-file type, and streamed in
 No audio, PCM fingerprints, file paths or segment positions are returned.
 
 For each channel separately, the detector counts **informative** PCM samples
-(|sample| >=1024); at least 2048 informative samples and 32 distinct values
-are required on *both* sides. It warns when >=99.5% of candidate informative
-samples are multiples of 256 or 64 while <10% of baseline informative samples
-are multiples of the same step. Both thresholds are heuristics designed to
-recognize conspicuous resolution collapse without misclassifying already
-coarse baselines, silence or constant tone. One degraded stereo channel can
-raise a warning even if the other stays unchanged. Lack of enough data
-returns `null`, **not** a clean bill of health.
+(|sample| >=1024). Globally at least 2048 informative samples and 32 distinct
+values are required on *both* sides. Its **fixed-size residue histograms**
+detect any quantizer phase (sample mod 256 or 64), not just multiples of the
+step: the candidate must concentrate >=99.5% of informative samples on one
+residue; the baseline must have <10% even in its **most frequent** residue.
+This also avoids false alarms when both sources are coarse but quantized with
+different offsets.
+
+To catch a damaged part hidden by the undamaged rest, the same check runs
+across **8 fixed, corresponding time regions** per channel, each requiring
+>=512 informative samples and >=16 distinct values on both sides. At least
+**two** regions showing precision loss are necessary for a persistent regional
+warning; a single isolated region gives `null` rather than a false all-clear.
+The public report never includes those window positions or signal statistics.
+A globally decisive warning also takes precedence over unavailable regional
+data. A clean (false) flag requires informative, negative global and regional
+evidence on *all* channels. Silence or insufficient data returns `null`,
+**not** a clean bill of health.
+
+The thresholds are heuristics designed to recognize conspicuous PCM
+resolution collapse without misclassifying already coarse baselines,
+silence or constant tones. One degraded stereo channel can raise a warning
+even if the other remains unchanged. This does not detect quantization
+followed by dither, noise shaping or other processing that obscures the grid.
 
 Stable public JSON has only `schema_version`, `status`,
 `candidate_precision_loss_inspect` (true/false/null), and an anonymous warning
