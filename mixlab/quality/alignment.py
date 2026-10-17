@@ -179,7 +179,11 @@ def _regional_shift_risk(baseline: list[float], candidate: list[float]) -> bool 
         return None
     if aligned >= 1 and shifted >= MIN_DRIFT_REGIONS:
         return True
-    if aligned >= 2 and shifted == 0:
+    # A negative risk result requires evidence over *every* region. With
+    # only two aligned regions, the rest may contain unrelated/uninformative
+    # audio (or an undetected edit), so declaring the pair clean is unsound.
+    # Preserve null rather than turning partial coverage into false assurance.
+    if aligned == count and shifted == 0:
         return False
     return None
 
