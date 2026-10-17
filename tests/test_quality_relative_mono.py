@@ -159,6 +159,23 @@ class RelativeMonoTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed"):
                 inspect(str(self.base), [str(self.candidate)])
 
+    def test_exact_two_million_frame_limit_stays_bounded_and_abstains(self):
+        # Maximum admitted stereo payload is exactly 8MB per file. Exercise
+        # the entire paired reader with low-information synthetic silence.
+        # Neither the quality verdict nor program output may turn green.
+        silent = bytes(2_000_000 * 4)
+        for path in (self.base, self.candidate):
+            with wave.open(str(path), "wb") as out:
+                out.setnchannels(2)
+                out.setsampwidth(2)
+                out.setframerate(96000)
+                out.writeframes(silent)
+        result = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(result["candidates"][0]["status"],
+                         "insufficient_stereo_evidence")
+        self.assertFalse(result["milestone_pass"])
+        self.assertNotIn(str(self.root), json.dumps(result))
+
     def test_excessive_declared_frame_count_rejected_before_paired_read(self):
         with wave.open(str(self.base), "wb") as out:
             out.setnchannels(2)
