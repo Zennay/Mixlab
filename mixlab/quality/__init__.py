@@ -70,6 +70,9 @@ FLAT_TOP_MIN_ABS_SAMPLE = round(0.72 * 32768)
 FLAT_TOP_MIN_CONSECUTIVE = 4
 # DC >3% full scale can reduce headroom or produce a pop when the file ends.
 DC_OFFSET_RISK = 0.03
+# A/B discontinuity can exceed the same 3%-FS threshold even if BOTH
+# individually measured DC offsets remain below it.
+AB_DC_OFFSET_MISMATCH_FS = DC_OFFSET_RISK
 # Screening heuristic: a loss >= 9 dB during a non-silent stereo window
 # means downmixing to mono may suppress an important part of the sound.
 MONO_FOLD_DOWN_RISK_DB = 9.0
@@ -687,6 +690,20 @@ def _mono_playback_level_difference(
     return delta, abs(delta) > tolerance_db
 
 
+def _ab_dc_offset_mismatch(baseline: dict, candidate: dict) -> tuple[float, bool]:
+    """Bounded DC mean comparison on existing path-free per-channel metrics.
+
+    Flag only the *difference* in steady-state PCM offset. This is a
+    potential transition/playback click, never a claim of musical quality.
+    """
+    differences = [
+        abs(original - changed)
+        for original, changed in zip(baseline["dc_per_channel"], candidate["dc_per_channel"])
+    ]
+    max_difference = max(differences)
+    return round(max_difference, 6), max_difference > AB_DC_OFFSET_MISMATCH_FS
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -756,6 +773,11 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         if base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None:
             level_difference = round(metrics["rms_dbfs"] - base["rms_dbfs"], 3)
         warnings = _signal_warnings(metrics)
+        ab_max_channel_dc_offset_delta_fs, ab_dc_offset_mismatch_risk = (
+            _ab_dc_offset_mismatch(base, metrics)
+        )
+        if ab_dc_offset_mismatch_risk:
+            warnings.append("ab_channel_dc_offset_mismatch_inspect_for_clicks")
         short_window_level_mismatch_fraction, short_window_level_mismatch_risk, audible_level_windows = _short_window_level_confound(
             base_windows, candidate_windows
         )
@@ -907,6 +929,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "candidate_id": f"candidate-{index:02d}",
             "metrics": metrics,
             "rms_delta_db_vs_baseline": level_difference,
+            "ab_max_channel_dc_offset_delta_fs": ab_max_channel_dc_offset_delta_fs,
+            "ab_dc_offset_mismatch_risk": ab_dc_offset_mismatch_risk,
             "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
             "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
             "stereo_channel_level_confound_risk": stereo_channel_level_confound_risk,
@@ -943,6 +967,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 and not ab_mono_fold_down_level_confound_risk
                 and not ab_mono_fold_down_window_level_confound_risk
                 and not mono_playback_level_confound_risk
+                and not ab_dc_offset_mismatch_risk
                 # Even if BOTH sides cancel perfectly, their identical
                 # global/window RMS is no evidence of usable mono playback.
                 and (base["channels"] != 2 or (
