@@ -89,6 +89,25 @@ def _pcm_exact_transform_variants(raw: bytes, channels: int) -> set[bytes]:
 
 
 
+
+def _pcm_channel_views(raw: bytes, channels: int) -> tuple:
+    """Keep both the full PCM stream and each genuine stereo source channel.
+
+    Channel projections use exactly the stored PCM samples. Detect when a
+    mono file copies L or R from a stereo source, or when two stereo sources
+    reuse a channel. This does not mean mono downmixes are equivalent.
+    """
+    if channels == 1:
+        return (("whole", 1, raw),)
+    if channels != 2 or len(raw) % 4:
+        _refuse()
+    pcm = array("h")
+    pcm.frombytes(raw)
+    return (("whole", 2, raw),
+            ("left", 1, pcm[::2].tobytes()),
+            ("right", 1, pcm[1::2].tobytes()))
+
+
 def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     """Bounded exact audible excerpt reuse screen, no fingerprints disclosed.
 
@@ -97,7 +116,8 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
     This catches clips cut from a longer source with different container and
     full-file PCM digests, *provided their sample rate/channels still match*.
     Anchors also cover exact polarity inversion, L/R swap, and 2x gain
-    combinations; these are deterministic PCM operations, not music matching.
+    combinations, and genuine stereo-channel projections; these are
+    deterministic PCM operations, not music matching.
 
     At most 3 anchored windows per source and at most 50 total sources;
     all source reads are streamed through the validated single-FD PCM reader.
@@ -125,45 +145,62 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                 # false leakage from common zeros, padding and quiet tails.
                 if sum(abs(sample) for sample in values) < 512 * len(values):
                     continue
-                for variant in _pcm_exact_transform_variants(pcm, channels):
-                    by_format.setdefault((rate, channels), []).append(
-                        (group, tid, variant))
+                for _, view_channels, view_pcm in _pcm_channel_views(pcm, channels):
+                    for variant in _pcm_exact_transform_variants(
+                            view_pcm, view_channels):
+                        by_format.setdefault((rate, view_channels), []).append(
+                            (group, tid, variant))
 
     for group, tracks in groups:
         for tid, track in tracks.items():
             channels = track["channels"]
-            format_key = (track["sample_rate"], channels)
-            candidates = [
-                anchor for anchor_group, anchor_id, anchor
-                in by_format.get(format_key, ())
-                if not (group == anchor_group and tid == anchor_id)
-                and not (group == "dev" and anchor_group == "dev")
-            ]
-            if not candidates:
+            rate = track["sample_rate"]
+            # Decide active stream projections once, before opening audio.
+            plans = {}
+            for name, projection in (("whole", channels),
+                                     *([("left", 1), ("right", 1)]
+                                       if channels == 2 else [])):
+                candidates = [
+                    anchor for anchor_group, anchor_id, anchor
+                    in by_format.get((rate, projection), ())
+                    if not (group == anchor_group and tid == anchor_id)
+                    and not (group == "dev" and anchor_group == "dev")
+                ]
+                if candidates:
+                    frame_bytes = 2 * projection
+                    largest = max(map(len, candidates))
+                    retain = ((largest - 1 + frame_bytes - 1)
+                              // frame_bytes) * frame_bytes
+                    plans[name] = (candidates, frame_bytes, retain, b"")
+            if not plans:
                 continue
-            frame_bytes = channels * 2
-            largest = max(map(len, candidates))
-            # Keep a frame-aligned overlap so any anchored substring
-            # spanning two streaming chunks remains searchable.
-            retained = ((largest - 1 + frame_bytes - 1)
-                        // frame_bytes) * frame_bytes
-            overlap = b""
             collision = False
             for samples in pcm_blocks(track["resolved_path"], block_frames=32768):
-                chunk = overlap + samples.tobytes()
-                if not collision:
-                    for anchor in candidates:
-                        offset = chunk.find(anchor)
-                        while offset >= 0:
-                            if offset % frame_bytes == 0:
-                                collision = True
+                if channels == 1:
+                    projections = (("whole", samples.tobytes()),)
+                else:
+                    projections = (("whole", samples.tobytes()),
+                                   ("left", samples[::2].tobytes()),
+                                   ("right", samples[1::2].tobytes()))
+                for name, data in projections:
+                    if name not in plans:
+                        continue
+                    candidates, frame_bytes, retained, overlap = plans[name]
+                    chunk = overlap + data
+                    if not collision:
+                        for anchor in candidates:
+                            offset = chunk.find(anchor)
+                            while offset >= 0:
+                                if offset % frame_bytes == 0:
+                                    collision = True
+                                    break
+                                offset = chunk.find(anchor, offset + 1)
+                            if collision:
                                 break
-                            offset = chunk.find(anchor, offset + 1)
-                        if collision:
-                            break
-                overlap = chunk[-retained:] if retained else b""
-            # Let pcm_blocks reach EOF, including its final no-mutation
-            # source-identity check, before treating a match as evidence.
+                    plans[name] = (candidates, frame_bytes, retained,
+                                   chunk[-retained:] if retained else b"")
+            # Finish the real PCM descriptor read even when a match was found,
+            # so its ordinary source-mutation checks still run before refuse.
             if collision:
                 return True
     return False
