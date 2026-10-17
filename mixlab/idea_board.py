@@ -17,6 +17,7 @@ import stat
 from .cueprep import _read_spec
 from .ingest import digest
 from .set_composer import _parse_json, _secure_file
+from .studio import ID
 
 MAX_BOARD_BYTES = 2 * 1024 * 1024
 MAX_CHOICES_BYTES = 32768
@@ -127,7 +128,7 @@ def _build_pairs(source, proposals):
         if not isinstance(track, dict) or track.get("partition") != "development":
             raise ValueError("All tracks must belong to the development partition")
         tid, sha = track.get("id"), track.get("sha256")
-        if not isinstance(tid, str) or not tid or tid in known or not isinstance(sha, str):
+        if not isinstance(tid, str) or not ID.fullmatch(tid) or tid in known or not isinstance(sha, str):
             raise ValueError("Invalid or repeated track identity")
         known[tid] = track
     given = {}
@@ -150,7 +151,7 @@ def _build_pairs(source, proposals):
         if not isinstance(pair, dict):
             raise ValueError("Invalid source pair")
         pid, a, b = pair.get("id"), pair.get("a"), pair.get("b")
-        if (not isinstance(pid, str) or not pid or pid in used
+        if (not isinstance(pid, str) or not ID.fullmatch(pid) or pid in used
                 or a not in known or b not in known or a == b):
             raise ValueError("Invalid or duplicate source pair")
         used.add(pid)
@@ -272,10 +273,21 @@ def apply_board(source_manifest, suggestions_file, selection_file, new_source_ma
             raise ValueError("Approval refers to a nonexisting candidate")
         updates[pair["id"]] = matched[0]
     renewed = copy.deepcopy(source)
+    # Reject new combinations whose cues would silently backtrack the song
+    # being played after the preceding incoming transition. We preserve
+    # the user's original pair order and never auto-correct a bad route.
+    prev_incoming_end = {}
     for pair in renewed["pairs"]:
         option = updates[pair["id"]]
-        pair["a_start_seconds"] = option["a_start_seconds"]
-        pair["b_start_seconds"] = option["b_start_seconds"]
+        length = pair.get("beats", 8) * 60 / pair["bpm"]
+        incoming_start = option["b_start_seconds"]
+        outgoing_start = option["a_start_seconds"]
+        last_end = prev_incoming_end.get(pair["a"])
+        if last_end is not None and outgoing_start + 1e-8 < last_end:
+            raise ValueError("Ideas would backtrack a previously playing track; select another cue")
+        pair["a_start_seconds"] = outgoing_start
+        pair["b_start_seconds"] = incoming_start
+        prev_incoming_end[pair["b"]] = incoming_start + length
     payload = (json.dumps(renewed, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     if len(payload) > 1024 * 1024:
         raise ValueError("Revised private manifest too large")
