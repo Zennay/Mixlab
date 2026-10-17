@@ -101,6 +101,17 @@ Python versions without real recordings:
    Dropping any *whole pair*, as opposed to one of its three repeated
    listener clicks, gives 1/16. The gate returns a sensitivity HOLD.
 
+The same pinned real producer also passes an upper-budget **10-pair /
+20-disjoint-source** hosted synthetic test, which generates 20 separate
+five-second procedural WAV tracks, freezes 10 disjoint pairs, renders 20
+private A/B variants, and processes 3 × 10 anonymous synthetic choices
+through the *real* aggregator. The technical fair-sign reference for
+10/10 candidate-favored pairs is 1/1024; omitting a whole pair yields
+1/512, so that specific reference survives the nominal 5%-threshold.
+The report **still** sets `milestone_pass=false`, independently of the
+reference: synthetic votes cannot validate subjective DJ performance,
+authentic music rights, actual human listeners or independence assumptions.
+
 Even the disjoint ten-track run proves neither true human preference nor
 independent *musical* sampling. It is a structural regression witness,
 not a preregistered empirical significance result.
