@@ -249,6 +249,28 @@ def _regional_coarse_loss(base_source, candidate_source, channel):
     return False
 
 
+def _regional_reference_degraded(source, channel):
+    """Consecutive low-diversity baseline windows make a negative inconclusive."""
+    windows = source["_private_window_profiles"][channel]
+    previous = None
+    consecutive = 0
+    for index in sorted(windows):
+        row = windows[index]
+        degraded = any(
+            200 * count >= 199 * row["eligible_samples"]
+            for count in row["dominant_residue_counts"].values()
+        )
+        if degraded:
+            consecutive = consecutive + 1 if previous is not None and index == previous + 1 else 1
+            if consecutive >= MIN_ACTIVE_WINDOWS:
+                return True
+            previous = index
+        else:
+            consecutive = 0
+            previous = None
+    return False
+
+
 def inspect_ab(baseline, candidates):
     """Screen high-level PCM low-byte collapse vs baseline, per channel.
 
@@ -297,7 +319,8 @@ def inspect_ab(baseline, candidates):
                     # Further candidate-specific loss can still be detected
                     # even if the reference is already less than full precision.
                     per_channel.append(True)
-                elif not _baseline_diverse(base):
+                elif (not _baseline_diverse(base)
+                      or _regional_reference_degraded(sources[0], channel)):
                     per_channel.append(None)
                 else:
                     per_channel.append(False)
