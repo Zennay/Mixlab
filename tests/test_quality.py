@@ -1061,6 +1061,35 @@ class QualityTests(unittest.TestCase):
         self.assertTrue(inspect_review_pack(review, require_receipt=True)[
             "public_receipt_pack_id_verified"])
 
+    def test_review_page_refuses_inert_contexts_that_hide_audio_from_browser(self):
+        # HTMLParser can still enumerate nested fieldset/audio tags that
+        # browsers do not display as playable A/B choices inside a template,
+        # noscript (with scripting on), plaintext, xmp or textarea.
+        review = self.root / "inert-html"
+        review.mkdir()
+        wav(review / "trial-001-A.wav", self.samples)
+        wav(review / "trial-001-B.wav", [int(x * .9) for x in self.samples])
+        page = review / "index.html"
+        clean = neutral_review_page(["trial-001"])
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+        for element in ("template", "plaintext", "xmp", "noscript", "textarea"):
+            for html in (f"<{element}>" + clean + f"</{element}>",
+                         clean + f"<{element}>secret field</{element}>"):
+                with self.subTest(element=element, prefix=html.startswith(f"<{element}>")):
+                    page.write_text(html)
+                    with self.assertRaisesRegex(ValueError, "audio links"):
+                        inspect_review_pack(review)
+                    cli = subprocess.run(
+                        [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(3, cli.returncode)
+                    self.assertFalse(cli.stdout)
+                    self.assertNotIn(str(self.root), cli.stderr)
+        page.write_text(clean)
+        self.assertTrue(inspect_review_pack(review)["review_page_audio_links_verified"])
+
     def test_official_synthetic_benchmark_review_pack_contract(self):
         # Exercise the production fixture -> benchmark -> review directory
         # sequence without opening the private answer key or using real music.
