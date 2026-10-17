@@ -225,6 +225,12 @@ def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dic
             warnings.append("microtiming_alignment_inconclusive_inspect")
         if stereo_differential_risk is True:
             warnings.append("stereo_differential_microtiming_shift_inspect")
+        elif (header[1] == 2 and stereo_differential_risk is None
+              and risk is False and regional_risk is False):
+            # The pooled stereo envelope can be exactly unchanged when L/R
+            # content is exchanged. It must not silently hide uncertainty in
+            # channel alignment behind a clean whole-clip result.
+            warnings.append("stereo_channel_alignment_inconclusive_inspect")
         if regional_risk is True:
             warnings.append("regional_timing_shift_inspect_not_tempo_estimate")
         elif regional_risk is None and risk is not True:
