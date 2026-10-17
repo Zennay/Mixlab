@@ -255,6 +255,38 @@ class ListenerControlTests(unittest.TestCase):
         self.path.write_text(page, encoding="utf-8")
         self.reject()
 
+    def test_reviewer_cannot_be_prefilled_or_locked(self):
+        for before, after in (
+            ('<input name="reviewer" required',
+             '<input name="reviewer" readonly required'),
+            ('<input name="reviewer" required',
+             '<input name="reviewer" value="forced-identity" required'),
+            ('<input name="reviewer" required',
+             '<input name="reviewer" pattern="[0-9]+" required'),
+        ):
+            with self.subTest(attack=after):
+                write_review(self.path, ["trial-001", "trial-002"], "a" * 64)
+                self.mutate(before, after)
+                self.reject()
+
+    def test_submit_button_cannot_bypass_required_ratings(self):
+        self.mutate('<button>Download my ratings</button>',
+                    '<button formnovalidate>Download my ratings</button>')
+        self.reject()
+
+    def test_submit_button_cannot_override_offline_target(self):
+        self.mutate('<button>Download my ratings</button>',
+                    '<button formaction="https://example.invalid/ratings">Download my ratings</button>')
+        self.reject()
+
+    def test_rating_options_cannot_be_preselected(self):
+        self.mutate('<option>A</option>', '<option selected>A</option>')
+        self.reject()
+
+    def test_rating_options_cannot_change_hidden_label(self):
+        self.mutate('<option>B</option>', '<option label="A">B</option>')
+        self.reject()
+
     def test_valid_one_trial(self):
         write_review(self.path, ["trial-001"], "f" * 64)
         self.assertEqual(check_review_controls(self.path)["trial_count"], 1)
