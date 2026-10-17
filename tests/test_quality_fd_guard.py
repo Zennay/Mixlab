@@ -127,6 +127,16 @@ class PrivateFdGuardTests(unittest.TestCase):
                 self.source.rename(real_file)
                 self.source.symlink_to(real_file)
 
+    def test_malformed_short_fmt_chunk_is_sanitized(self):
+        # wave._read_fmt_chunk can surface struct.error from unpacking a
+        # declared fmt chunk that contains fewer than the mandatory bytes.
+        # It must never bypass the bounded path-redacted admission contract.
+        payload = (b"WAVE" + b"fmt " + struct.pack("<I", 2) + b"\x01\x00"
+                   + b"data" + struct.pack("<I", 8) + b"x" * 8
+                   + b"\x00" * 16)
+        self.source.write_bytes(b"RIFF" + struct.pack("<I", len(payload)) + payload)
+        self.assert_rejected(self.source)
+
     def test_corrupt_and_tiny_headers_rejected(self):
         self.source.write_bytes(b"not a valid WAV" + b"x" * 45)
         self.assert_rejected(self.source)
