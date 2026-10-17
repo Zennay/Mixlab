@@ -481,6 +481,35 @@ class BatchPrecisionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "incomparable"):
                 precision.compare_precision_batch(self.base, [self.c1])
 
+    def test_source_replaced_between_batch_admission_and_scan_is_rejected(self):
+        original = precision._preadmit_wav
+        touched = False
+        incoming = self.root / "different-inode.wav"
+        wav(incoming, seed=2)
+
+        def replace_after_admission(path):
+            nonlocal touched
+            receipt = original(path)
+            if Path(path) == self.c3 and not touched:
+                # Simulate a concurrent writer swapping a previously admitted
+                # candidate before the PCM scan begins. Identical frame format.
+                os.replace(incoming, self.c1)
+                touched = True
+            return receipt
+
+        with patch.object(precision, "_preadmit_wav", side_effect=replace_after_admission):
+            with self.assertRaisesRegex(ValueError, "after admission"):
+                precision.compare_precision_batch(self.base, [self.c1, self.c2, self.c3])
+        self.assertTrue(touched)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlink metadata admission")
+    def test_batch_symlink_fails_without_scanning_or_partial_output(self):
+        link = self.root / "PRIVATE-symlink.wav"
+        link.symlink_to(self.c2)
+        with patch.object(precision, "_scan", side_effect=AssertionError("scan entered")):
+            with self.assertRaises((OSError, ValueError)):
+                precision.compare_precision_batch(self.base, [self.c1, link])
+
     def test_baseline_edit_during_later_candidate_invalidates_entire_batch(self):
         original = precision._scan
         def replace_midway(path, **kwargs):
