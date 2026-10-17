@@ -280,3 +280,33 @@ anonymization. The existing same-inode/source-identity and batch budgets
 continue to gate all inputs. This does not detect time stretching,
 nonzero-value padding, pitch changes, partial edits or perceptual
 near-duplicates.
+
+
+## Combined edge-padding and signed stereo/polarity reuse
+
+A second exact-reuse confound combines **two** otherwise separately
+detectable operations: move a PCM excerpt within an equal-duration file by
+adding/removing fully-zero edge frames, **and** apply a reversible channel
+swap or polarity inversion. The original full-length stereo-transform
+fingerprints do not match when edge timing changes; the untransformed
+edge-trimmed fingerprint also differs.
+
+The quality scanner now hashes edge-trimmed PCM for the seven existing
+stereo signed permutations (plain L/R swap, full polarity inversion, each
+single-channel inversion and the three signed swaps), or one mono sign
+inversion. It updates these streaming digests from the **same existing**
+bounded per-read transformed PCM arrays, without source reopens, new sample
+reads, unbounded buffers or media export. A transformation requiring the
+unrepresentable PCM16 negation of `-32768` is disabled, never saturated.
+The new `edge_silence_transformed_pcm_inspect_for_reused_audio` warning
+and `edge_silence_transformed_pcm_of` value identify only `baseline`
+or a prior anonymous `candidate-NN`, not the transform, shift offset,
+source name, samples or hash. Existing raw-duplicate and zero-edge-shift
+warnings are retained separately. A match is **exact PCM reuse requiring
+human inspection**, not a claim of music quality or automatic rejection.
+
+`tests/test_shifted_transformed_pcm.py` covers every stereo permutation,
+mono sign inversion, earlier-candidate reuse, one-sample differences,
+nonrepresentable signed minimum, unmodified inputs and privacy. The
+existing `test_private_source_fd.py` asserts scanner reads remain
+bounded to 4096 frames with all fingerprints enabled.
