@@ -210,7 +210,8 @@ def verify_repeatability(
         report = {
             "schema_version": 1,
             "repeatable_pcm": equal,
-            "independent_sources_verified": True,
+            "distinct_output_files_verified": True,
+            "independent_render_executions_proven": False,
             "format_and_frame_count_verified": True,
             "technical_review_required": not equal,
             "human_preference_test_required": True,
