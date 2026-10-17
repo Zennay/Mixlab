@@ -76,6 +76,56 @@ def _unchanged(path: Path, handle: object, original: os.stat_result) -> bool:
     )
 
 
+def _admit_receipt_shape(receipt: object) -> None:
+    """Bound in-process receipt metadata BEFORE JSON serialization.
+
+    A post-serialization length check alone cannot defend memory usage: an
+    attacker may supply multi-megabyte strings, enormous dicts, recursive
+    containers or deeply nested metadata. Accept only plain JSON value types;
+    cap nodes, recursion depth and an upper bound on raw scalar length.
+    """
+    pending = [(receipt, 0)]
+    seen_containers: set[int] = set()
+    nodes = 0
+    text_budget = 16_384
+    while pending:
+        value, depth = pending.pop()
+        nodes += 1
+        if nodes > 2_048 or depth > 16:
+            raise RepeatabilityError(_ERROR)
+        if type(value) in (dict, list):
+            if id(value) in seen_containers:
+                # Also conservatively disallow aliased mutable containers.
+                raise RepeatabilityError(_ERROR)
+            seen_containers.add(id(value))
+            if len(value) > 128:
+                raise RepeatabilityError(_ERROR)
+            if type(value) is dict:
+                for key, child in value.items():
+                    if type(key) is not str or len(key) > 128:
+                        raise RepeatabilityError(_ERROR)
+                    text_budget -= len(key)
+                    pending.append((child, depth + 1))
+            else:
+                pending.extend((item, depth + 1) for item in value)
+        elif type(value) is str:
+            text_budget -= len(value)
+        elif value is None or type(value) is bool:
+            text_budget -= 4
+        elif type(value) is int:
+            if value.bit_length() > 128:
+                raise RepeatabilityError(_ERROR)
+            text_budget -= 48
+        elif type(value) is float:
+            if not math.isfinite(value):
+                raise RepeatabilityError(_ERROR)
+            text_budget -= 48
+        else:
+            raise RepeatabilityError(_ERROR)
+        if text_budget < 0:
+            raise RepeatabilityError(_ERROR)
+
+
 def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tuple[str, str]:
     """Validate a private renderer receipt without ever serializing it publicly.
 
@@ -86,8 +136,9 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
     if not isinstance(receipt, dict):
         raise RepeatabilityError(_ERROR)
     try:
-        # Prevent deeply nested or huge metadata from unexpectedly consuming
-        # CPU. This is a private API, not an unbounded JSON file loader.
+        # Reject oversized or cyclic containers before any encoding work.
+        # Do not retain or publish the private receipt or its serialization.
+        _admit_receipt_shape(receipt)
         raw = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(raw) > 16384:
             raise RepeatabilityError(_ERROR)
