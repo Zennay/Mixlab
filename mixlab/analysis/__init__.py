@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import stat
 import tempfile
 from pathlib import Path
 import statistics
@@ -190,43 +191,176 @@ class ManualProvider:
                         warnings=("human annotation; not automatically measured",))
 
 
+# The private feature cache is an optimisation, never a second source of truth.
+# Bound all disk reads and bind a canonical analysis receipt to the source/provider.
+CACHE_MAX_BYTES = 1_000_000
+
+
+def _cache_digest(analysis):
+    raw = json.dumps(analysis, sort_keys=True, separators=(",", ":"),
+                     allow_nan=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _unique_cache_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate analysis cache JSON key")
+        result[key] = value
+    return result
+
+
+def _cache_constant(_value):
+    raise ValueError("Non-finite analysis cache JSON")
+
+
+def _read_cache(target):
+    """Read one bounded regular file without following a final symlink or FIFO."""
+    if target.is_symlink():
+        raise ValueError("Analysis cache entry must not be a symlink")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(target, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ValueError("Analysis cache entry could not be opened safely") from exc
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("Analysis cache entry must be a regular file")
+            if not 0 < metadata.st_size <= CACHE_MAX_BYTES:
+                raise ValueError("Analysis cache size budget exceeded")
+            raw = stream.read(CACHE_MAX_BYTES + 1)
+            if len(raw) > CACHE_MAX_BYTES:
+                raise ValueError("Analysis cache size budget exceeded")
+    except OSError as exc:
+        raise ValueError("Analysis cache entry could not be read safely") from exc
+    try:
+        item = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_cache_keys,
+                          parse_constant=_cache_constant)
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("Invalid analysis cache document") from exc
+    if not isinstance(item, dict):
+        raise ValueError("Invalid analysis cache document")
+    return item
+
+
+def _validate_cached_analysis(document, identity, source_hash, provider, info):
+    if set(document) != {"cache_identity", "analysis", "analysis_sha256"}:
+        raise ValueError("Incomplete analysis cache receipt")
+    if document["cache_identity"] != identity:
+        raise ValueError("Analysis cache identity mismatch")
+    analysis = document["analysis"]
+    if not isinstance(analysis, dict) or set(analysis) != set(Analysis.__dataclass_fields__):
+        raise ValueError("Invalid cached analysis schema")
+    signature = document["analysis_sha256"]
+    if (not isinstance(signature, str) or len(signature) != 64
+            or any(character not in "0123456789abcdef" for character in signature)):
+        raise ValueError("Invalid analysis cache digest")
+    try:
+        if _cache_digest(analysis) != signature:
+            raise ValueError("Analysis cache integrity mismatch")
+    except (TypeError, OverflowError) as exc:
+        raise ValueError("Invalid cached analysis values") from exc
+    if (type(analysis["schema_version"]) is not int or analysis["schema_version"] != 1
+            or analysis["source_sha256"] != source_hash
+            or analysis["provider_version"] != provider.version):
+        raise ValueError("Analysis cache source/provider mismatch")
+    for field in ("provider", "timing_source", "key_source"):
+        value = analysis[field]
+        if not isinstance(value, str) or not 0 < len(value) <= 100:
+            raise ValueError("Invalid cached analysis provenance")
+    duration = analysis["duration_seconds"]
+    if (type(duration) not in (int, float) or not math.isfinite(duration)
+            or abs(duration - info["duration_seconds"]) > 0.000001):
+        raise ValueError("Invalid cached analysis duration")
+    bpm = analysis["bpm"]
+    if bpm is not None:
+        number(bpm, "cached bpm", 30, 300)
+    number(analysis["tempo_confidence"], "cached confidence", 0, 1)
+    if analysis["key"] is not None and (
+        not isinstance(analysis["key"], str) or len(analysis["key"]) > 100
+    ):
+        raise ValueError("Invalid cached analysis key")
+    warnings = analysis["warnings"]
+    if (not isinstance(warnings, (list, tuple)) or len(warnings) > 64 or
+            any(not isinstance(w, str) or len(w) > 256 for w in warnings)):
+        raise ValueError("Invalid cached analysis warnings")
+    for field in ("beats_seconds", "downbeats_seconds", "phrase_starts_seconds"):
+        points = analysis[field]
+        if not isinstance(points, (list, tuple)) or len(points) > 10000:
+            raise ValueError("Invalid cached analysis beatgrid")
+        previous = -1.
+        for point in points:
+            if (type(point) not in (int, float) or not math.isfinite(point)
+                    or point < 0 or point > duration + .000001 or point <= previous):
+                raise ValueError("Invalid cached analysis beatgrid")
+            previous = point
+    energy = analysis["energy"]
+    if not isinstance(energy, (list, tuple)) or len(energy) > 100000:
+        raise ValueError("Invalid cached analysis energy")
+    previous = -1.
+    for point in energy:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise ValueError("Invalid cached analysis energy")
+        position, amplitude = point
+        if (type(position) not in (int, float) or not math.isfinite(position)
+                or position < 0 or position > duration + .000001 or position <= previous):
+            raise ValueError("Invalid cached analysis energy")
+        number(amplitude, "cached energy", 0, 1)
+        previous = position
+    return analysis
+
+
 def analyze_cached(path, cache_directory, provider=None):
-    """Content/config-addressed private feature cache. No original paths saved."""
+    """Content/config-addressed private feature cache with fail-closed receipts."""
     provider = provider or EnergyOnsetProvider()
-    inspect_wav(path)
+    info = inspect_wav(path)
     source_hash = digest(path)
-    identity = {"source": source_hash, "provider": type(provider).__module__ + "." + type(provider).__qualname__,
-                "version": provider.version, "schema": 1}
+    identity = {"source": source_hash,
+                "provider": type(provider).__module__ + "." + type(provider).__qualname__,
+                "version": provider.version, "schema": 2}
     cache_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     root = Path(cache_directory)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = root / (cache_key + ".json")
-    if target.exists():
-        result = json.loads(target.read_text())
-        if result.get("cache_identity") != identity:
-            raise ValueError("Cache identity mismatch")
-        return result["analysis"]
+    existing = _read_cache(target)
+    if existing is not None:
+        result = _validate_cached_analysis(existing, identity, source_hash, provider, info)
+        if digest(path) != source_hash:
+            raise ValueError("Source changed during cached analysis read")
+        return result
     result = provider.analyze(path).to_dict()
-    if digest(path) != source_hash or result["source_sha256"] != source_hash:
+    if digest(path) != source_hash or result.get("source_sha256") != source_hash:
         raise ValueError("Source changed during analysis")
-    # Publish only complete JSON. A killed analysis must not poison the cache.
+    document = {"cache_identity": identity, "analysis": result,
+                "analysis_sha256": _cache_digest(result)}
+    _validate_cached_analysis(document, identity, source_hash, provider, info)
+    serialized = json.dumps(document, sort_keys=True, allow_nan=False)
+    if len(serialized.encode("utf-8")) > CACHE_MAX_BYTES:
+        raise ValueError("Analysis cache size budget exceeded")
+    # Publish a complete private file atomically; never overwrite a competing receipt.
     fd, temporary = tempfile.mkstemp(prefix=".analysis-", dir=root)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump({"cache_identity": identity, "analysis": result}, stream,
-                      sort_keys=True, allow_nan=False)
+            stream.write(serialized)
             stream.flush()
             os.fsync(stream.fileno())
         try:
             os.link(temporary, target)
         except FileExistsError:
-            existing = json.loads(target.read_text())
-            if existing.get("cache_identity") != identity or existing.get("analysis") != json.loads(json.dumps(result)):
-                raise ValueError("Conflicting cache entry")
+            concurrent = _read_cache(target)
+            if concurrent is None:
+                raise ValueError("Concurrent analysis cache entry unavailable")
+            other = _validate_cached_analysis(concurrent, identity, source_hash, provider, info)
+            if other != result:
+                raise ValueError("Conflicting analysis cache entry")
     finally:
         Path(temporary).unlink(missing_ok=True)
-    return json.loads(json.dumps(result))
-
+    return json.loads(json.dumps(result, allow_nan=False))
 
 def beat_errors(reference, estimated, tolerance=.07):
     """One-to-one event matching; duplicated estimates cannot inflate recall."""
