@@ -100,6 +100,17 @@ class _ReviewControls(HTMLParser):
         if tag in ("script", "style"):
             if self.current_asset is not None:
                 _deny()
+            # Byte-equal assets can still break a real browser if the submit
+            # listener executes before its form exists, or if a stylesheet
+            # is moved into a listener's form. Enforce official load order.
+            if tag == "style" and self.form_count != 0:
+                _deny()
+            if tag == "script" and (
+                self.form_count != 1 or self.form_open
+                or self.field is not None or self.label is not None
+                or self.buttons != 1
+            ):
+                _deny()
             self.current_asset = tag
             self.assets[tag].append([])
         if tag == "html":
