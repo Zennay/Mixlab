@@ -21,6 +21,12 @@ tri-state review, **never source paths, PCM values, fingerprints or filenames**.
 Invalid/private path details are concealed in the API and CLI. Candidate
 iterators are consumed for **at most eight entries**, even if infinite, and
 iterator failures are redacted rather than propagating private strings.
+A custom `os.PathLike` is evaluated **exactly once** per source and its
+resulting string is frozen before checking lexical `../`, file type and
+ancestor identity. This prevents a stateful `__fspath__` object from
+validating one name and opening another. Arbitrary `__fspath__` failures
+(including exceptions containing private filenames) become generic redacted
+input errors.
 
 Admission is fail-closed: no symlink in any current parent component or source
 basename; regular files only. The original preflight lstat() is **not** enough
