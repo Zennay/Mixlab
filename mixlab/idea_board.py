@@ -26,6 +26,7 @@ KIND = "mixlab-manual-transition-idea-selection"
 
 HTML = """<!doctype html><html lang="nl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src 'self' file:; connect-src 'none'; base-uri 'none'; object-src 'none'">
 <meta name="color-scheme" content="dark"><title>MixLab · Transition Idea Board</title>
 <style>
 :root{font-family:system-ui,sans-serif;background:#0d0e15;color:#f3f4fc}
@@ -40,14 +41,19 @@ background:#292c3c;margin:10px 0;cursor:pointer}
 input{accent-color:#ad97ff;margin-right:10px}button{font:inherit;cursor:pointer;border-radius:10px;
 padding:13px 19px;border:1px solid #a195c5;background:#594c91;color:white}
 button:focus-visible,input:focus-visible{outline:3px solid #e2d9ff;outline-offset:3px}
-.muted{color:#a7b0c4}code{color:#e6dbff}pre{white-space:pre-wrap;overflow-wrap:anywhere;
+.muted{color:#a7b0c4}.option label{display:block;cursor:pointer}
+.preview-controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}
+.preview-controls button{padding:8px 12px;font-size:.88rem}
+code{color:#e6dbff}pre{white-space:pre-wrap;overflow-wrap:anywhere;
 padding:18px;background:#232537;border-radius:12px}#message{min-height:2em}
 </style></head><body><main>
 <p class="eyebrow">MIXLAB / PRIVÉ CUE-IDEEËN</p><h1>Find the<br>moment.</h1>
 <p class="lede">Vergelijk mogelijke overgangsmomenten uit je <strong>handmatig
 vastgelegde</strong> BPM en downbeat-grid met lokale RMS-energie. Het zijn
 heuristieken, geen gedetecteerde phrases of muzikale kwaliteitscores.
-Elke keuze vereist jouw uitdrukkelijke bevestiging.</p>
+Elke keuze vereist jouw uitdrukkelijke bevestiging. Beluister A en B afzonderlijk
+op de voorgestelde cue-tijd; deze korte previews zijn nog geen gerenderde
+overgang en bevatten geen automatische beatmatching.</p>
 <div id="pairs"></div>
 <button id="download">Bewaar goedgekeurde cuekeuzes</button>
 <p id="message" aria-live="polite" role="status"></p>
@@ -65,6 +71,27 @@ goedgekeurde manifest. Geen internet, uploads of automatische acceptatie.</p>
 "use strict";
 const board=JSON.parse(document.getElementById("board").textContent);
 const pairs=document.getElementById("pairs"), message=document.getElementById("message");
+let playing=null;
+function previewSong(track,start,duration){
+ if(playing){playing.pause();playing.src="";playing=null;}
+ const audio=new Audio("audio/"+encodeURIComponent(track)+".wav");
+ playing=audio;audio.preload="metadata";
+ const end=start+duration;
+ audio.addEventListener("loadedmetadata",()=>{
+   if(playing!==audio)return;
+   if(start>=audio.duration){message.textContent="Dit fragment valt buiten de track.";return;}
+   audio.currentTime=start;
+   audio.play().catch(()=>{message.textContent="Kan lokale WAV niet beluisteren. Controleer het bronbestand.";});
+ },{once:true});
+ audio.addEventListener("timeupdate",()=>{
+   if(audio.currentTime>=end){audio.pause();if(playing===audio)playing=null;}
+ });
+ audio.addEventListener("error",()=>{
+   if(playing===audio)message.textContent="Lokaal bronbestand ontbreekt of wordt niet ondersteund.";
+ });
+ audio.load();
+ message.textContent="Voorbeeld: het losse lokale nummerfragment, geen gemengde overgang.";
+}
 for (const pair of board.pairs) {
  const section=document.createElement("section");section.className="pair";
  const head=document.createElement("h2");head.textContent=pair.a+" → "+pair.b;section.append(head);
@@ -72,7 +99,8 @@ for (const pair of board.pairs) {
  note.textContent="Bestaande overgang "+pair.id+" · "+pair.bpm+" BPM, "+pair.beats+" beats";
  section.append(note);
  for (const option of pair.options){
-  const label=document.createElement("label");label.className="option";
+  const card=document.createElement("div");card.className="option";
+  const label=document.createElement("label");
   const input=document.createElement("input");input.type="radio";input.name=pair.id;
   input.value=option.key; input.checked=option.key==="manual";
   const strong=document.createElement("strong");
@@ -80,15 +108,34 @@ for (const pair of board.pairs) {
   const info=document.createElement("span");
   info.textContent=" · A "+option.a_start_seconds+"s → B "+option.b_start_seconds+
   "s · "+(option.key==="manual"?"origineel bevestigd":"energieverschil "+option.energy_gap_db+" dB");
-  label.append(input,strong,info);section.append(label);
+  label.append(input,strong,info);card.append(label);
+  const controls=document.createElement("div");controls.className="preview-controls";
+  for(const [name,id,time] of [
+    ["▶ Beluister uitgaand",pair.a,option.a_start_seconds],
+    ["▶ Beluister inkomend",pair.b,option.b_start_seconds]
+  ]){
+    const button=document.createElement("button");
+    button.type="button";button.textContent=name;
+    button.addEventListener("click",()=>{input.checked=true;
+      previewSong(id,time,pair.beats*60/pair.bpm);});
+    controls.append(button);
+  }
+  card.append(controls);section.append(card);
  }
  pairs.append(section);
 }
 document.getElementById("download").addEventListener("click",()=>{
- const selections=[];
+ const selections=[], lastIncomingEnds=new Map();
  for(const pair of board.pairs){
   const selected=document.querySelector('input[name="'+pair.id+'"]:checked');
   if(!selected){message.textContent="Bevestig een cuekeuze voor ieder paar.";return;}
+  const chosen=pair.options.find(option=>option.key===selected.value);
+  if(!chosen){message.textContent="Ongeldige cuekeuze voor "+pair.id;return;}
+  const minCue=lastIncomingEnds.get(pair.a);
+  if(minCue!==undefined && chosen.a_start_seconds+1e-8<minCue){
+    message.textContent=pair.id+" springt achteruit in een al afgespeeld nummer. Kies andere cues.";return;
+  }
+  lastIncomingEnds.set(pair.b,chosen.b_start_seconds+pair.beats*60/pair.bpm);
   selections.push({pair:pair.id,option:selected.value});
  }
  const receipt={schema_version:1,kind:"mixlab-manual-transition-idea-selection",
