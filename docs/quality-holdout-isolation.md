@@ -67,7 +67,12 @@ tool, pack and tuning pipeline.
    avoids false exclusions when two unrelated recordings share a zero-filled
    or flat ±2,400-count stereo channel. An actual copied audible channel is
    still rejected when whole WAV fingerprints differ. All PCM reads finish the underlying
-   source-identity check before a collision is reported.
+   source-identity check before a collision is reported. Equal anchor
+   bytes from repeated windows are indexed only once per format while their
+   originating source identities are retained. This reduces duplicate
+   comparisons on repetitious material without incorrectly counting the
+   track against itself or allowing an evaluation source to borrow a
+   development source's identity.
 4. The externally pinned 5–10 pair study is validated using MixLab's existing
    strict study proof. **Every evaluation track** must appear in that frozen
    study and its ID, full-WAV SHA-256 and BPM must agree exactly. Every
