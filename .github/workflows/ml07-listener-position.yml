@@ -54,3 +54,68 @@ jobs:
           ulimit -v 196608
           python -m py_compile mixlab/quality/listener_position.py tests/test_quality_listener_position.py
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_listener_position.py' -v
+
+      - name: Checkout exact independent ML-05 frozen study producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: e512d8fc2eae79efe765dc9a523105fad68a196f
+          path: upstream-pr71
+          persist-credentials: false
+      - name: Exercise real producer and actual 3-reviewer aggregation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-pr71 rev-parse HEAD)" = "e512d8fc2eae79efe765dc9a523105fad68a196f"
+          cp mixlab/quality/listener_position.py upstream-pr71/mixlab/quality/listener_position.py
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.quality.listener_position import inspect_listener_sides
+
+          spec = importlib.util.spec_from_file_location(
+              "ml05_genuine_producer_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              receipt, evidence, trials = verify_pack(fixture.pack)
+              assert len(trials) == 5 and evidence["study_id"] == fixture.study_doc["study_id"]
+              def votes(kind):
+                  paths = []
+                  for index in range(3):
+                      preferences = ["A"] * 5 if kind == "biased" else [
+                          ("A" if (trial + index) % 2 == 0 else "B")
+                          for trial in range(5)]
+                      path = fixture.root / f"{kind}-listener-{index:02d}.json"
+                      path.write_text(json.dumps({
+                          "schema_version": 1, "pack_id": receipt["pack_id"],
+                          "reviewer": f"{kind}-listener-{index:02d}",
+                          "ratings": [
+                              {"trial": f"trial-{i:03d}", "preference": value}
+                              for i, value in enumerate(preferences, 1)]}),
+                          encoding="utf-8")
+                      paths.append(path)
+                  return paths
+
+              skewed = votes("biased")
+              assert aggregate(fixture.pack, skewed)["reviewers"] == 3
+              warning = inspect_listener_sides(fixture.pack, skewed)
+              assert warning["aggregate_position_dominance_review"] is True
+              assert warning["individual_position_pattern_review"] is True
+              assert warning["milestone_pass"] is False
+              balanced = votes("balanced")
+              assert aggregate(fixture.pack, balanced)["reviewers"] == 3
+              clear = inspect_listener_sides(fixture.pack, balanced)
+              assert clear["aggregate_position_dominance_review"] is False
+              assert clear["individual_position_pattern_review"] is False
+              assert str(fixture.root) not in json.dumps(warning)
+              assert str(fixture.root) not in json.dumps(clear)
+              print("Pinned ML-05 producer: real PCM + valid 3-reviewer ingest -> HOLD for all-A, no 80% flag for mixed")
+          finally:
+              fixture.tearDownClass()
+          PY
