@@ -399,7 +399,7 @@ class IntersampleTests(unittest.TestCase):
             return result
 
         with patch.object(intersample_module, "_scan", side_effect=swap_after_first_scan):
-            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+            with self.assertRaises(AudioInputError):
                 compare_intersample(self.a, [self.b])
 
     def test_candidate_path_swap_while_baseline_is_scanned_is_rejected(self):
@@ -418,7 +418,7 @@ class IntersampleTests(unittest.TestCase):
             return real_scan(reader, channels, frames)
 
         with patch.object(intersample_module, "_scan", side_effect=swap_candidate):
-            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+            with self.assertRaises(AudioInputError):
                 compare_intersample(self.a, [self.b])
 
     def test_unlinked_open_source_path_is_not_accepted(self):
@@ -436,7 +436,7 @@ class IntersampleTests(unittest.TestCase):
             return result
 
         with patch.object(intersample_module, "_scan", side_effect=unlink_after_open):
-            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+            with self.assertRaises(AudioInputError):
                 compare_intersample(self.a, [self.b])
 
     def test_source_path_symlink_replacement_after_open_is_rejected(self):
@@ -455,7 +455,7 @@ class IntersampleTests(unittest.TestCase):
             return result
 
         with patch.object(intersample_module, "_scan", side_effect=switch_to_link):
-            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+            with self.assertRaises(AudioInputError):
                 compare_intersample(self.a, [self.b])
 
     def test_unchanged_distinct_files_keep_anonymous_success(self):
@@ -554,6 +554,31 @@ class IntersampleTests(unittest.TestCase):
         with patch.object(intersample_module, "_scan", side_effect=mutate_earlier_timestamp):
             with self.assertRaisesRegex(AudioInputError, "changed during group read"):
                 compare_intersample(self.a, [self.b])
+
+    def test_independent_final_path_identity_guard_when_fd_metadata_is_stable(self):
+        # Most Linux renames also alter inode ctime and trigger the older
+        # fstat guard. Isolate the *new* namespace check by simulating a
+        # path resolving to another regular inode without mutating the old
+        # descriptor, as may occur under other filesystem semantics.
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800)
+        other = self.root / "unrelated-same-size.wav"
+        write_wav(other, [0] * 800)
+        original_stat = os.stat
+        alternate_stat = original_stat(other)
+        hits = 0
+
+        def changed_namespace(path, *args, **kwargs):
+            nonlocal hits
+            if os.fspath(path) == os.fspath(self.a) and not kwargs.get("follow_symlinks", True):
+                hits += 1
+                return alternate_stat
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(intersample_module.os, "stat", side_effect=changed_namespace):
+            with self.assertRaisesRegex(AudioInputError, "Source path changed"):
+                compare_intersample(self.a, [self.b])
+        self.assertEqual(1, hits)
 
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
