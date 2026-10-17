@@ -126,6 +126,35 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(bad.returncode, 2, bad.stderr)
         self.assertNotIn(str(self.root), bad.stdout + bad.stderr)
 
+    def test_malformed_wav_decoder_error_is_redacted(self):
+        _wave(self.candidate, mode="normal")
+        self.base.write_bytes(b"not-a-wave" + str(self.root).encode())
+        run = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.relative_mono",
+             "--baseline", str(self.base), "--candidate", str(self.candidate)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(run.returncode, 2)
+        self.assertEqual(run.stderr, "")
+        self.assertNotIn(str(self.root), run.stdout)
+        self.assertEqual(json.loads(run.stdout)["status"], "invalid_private_pcm")
+
+    def test_pcm8_is_not_misreported_as_safe(self):
+        with wave.open(str(self.base), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(1)
+            out.setframerate(8000)
+            out.writeframes(bytes([128, 128]) * 12000)
+        _wave(self.candidate, mode="normal")
+        run = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.relative_mono",
+             "--baseline", str(self.base), "--candidate", str(self.candidate)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(run.returncode, 2)
+        self.assertNotIn(str(self.root), run.stdout + run.stderr)
+
+
 
 if __name__ == "__main__":
     unittest.main()
