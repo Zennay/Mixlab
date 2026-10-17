@@ -261,6 +261,55 @@ class StreamingChunkInvariants(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect_review_pack(review)
 
+    def test_multicandidate_swapped_and_inverted_pcm_stays_detectable(self):
+        # A source reused after a stereo L/R swap or sign inversion is still
+        # the same listening evidence. Assert the real comparison path,
+        # including a sample change exactly on both sides of readframes(4096).
+        frames = [
+            (round(4700 * math.sin(2 * math.pi * 220 * i / RATE)),
+             round(3700 * math.sin(2 * math.pi * 330 * i / RATE)))
+            for i in range(FRAMES)
+        ]
+        for pos in (CHUNK - 1, CHUNK):
+            with self.subTest(position=pos):
+                original = list(frames)
+                original[pos] = (7139, -3941)
+                root = self.root / f"source-{pos}.wav"
+                swapped = self.root / f"swap-{pos}.wav"
+                inverted = self.root / f"invert-{pos}.wav"
+                duplicate = self.root / f"dupe-{pos}.wav"
+                _write(root, 2, original)
+                _write(swapped, 2, [(right, left) for left, right in original])
+                _write(inverted, 2, [(-left, -right) for left, right in original])
+                _write(duplicate, 2, original, extra_chunk=True)
+                comparison = compare_wavs(root, [swapped, inverted, duplicate])
+                rows = comparison["candidates"]
+                self.assertEqual(rows[0]["stereo_swapped_pcm_of"], "baseline")
+                self.assertIn("stereo_channel_swapped_pcm_inspect_for_reused_audio",
+                              rows[0]["warnings"])
+                self.assertEqual(rows[1]["polarity_inverted_pcm_of"], "baseline")
+                self.assertIn("polarity_inverted_pcm_inspect_for_reused_audio",
+                              rows[1]["warnings"])
+                self.assertEqual(rows[2]["duplicate_pcm_of"], "baseline")
+                self.assertIn("identical_pcm_to_baseline_inspect_for_noop",
+                              rows[2]["warnings"])
+                self.assertFalse(comparison["contains_source_paths_or_audio"])
+                self.assertNotIn(str(self.root), json.dumps(comparison))
+
+    def test_truncation_in_each_streaming_read_rejected(self):
+        # A valid header can still lie about available source frames.
+        # Cut both inside the first chunk and just after a complete first
+        # chunk; never promote an incomplete remaining read to a clean scan.
+        for channels in (1, 2):
+            sample = self._make(f"trunc-source-{channels}.wav", channels)
+            content = sample.read_bytes()
+            header_length = len(content) - FRAMES * channels * 2
+            for have in (1, CHUNK - 1, CHUNK, CHUNK + 1, FRAMES - 1):
+                with self.subTest(channels=channels, frames_available=have):
+                    sample.write_bytes(content[:header_length + have * channels * 2])
+                    with self.assertRaises((ValueError, OSError, EOFError)):
+                        scan_wav(sample)
+
     def test_truncated_declared_wav_never_pretends_valid(self):
         sample = self._make("truncated.wav", 1)
         data = sample.read_bytes()
