@@ -468,6 +468,50 @@ class PrivateFdGuardTests(unittest.TestCase):
                 validate_private_ab_group([self.source, candidate])
         self.assertTrue(changed[0])
 
+    def test_ab_group_revalidates_baseline_during_later_candidate_scan(self):
+        # All descriptors remain owned until the complete cohort exits. A
+        # replaced earlier path must not be silently accepted at the end.
+        candidate = self.root / "later.wav"
+        replacement = self.root / "replacement.wav"
+        make_wav(candidate)
+        make_wav(replacement)
+        real_read = wave.Wave_read.readframes
+        calls = [0]
+
+        def rebind_after_baseline(reader, n):
+            raw = real_read(reader, n)
+            calls[0] += 1
+            if calls[0] == 2:
+                os.replace(replacement, self.source)
+            return raw
+
+        with patch.object(wave.Wave_read, "readframes", new=rebind_after_baseline):
+            with self.assertRaisesRegex(ValueError, "details withheld") as error:
+                validate_private_ab_group([self.source, candidate])
+        self.assertGreaterEqual(calls[0], 2)
+        self.assertNotIn(str(self.root), str(error.exception))
+
+    def test_ab_group_eight_participants_and_bounded_read_chunk(self):
+        files = [self.source]
+        for idx in range(7):
+            file = self.root / f"c-{idx}.wav"
+            make_wav(file, frames=8193)
+            files.append(file)
+        make_wav(self.source, frames=8193)
+        original_read = wave.Wave_read.readframes
+        counts = []
+
+        def bounded_read(reader, count):
+            counts.append(count)
+            return original_read(reader, count)
+
+        with patch.object(wave.Wave_read, "readframes", new=bounded_read):
+            report = validate_private_ab_group(files)
+        self.assertEqual(7, report["candidate_count"])
+        self.assertTrue(counts)
+        self.assertLessEqual(max(counts), 4096)
+        self.assertEqual(8, len([v for v in counts if v == 4096]))
+
     def test_ab_group_cli_success_stable_and_no_private_path(self):
         candidate = self.root / "CANDIDATE_PRIVATE.wav"
         make_wav(candidate)
