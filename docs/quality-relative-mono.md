@@ -12,7 +12,7 @@ The existing `mixlab.quality.compare_wavs` reports absolute stereo fold-down can
 python -m mixlab.quality.relative_mono --baseline /private/baseline.wav --candidate /private/candidate.wav
 ```
 
-Up to four candidates; main scanner enforces the existing PCM16 mono/stereo 8–96kHz, 2M frames, 32MiB per WAV. Use only permitted local synthetic or explicitly authorized audio. No network or packages; source paths/PCM/hashes are not emitted by this module. **Only the reported CLI output is redacted**; it is not a hardened sandbox for malicious paths or concurrency races, since it reuses the existing path-opening code.
+Up to four candidates; main scanner enforces the existing PCM16 mono/stereo 8–96kHz, 2M frames, 32MiB per WAV. Use only permitted local synthetic or explicitly authorized audio. No network or packages; source paths/PCM/hashes are not emitted by this module. **Only the reported CLI output is redacted.** The companion adds a static pre-read no-symlink check for every parent and leaf component, rejects FIFOs and oversized/nonregular files before decoding, and does not write audio. It is still **not** an atomic descriptor-bound sandbox: concurrent hostile rename/path replacement between admission and the existing scanner is out of scope. Operate on a trusted private local workspace.
 
 Exit `0`: no *new sustained* mono cancellation detected, **not** an M1 pass. Exit `3`: candidate-specific cancellation, already problematic baseline, or insufficient evidence; human/DSP review required. Exit `2`: rejected private PCM or invalid command inputs, with generic path-free error.
 
