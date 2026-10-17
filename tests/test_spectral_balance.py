@@ -139,6 +139,29 @@ class SpectralBalanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.report()
 
+    def test_mismatched_candidate_header_is_rejected_before_pcm_decoding(self):
+        expected = (48000, 1, 12000)
+        original = wave.Wave_read.readframes
+        for kwargs in ({"rate": 44100}, {"channels": 2}, {"duration": 0.3}):
+            with self.subTest(kwargs=kwargs):
+                make_wav(self.other, **kwargs)
+                baseline_reads = []
+
+                def reject_candidate_pcm(reader, nframes):
+                    fmt = (reader.getframerate(), reader.getnchannels(), reader.getnframes())
+                    if fmt != expected:
+                        raise AssertionError("mismatched candidate PCM was decoded")
+                    baseline_reads.append(nframes)
+                    return original(reader, nframes)
+
+                with patch.object(wave.Wave_read, "readframes", reject_candidate_pcm):
+                    with self.assertRaises(ValueError):
+                        self.report()
+                self.assertTrue(baseline_reads)
+        with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError("PCM decoded")):
+            with self.assertRaises(ValueError):
+                scan_spectral_proxy(self.base, expected_format=(48000, 2, 12000))
+
     def test_reject_unbounded_and_malformed_thresholds(self):
         for value in (float("nan"), float("inf"), -1, 0, 25, True):
             with self.subTest(value=value):
