@@ -79,12 +79,26 @@ class CrestDynamicsTests(unittest.TestCase):
         row = compare_crest_factors(self.base, [self.alt])["candidates"][0]
         self.assertIsNone(row["crest_delta_db_vs_baseline"])
         self.assertFalse(row["crest_factor_confound_risk"])
+        self.assertEqual(["silence_prevents_crest_comparison"], row["warnings"])
         self.assertIsNone(compare_crest_factors(self.base, [self.alt])["baseline_crest_factor_db"])
         write_wav(self.alt, [0] * 8000)
         row = compare_crest_factors(self.base, [self.alt])["candidates"][0]
         self.assertIsNone(row["crest_factor_db"])
         self.assertIsNone(row["crest_delta_db_vs_baseline"])
-        self.assertEqual([], row["warnings"])
+        self.assertEqual(["silence_prevents_crest_comparison"], row["warnings"])
+
+    def test_strict_cli_silence_warns_and_exits_two(self):
+        write_wav(self.base, [0] * 8000)
+        run = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.dynamics",
+             str(self.base), str(self.alt), "--fail-on-warnings"],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(2, run.returncode, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertIn("silence_prevents_crest_comparison",
+                      result["candidates"][0]["warnings"])
+        self.assertNotIn(str(self.root), run.stdout + run.stderr)
 
     def test_threshold_and_invalid_values_fail_closed(self):
         self.assertFalse(compare_crest_factors(
