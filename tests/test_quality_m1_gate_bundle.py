@@ -374,6 +374,77 @@ class RealPCMEndToEndTests(unittest.TestCase):
         self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
         self.assertIn("position-bias-or-insufficient-data", report["review_reasons"])
 
+    def _stdin_cli(self, document, *extra, raw=False):
+        payload = document if raw else json.dumps(document).encode("utf-8")
+        return subprocess.run([
+            sys.executable, "-m", "mixlab.quality.m1_gate_bundle",
+            "--private-input-stdin", *extra,
+        ], input=payload, capture_output=True, timeout=45)
+
+    def _private_request(self):
+        return {
+            "study": str(self.fixture.study),
+            "pack": str(self.fixture.pack),
+            "ratings": list(map(str, self.ballots)),
+            "expected_study_id": self.fixture.pinned,
+        }
+
+    def test_private_stdin_invocation_executes_real_pcm_without_path_argv(self):
+        request = self._private_request()
+        result = self._stdin_cli(request)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        response = json.loads(result.stdout)
+        self.assertEqual(response, self.bundle())
+        self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
+        self.assertEqual(response["frozen_pair_count"], 5)
+        self.assertIs(response["milestone_pass"], False)
+
+    def test_stdin_all_tie_is_a_valid_review_hold_not_corruption(self):
+        self.ballots = self.fixture.generate_reviews([["Tie"] * 5] * 3)
+        result = self._stdin_cli(self._private_request())
+        self.assertEqual(result.returncode, 3, result.stderr.decode())
+        self.assertEqual(json.loads(result.stdout)["technical_screen"], "REVIEW_REQUIRED")
+        self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
+
+    def test_stdin_input_parser_rejects_ambiguity_and_secret_exposure(self):
+        secret = "SECRET_PRIVATE_MUSIC_PATH_123"
+        cases = [
+            b"",
+            b"null",
+            b"[]",
+            b"{}",
+            b"not-json",
+            b"\xff",
+            b'{"study":"SECRET", "study":"SECRET2"}',
+            b'{"study":"SECRET", "ratings": ["R"], "unknown": "UNTRUSTED"}',
+            b"{" + b" " * 32768 + b"}",
+        ]
+        for item in cases:
+            with self.subTest(case=item[:32]):
+                response = self._stdin_cli(item, raw=True)
+                self.assertEqual(response.returncode, 2)
+                self.assertFalse(response.stdout)
+                self.assertNotIn(b"SECRET", response.stderr)
+                self.assertNotIn(b"Traceback", response.stderr)
+        request = self._private_request()
+        request["unknown_secret_field"] = secret
+        response = self._stdin_cli(request)
+        self.assertEqual(response.returncode, 2)
+        self.assertNotIn(secret.encode(), response.stdout + response.stderr)
+
+    def test_stdin_mode_refuses_legacy_paths_and_flags_together(self):
+        request = self._private_request()
+        for extras in (
+            (str(self.fixture.study),),
+            ("--expected-study-id", self.fixture.pinned),
+            ("--SECRET_PRIVATE_MUSIC",),
+        ):
+            with self.subTest(extras=extras):
+                result = self._stdin_cli(request, *extras)
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
+                self.assertNotIn(b"SECRET_PRIVATE_MUSIC", result.stdout + result.stderr)
+
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
         original = module.inspect_real_pilot
