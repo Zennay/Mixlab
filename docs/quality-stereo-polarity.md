@@ -145,3 +145,36 @@ Two new deterministic regression methods check duplicate `data` and
 post-data chunk-size declaration and a valid odd-length `LIST` payload with
 padding. This has **no effect** on the stricter listener-public WAV policy:
 published packs still cannot contain any RIFF metadata chunks.
+
+## Same-file-descriptor validation (private PCM16)
+
+The previous private quality scanner called `Path.stat`, opened the path
+once to validate RIFF and then reopened the filename through
+`wave.open(path)` for PCM analysis. A cooperating local process could
+replace the file in that gap, so the validated header and measured audio
+might not belong to the same recording. The standalone library also needed
+stronger nonregular-file admission than the CLI-only guard in PR #56.
+
+The `mixlab/quality/private_source.py` context manager now opens the file
+**once**, using nonblocking/no-follow flags where supported, applies
+`fstat` regular-file and 32 MiB gates to that descriptor, validates
+every RIFF header chunk on the **same open handle**, seeks to frame zero,
+and passes that very handle to `wave.open`. The descriptor stays open
+through the streaming PCM scanner. A post-scan `fstat` rejects observable
+same-inode mutation by size, device/inode, mtime or ctime changes. Failed
+opens use a generic path-free message. A renamed/replaced **pathname**
+does not silently switch the audio stream to the replacement inode.
+
+`tests/test_private_source_fd.py` adds eight synthetic checks for correct
+ordinary WAV and compare behavior, the actual decoder descriptor, pathname
+swap between header validation and PCM decoding, same-inode change
+rejection, symlink/FIFO/directory denial, sparse oversize admission,
+redacted missing-path errors and invalid-header exception privacy.
+
+This reduces ordinary local TOCTOU/path-swap exposure but does **not**
+provide atomic snapshots against a malicious process mutating sample bytes
+and restoring all observable metadata, prevent changes made *after*
+the quality command exits, guarantee support for hostile filesystems, or
+supply a real-music listener test. Public listener packs retain stricter
+container and symlink requirements. Integration with PR #56's separate
+CLI-argument hardening remains an owner-reviewed release task.
