@@ -62,6 +62,20 @@ The review page is capped at 1 MiB; its text is never returned in JSON.
 Audio-only review folders without an index can still be checked, but
 `review_page_audio_links_verified` is then `false`, not a quality guarantee.
 
+The review preflight additionally fingerprints each playback waveform
+*privately*, including sample rate/channel layout, and reports a neutral
+`repeated_pcm_across_trials_inspect_blinding` warning when an exact PCM
+recording is reused in a **different** randomized A/B trial. Its only
+cross-reference is an earlier opaque slot such as `trial-001/A`, never a
+file path, raw samples or a fingerprint. This is a potential **recognition
+and unblinding risk**, not evidence that a listener actually identified
+the baseline. Deliberate repeated-reference designs may require an
+explicit independent protocol review, but must not silently pass a strict
+blind-review gate. The official synthetic `fixture -> benchmark` pack
+reuses the same baseline among its three family comparisons and should
+trigger the warning. Review-pack checks do not automatically relabel,
+rewrite or randomize the experiment.
+
 By default it exits **0** with JSON regardless of nonfatal warnings.
 With `--fail-on-warnings`, it exits **2** when any review pair raises a
 technical warning (including identical A/B PCM) but still prints the JSON.
