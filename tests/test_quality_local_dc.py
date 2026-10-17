@@ -54,6 +54,50 @@ class LocalDCQualityTests(unittest.TestCase):
              offsets=[[offset] * int(rate * duration)])
         return path
 
+    def test_single_alias_rejected_before_any_pcm_decode(self):
+        _wav(self.base)
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "distinct regular files"):
+                local_dc.inspect(self.base, self.base)
+
+    def test_single_hardlink_rejected_before_any_pcm_decode(self):
+        _wav(self.base)
+        os.link(self.base, self.alt)
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "distinct regular files"):
+                local_dc.inspect(self.base, self.alt)
+
+    def test_single_shape_mismatch_rejected_before_any_pcm_decode(self):
+        _wav(self.base)
+        _wav(self.alt, duration=2)
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM decoded")):
+            with self.assertRaisesRegex(ValueError, "identical shape"):
+                local_dc.inspect(self.base, self.alt)
+
+    def test_single_corrupted_header_rejected_before_any_pcm_decode(self):
+        _wav(self.base)
+        self.alt.write_bytes(b"RIFF" + b"X" * 50)
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM decoded")):
+            with self.assertRaises(ValueError):
+                local_dc.inspect(self.base, self.alt)
+
+    def test_single_source_replaced_after_admission_rejected(self):
+        _wav(self.base)
+        _wav(self.alt)
+        original = local_dc._admit_batch
+        def replace_after_admission(sources):
+            receipt = original(sources)
+            self.base.unlink()
+            _wav(self.base)
+            return receipt
+        with mock.patch.object(local_dc, "_admit_batch", side_effect=replace_after_admission):
+            with self.assertRaises(ValueError):
+                local_dc.inspect(self.base, self.alt)
+
     def test_batch_real_eight_million_frame_aggregate_ceiling(self):
         # Eight independent 1M-frame PCM16 mono WAVs, no fabricated nframes.
         # This exercises the full 8M-frame admission and bounded scanner.
@@ -140,7 +184,7 @@ class LocalDCQualityTests(unittest.TestCase):
     def test_batch_rejects_baseline_and_candidate_alias_before_pcm(self):
         _wav(self.base)
         with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
-            with self.assertRaisesRegex(ValueError, "distinct identities"):
+            with self.assertRaisesRegex(ValueError, "distinct regular files"):
                 local_dc.inspect_batch(self.base, [self.base])
 
     def test_batch_rejects_two_candidate_hardlinks_before_pcm(self):
@@ -149,14 +193,14 @@ class LocalDCQualityTests(unittest.TestCase):
         duplicate = Path(self.tmp.name) / "alias.wav"
         os.link(first, duplicate)
         with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
-            with self.assertRaisesRegex(ValueError, "distinct identities"):
+            with self.assertRaisesRegex(ValueError, "distinct regular files"):
                 local_dc.inspect_batch(self.base, [first, duplicate])
 
     def test_batch_rejects_mismatched_frames_before_pcm(self):
         _wav(self.base)
         bad = self._batch_candidate(1, duration=2)
         with mock.patch.object(local_dc, "_scan_private_pcm", side_effect=AssertionError("decoded")):
-            with self.assertRaisesRegex(ValueError, "shapes must match"):
+            with self.assertRaisesRegex(ValueError, "identical shape"):
                 local_dc.inspect_batch(self.base, [bad])
 
     def test_batch_rejects_corrupt_wav_before_pcm(self):
