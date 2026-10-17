@@ -185,5 +185,44 @@ class PcmReuseTests(unittest.TestCase):
                          compare_pcm_reuse(self.baseline, [self.candidate]))
 
 
+    def test_maximum_two_million_stereo_frames_stream_without_memory_copy(self):
+        # Exercise the real upper frame bound, not only a header rejection.
+        # No giant Python sample array: emit deterministic PCM in 4k chunks.
+        for target in (self.baseline, self.candidate):
+            with wave.open(str(target), "wb") as dst:
+                dst.setnchannels(2)
+                dst.setsampwidth(2)
+                dst.setframerate(96000)
+                chunk = b"\\x88\\x13\\x78\\xec" * 4096
+                for _ in range(488):
+                    dst.writeframesraw(chunk)
+                dst.writeframesraw(b"\\x88\\x13\\x78\\xec" * 1152)
+        row = self.row()
+        self.assertEqual(1.0, row["exact_frame_reuse_fraction"])
+        self.assertEqual(1.0, row["active_fraction"])
+
+    def test_more_than_two_million_frames_rejected_before_pcm_read(self):
+        # Valid tiny sample values, real frame count just past hard limit.
+        with wave.open(str(self.baseline), "wb") as dst:
+            dst.setnchannels(1)
+            dst.setsampwidth(2)
+            dst.setframerate(8000)
+            chunk = b"\\x88\\x13" * 4096
+            for _ in range(488):
+                dst.writeframesraw(chunk)
+            dst.writeframesraw(b"\\x88\\x13" * 1153)
+        with self.assertRaises(ValueError):
+            self.row()
+
+    def test_sparse_oversized_source_rejected_even_with_small_wav_header(self):
+        # A small declared PCM body does not exempt a huge file from the
+        # 32MiB physical admission limit.
+        from mixlab.quality.reuse import MAX_SOURCE_BYTES
+        with self.candidate.open("r+b") as handle:
+            handle.truncate(MAX_SOURCE_BYTES + 1)
+        with self.assertRaises(ValueError):
+            self.row()
+
+
 if __name__ == "__main__":
     unittest.main()
