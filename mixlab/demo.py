@@ -1,8 +1,8 @@
 """A playable, rights-safe MixLab DJ demo generated entirely on the user's machine.
 
-Creates two original procedural PCM16 songs (no samples, recording downloads
+Creates three original procedural PCM16 songs (no samples, recording downloads
 or third-party models), renders the established real MixLab transitions and a
-continuous two-song mix, and exposes local browser pages to hear/edit them.
+continuous three-song mix, and exposes local browser pages to hear/edit them.
 
 This is a creative product demonstration, NOT a blind listening study,
 research preference claim, or substitute for real rights-cleared music.
@@ -24,6 +24,9 @@ from .cueprep import _digest
 from .cue_editor import prepare as prepare_visual_editor
 from .full_mix import full_mix
 from .session import make_session
+from .set_composer import create_composer
+from .set_export import export_set
+from .set_player import publish_player
 
 
 SAMPLE_RATE = 44100
@@ -37,6 +40,7 @@ BLOCK_FRAMES = 2048
 ROOTS = (
     (110.000, 87.307, 130.813, 97.999),
     (130.813, 97.999, 110.000, 87.307),
+    (97.999, 110.000, 87.307, 130.813),
 )
 
 
@@ -106,13 +110,17 @@ padding:24px;color:#eee6ff;text-decoration:none;font-weight:700}
 a:hover,a:focus{border-color:#c9aaf9;outline-offset:4px}span{display:block;
 font-size:.84rem;font-weight:400;color:#bac4d8;margin-top:12px}
 </style><main><small>OFFLINE / RIGHTS-SAFE DJ DEMO</small>
-<h1>Make music<br>flow.</h1><p>Two original, locally synthesized songs. Four real
-MixLab transition styles. One complete song-to-song mix. No external music,
+<h1>Make music<br>flow.</h1><p>Three original, locally synthesized songs. Eight real
+MixLab transition auditions across two pairs. A complete three-song playthrough. No external music,
 rights uncertainty, online connection, FFmpeg installation, downloads,
 or AI model. All audio stays on your machine.</p><div class="grid">
 <a href="audition/studio/index.html">Hear 4 transition styles
 <span>Baseline, bass swap, echo exit and hard cut.</span></a>
-<a href="full-song/index.html">Play the complete two-song mix
+<a href="three-song-set.wav.player.html">Play the complete three-song set
+<span>Track A → bass swap → Track B → echo exit → Track C, with clickable chapters.</span></a>
+<a href="audition/set-composer/index.html">Build your own three-song route
+<span>Audition both pairs, choose transition families and export a local choice plan.</span></a>
+<a href="full-song/index.html">Play the classic two-song comparison
 <span>Track A → real DSP transition → remaining track B.</span></a>
 <a href="audition/sources/cue-editor.html">Open visual cue editor
 <span>Listen, click waveforms and move manually predeclared beat cues.</span></a>
@@ -156,7 +164,11 @@ def create_demo(destination):
             "pairs": [{
                 "id": "demo-pair-001", "a": source_tracks[0]["id"],
                 "b": source_tracks[1]["id"], "beats": 16,
-                "a_start_seconds": 16.0, "b_start_seconds": 8.0
+                "a_start_seconds": 16.0, "b_start_seconds": 0.0
+            }, {
+                "id": "demo-pair-002", "a": source_tracks[1]["id"],
+                "b": source_tracks[2]["id"], "beats": 16,
+                "a_start_seconds": 16.0, "b_start_seconds": 0.0
             }]
         }
         spec = input_dir / "demo-source-spec.json"
@@ -165,11 +177,16 @@ def create_demo(destination):
             output.write((json.dumps(declared, sort_keys=True,
                                      indent=2, allow_nan=False)+"\n").encode("utf-8"))
         # Reuse real already-merged product paths, including FFmpeg-free WAV import.
-        make_session(spec, root / "audition", pair="demo-pair-001")
+        make_session(spec, root / "audition")
         normalized = root / "audition" / "sources" / "source_manifest.json"
         prepare_visual_editor(normalized, root / "audition" / "sources" / "cue-editor.html")
         full_mix(normalized, root / "full-song",
                  pair_id="demo-pair-001", family="bass_swap", gain_db=-9.)
+        # Real product composition and export paths, using original local audio.
+        create_composer(root / "audition")
+        finished_set = export_set(root / "audition", root / "three-song-set.wav",
+                                  ["demo-pair-001:bass_swap", "demo-pair-002:echo_exit"])
+        publish_player(root / "audition", finished_set)
         _demo_landing(root)
         return root / "index.html"
     except BaseException:
