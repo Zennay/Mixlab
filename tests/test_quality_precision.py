@@ -16,7 +16,7 @@ from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 
 def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
         seed=1, rate=48000, quiet_channels=(), coarse_step=256,
-        coarse_offset=0, coarse_regions=()):
+        coarse_offset=0, coarse_regions=(), coarse_region_offsets=None):
     state = seed
     samples = array("h")
     for frame in range(frames):
@@ -27,7 +27,9 @@ def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
                 value = 0
             elif channel in coarse and (not coarse_regions or
                     min(7, (frame * 8) // frames) in coarse_regions):
-                value = (value // coarse_step) * coarse_step + coarse_offset
+                region = min(7, (frame * 8) // frames)
+                offset = (coarse_region_offsets or {}).get(region, coarse_offset)
+                value = (value // coarse_step) * coarse_step + offset
             samples.append(value)
     # Fixtures are little-endian PCM16, independent of test host byte order.
     if sys.byteorder != "little":
@@ -87,6 +89,30 @@ class PrecisionTest(unittest.TestCase):
         self.assertEqual(compare_precision(self.a, self.b, chunk_frames=1),
                          compare_precision(self.a, self.b, chunk_frames=4096))
         self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_distinct_quantizer_phases_in_different_regions(self):
+        # Neither global residue histogram nor a fixed-zero-grid test can
+        # explain this two-region confound: local phase differs by region.
+        wav(self.a)
+        wav(self.b, coarse=(0,), coarse_regions=(0, 7),
+            coarse_region_offsets={0: 7, 7: 23})
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_short_regions_without_enough_evidence_abstain(self):
+        wav(self.a, frames=4000)
+        wav(self.b, frames=4000)
+        self.assertIsNone(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_detection_never_mutates_private_inputs(self):
+        import hashlib
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0,), coarse_offset=11)
+        before = {file.name: hashlib.sha256(file.read_bytes()).hexdigest()
+                  for file in self.root.iterdir()}
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+        after = {file.name: hashlib.sha256(file.read_bytes()).hexdigest()
+                 for file in self.root.iterdir()}
+        self.assertEqual(before, after)
 
     def test_detects_loss_in_only_one_stereo_channel(self):
         wav(self.a, channels=2)
