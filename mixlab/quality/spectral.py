@@ -237,9 +237,8 @@ def _scan_spectral_private(
                 else None
                 for band_energy, cross in zip((low, mid, high), crossing)
             )
-            for (_, low, mid, high, count), crossing, total in (
-                (span, cross, span[0])
-                for span, cross in zip(span_energy, span_band_cross_energy)
+            for (total, low, mid, high, count), crossing in zip(
+                span_energy, span_band_cross_energy
             )
         ],
         "_channel_band_spans": [
@@ -389,18 +388,19 @@ def compare_spectral_balance(
         # spot persistent mono loss hidden by whole-band and broadband means.
         if reference["channels"] == 2:
             for name, band in (("low", 0), ("mid", 1), ("high", 2)):
-                cancellation_spans = sum(
-                    any(
-                        source_span[band] is not None
-                        and source_span[band][0] >= BAND_FOLD_MIN_PROXY_RATIO
-                        and source_span[band][1] <= 10 ** (BAND_FOLD_LOSS_DB / 20)
-                        for source_span in (ref_spans, cur_spans)
+                # Persistence belongs to *one source*: a single bad
+                # span in A and a different bad span in B must not be
+                # combined into a false persistent artifact.
+                per_source_spans = [
+                    sum(
+                        span[band] is not None
+                        and span[band][0] >= BAND_FOLD_MIN_PROXY_RATIO
+                        and span[band][1] <= 10 ** (BAND_FOLD_LOSS_DB / 20)
+                        for span in source["_mono_fold_band_spans"]
                     )
-                    for ref_spans, cur_spans in zip(
-                        reference["_mono_fold_band_spans"], current["_mono_fold_band_spans"]
-                    )
-                )
-                risk = cancellation_spans >= 2
+                    for source in (reference, current)
+                ]
+                risk = max(per_source_spans) >= 2
                 deltas["stereo_temporal_" + name + "_band_mono_fold_risk"] = risk
                 if risk:
                     warnings.append("stereo_temporal_" + name + "_band_mono_fold_inspect")
