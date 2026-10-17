@@ -60,7 +60,7 @@ def _locate_data_chunk(stream, size):
 
 
 @contextmanager
-def admitted_pcm16(path):
+def admitted_pcm16(path, *, seen_inodes=None):
     """Yield a WAV reader tied to one regular, bounded, non-symlink descriptor.
 
     Linux/POSIX only: O_NOFOLLOW and O_NONBLOCK are mandatory. The caller must
@@ -90,6 +90,14 @@ def admitted_pcm16(path):
         if (not stat.S_ISREG(before.st_mode)
                 or not 44 <= before.st_size <= MAX_BYTES):
             raise ValueError(_ERROR)
+        # A/B baseline and candidate must not be the same regular inode,
+        # including different names linked to one file. The optional set is
+        # private to one group admission, never returned in a report.
+        if seen_inodes is not None:
+            identity = (before.st_dev, before.st_ino)
+            if identity in seen_inodes:
+                raise ValueError(_ERROR)
+            seen_inodes.add(identity)
         with os.fdopen(fd, "rb", closefd=True) as stream:
             fd = -1
             # An attacker can fit millions of empty RIFF chunks below
@@ -176,7 +184,8 @@ def validate_private_ab_group(paths):
     if type(paths) not in (tuple, list) or not 2 <= len(paths) <= MAX_GROUP_SOURCES:
         raise ValueError(_ERROR)
     with ExitStack() as stack:
-        readers = [stack.enter_context(admitted_pcm16(path)) for path in paths]
+        identities = set()
+        readers = [stack.enter_context(admitted_pcm16(path, seen_inodes=identities)) for path in paths]
         header = (readers[0].getframerate(), readers[0].getnchannels(), readers[0].getnframes())
         for reader in readers[1:]:
             if (reader.getframerate(), reader.getnchannels(), reader.getnframes()) != header:
