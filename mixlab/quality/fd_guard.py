@@ -67,7 +67,10 @@ def admitted_pcm16(path):
                         or channels not in (1, 2)
                         or not 8000 <= rate <= 96000
                         or not 1 <= frames <= MAX_FRAMES
-                        or 44 + frames * channels * width > before.st_size):
+                        # wave reads arbitrary legal pre-data chunks. Count
+                        # available bytes from the *actual* data start, not
+                        # a fixed 44-byte canonical WAV-header assumption.
+                        or stream.tell() + frames * channels * width > before.st_size):
                     raise ValueError(_ERROR)
                 yield reader
                 after = os.fstat(stream.fileno())
