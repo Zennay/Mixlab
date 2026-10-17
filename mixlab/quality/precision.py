@@ -24,6 +24,10 @@ MIN_DISTINCT_VALUES = 32
 CANDIDATE_GRID_FRACTION = 0.995
 BASELINE_GRID_FRACTION = 0.10
 GRID_STEPS = (256, 64)
+REGIONS = 8
+MIN_REGION_INFORMATIVE = 512
+MIN_REGION_DISTINCT = 16
+MIN_PERSISTENT_REGIONS = 2
 
 
 def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
@@ -46,9 +50,19 @@ def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
                     or not 1 <= frames <= MAX_FRAMES):
                 raise ValueError("unsupported WAV metadata")
             informative = [0] * channels
-            on_grid = [{step: 0 for step in GRID_STEPS} for _ in range(channels)]
+            # Residue histograms detect arbitrary quantizer phase, not only
+            # PCM samples divisible by 64/256. Memory is fixed: at most
+            # 8 regions x 2 channels x (64+256) bounded counters.
+            grids = [{step: [0] * step for step in GRID_STEPS}
+                     for _ in range(channels)]
             distinct = [set() for _ in range(channels)]
+            region_grids = [[{step: [0] * step for step in GRID_STEPS}
+                             for _ in range(channels)] for _ in range(REGIONS)]
+            region_info = [[0] * channels for _ in range(REGIONS)]
+            region_distinct = [[set() for _ in range(channels)]
+                               for _ in range(REGIONS)]
             remaining = frames
+            processed_frames = 0
             while remaining:
                 take = min(remaining, chunk_frames)
                 raw = source.readframes(take)
@@ -62,12 +76,19 @@ def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
                     channel = index % channels
                     if abs(sample) < 1024:
                         continue
+                    region = min(REGIONS - 1,
+                                 ((processed_frames + index // channels) * REGIONS) // frames)
                     informative[channel] += 1
+                    region_info[region][channel] += 1
                     if len(distinct[channel]) < MIN_DISTINCT_VALUES:
                         distinct[channel].add(sample)
+                    if len(region_distinct[region][channel]) < MIN_REGION_DISTINCT:
+                        region_distinct[region][channel].add(sample)
                     for step in GRID_STEPS:
-                        if sample % step == 0:
-                            on_grid[channel][step] += 1
+                        residue = sample % step
+                        grids[channel][step][residue] += 1
+                        region_grids[region][channel][step][residue] += 1
+                processed_frames += take
                 remaining -= take
         after = os.fstat(file.fileno())
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
@@ -76,7 +97,17 @@ def _scan(path: str | Path, *, chunk_frames: int = 4096) -> dict:
             raise ValueError("WAV changed during read")
     return {"rate": rate, "channels": channels, "frames": frames,
             "informative": informative, "distinct": [len(x) for x in distinct],
-            "grid_counts": on_grid}
+            "grids": grids, "region_grids": region_grids,
+            "region_info": region_info,
+            "region_distinct": [[len(x) for x in row] for row in region_distinct]}
+
+
+def _precision_grid_loss(reference: dict, candidate: dict, an: int, bn: int) -> bool:
+    # Require the reference not to be concentrated on ANY grid offset; a
+    # similarly coarse reference shifted by one LSB is not evidence of loss.
+    return any(max(candidate[step]) / bn >= CANDIDATE_GRID_FRACTION
+               and max(reference[step]) / an < BASELINE_GRID_FRACTION
+               for step in GRID_STEPS)
 
 
 def compare_precision(baseline: str | Path, candidate: str | Path,
@@ -93,15 +124,28 @@ def compare_precision(baseline: str | Path, candidate: str | Path,
     decisions = []
     for ch in range(a["channels"]):
         an, bn = a["informative"][ch], b["informative"][ch]
-        if (min(an, bn) < MIN_INFORMATIVE_SAMPLES
-                or min(a["distinct"][ch], b["distinct"][ch]) < MIN_DISTINCT_VALUES):
+        global_decision = None
+        if (min(an, bn) >= MIN_INFORMATIVE_SAMPLES
+                and min(a["distinct"][ch], b["distinct"][ch]) >= MIN_DISTINCT_VALUES):
+            global_decision = _precision_grid_loss(a["grids"][ch], b["grids"][ch], an, bn)
+        regional = []
+        for region in range(REGIONS):
+            ra, rb = a["region_info"][region][ch], b["region_info"][region][ch]
+            if (min(ra, rb) < MIN_REGION_INFORMATIVE or
+                    min(a["region_distinct"][region][ch],
+                        b["region_distinct"][region][ch]) < MIN_REGION_DISTINCT):
+                regional.append(None)
+            else:
+                regional.append(_precision_grid_loss(
+                    a["region_grids"][region][ch], b["region_grids"][region][ch], ra, rb))
+        # A single quantized block might be an artistic effect; require
+        # persistence. Insufficient regional evidence is never a false-clean.
+        if global_decision is True or regional.count(True) >= MIN_PERSISTENT_REGIONS:
+            decisions.append(True)
+        elif global_decision is False and all(value is False for value in regional):
+            decisions.append(False)
+        else:
             decisions.append(None)
-            continue
-        decisions.append(any(
-            b["grid_counts"][ch][step] / bn >= CANDIDATE_GRID_FRACTION
-            and a["grid_counts"][ch][step] / an < BASELINE_GRID_FRACTION
-            for step in GRID_STEPS
-        ))
     outcome = (True if True in decisions else
                False if all(v is False for v in decisions) else None)
     return {"schema_version": 1, "status": "technical-inspection-only",
