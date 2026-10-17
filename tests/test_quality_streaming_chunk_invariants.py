@@ -343,6 +343,52 @@ class StreamingChunkInvariants(unittest.TestCase):
                               report["candidates"][1]["warnings"])
                 self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_real_two_million_frame_stereo_rate_ceiling_streams_under_ci_cap(self):
+        # This is the actual upper accepted production-format frame count,
+        # not a mocked MAX_SOURCE_FRAMES or a giant in-memory fixture.
+        # At 96 kHz stereo PCM16 this checks a real ~8 MiB source in
+        # time-bounded CI under the same 192 MiB virtual address-space cap.
+        count = 2_000_000
+        rate = 96_000
+        gap_start = 4096 * 460 - 2
+        gap_frames = rate // 20
+        path = self.root / "real-capacity-2m-stereo.wav"
+
+        def write_segment(writer, frames, frame):
+            while frames:
+                take = min(4096, frames)
+                writer.writeframesraw(frame * take)
+                frames -= take
+
+        with wave.open(str(path), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(rate)
+            left_right = struct.pack("<hh", 4200, -5100)
+            write_segment(writer, gap_start, left_right)
+            write_segment(writer, gap_frames, b"\\x00" * 4)
+            write_segment(writer, count - gap_start - gap_frames, left_right)
+
+        self.assertLess(path.stat().st_size, 32 * 1024 * 1024)
+        result = scan_wav(path)
+        self.assertEqual(result["sample_rate"], rate)
+        self.assertEqual(result["channels"], 2)
+        self.assertEqual(result["frames"], count)
+        self.assertTrue(result["short_interior_pcm_dropout_risk"])
+        self.assertGreaterEqual(result["longest_interior_quiet_pcm_gap_ms"], 50)
+        self.assertFalse(result["short_interior_stereo_channel_dropout_risk"])
+
+        # A *real* full-length PCM source one frame over the declared
+        # maximum must be rejected, without swapping in a mocked limit.
+        oversized = self.root / "over-capacity.wav"
+        with wave.open(str(oversized), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(rate)
+            write_segment(writer, count + 1, left_right)
+        with self.assertRaisesRegex(ValueError, "Frames"):
+            scan_wav(oversized)
+
     def test_truncation_in_each_streaming_read_rejected(self):
         # A valid header can still lie about available source frames.
         # Cut both inside the first chunk and just after a complete first
