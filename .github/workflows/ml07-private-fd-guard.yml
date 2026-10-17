@@ -1,0 +1,31 @@
+name: MixLab ML-07 private WAV FD guard
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/fd_guard.py"
+      - "tests/test_quality_fd_guard.py"
+      - "docs/ml07-private-wav-fd-guard.md"
+      - ".github/workflows/ml07-private-fd-guard.yml"
+permissions:
+  contents: read
+jobs:
+  isolated-fd-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout immutable PR source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert checked-out SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile private admission and synthetic tests
+        run: python3 -m compileall -q mixlab/quality/fd_guard.py tests/test_quality_fd_guard.py
+      - name: Validate FD admission against security and race fixtures
+        run: /usr/bin/time -f "ml07_fd_guard_wall_seconds=%e peak_rss_kib=%M" python3 -m unittest discover -s tests -p "test_quality_fd_guard.py" -v
+      - name: Run canonical ML-07 regressions including companion suites
+        run: python3 -m unittest discover -s tests -p "test_quality.py" -v
