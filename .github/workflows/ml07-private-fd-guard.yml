@@ -26,6 +26,6 @@ jobs:
       - name: Compile private admission and synthetic tests
         run: python3 -m compileall -q mixlab/quality/fd_guard.py tests/test_quality_fd_guard.py
       - name: Validate FD admission against security and race fixtures
-        run: python3 -m unittest discover -s tests -p "test_quality_fd_guard.py" -v
+        run: /usr/bin/time -f "ml07_fd_guard_wall_seconds=%e peak_rss_kib=%M" python3 -m unittest discover -s tests -p "test_quality_fd_guard.py" -v
       - name: Run canonical ML-07 regressions including companion suites
         run: python3 -m unittest discover -s tests -p "test_quality.py" -v
