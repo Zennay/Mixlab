@@ -5,6 +5,10 @@ or trailing non-audio bytes. Never surface those bytes in quality JSON.
 """
 from pathlib import Path
 
+# A metadata-heavy private WAV can contain unknown RIFF chunks; keep the
+# preflight finite rather than iterating millions of 8-byte no-op headers.
+MAX_PRIVATE_HEADER_CHUNKS = 4096
+
 
 def verify_private_pcm16_header(path: str | Path) -> None:
     """Reject audio-container inconsistencies *before* scanning PCM samples.
@@ -28,7 +32,11 @@ def verify_private_pcm16_header(path: str | Path) -> None:
         offset = 12
         format_seen = False
         block_align = None
+        inspected_chunks = 0
         while offset + 8 <= riff_end:
+            inspected_chunks += 1
+            if inspected_chunks > MAX_PRIVATE_HEADER_CHUNKS:
+                raise ValueError("PCM16 RIFF header contains too many chunks")
             handle.seek(offset)
             chunk = handle.read(8)
             if len(chunk) != 8:
