@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+import wave
 from pathlib import Path
 import shutil
 import stat
@@ -379,7 +380,7 @@ def main():
             try:
                 from .set_player import publish_player
                 payload["offline_player"] = str(publish_player(args.session, file))
-            except (ValueError, OSError, TypeError, KeyError) as exc:
+            except (ValueError, OSError, TypeError, KeyError, wave.Error) as exc:
                 payload["player_warning"] = str(exc)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Set Composer: " + str(exc) + "\n")
