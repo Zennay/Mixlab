@@ -178,7 +178,7 @@ class _PrivateArgumentParser(argparse.ArgumentParser):
     """Never echo private command-line operands in parser error messages."""
 
     def error(self, message: str) -> None:
-        self.exit(3, "MixLab precision: invalid arguments\\n".replace("\\n", "\n"))
+        self.exit(3, "MixLab precision: invalid arguments\n")
 
 
 def main(argv: list[str] | None = None) -> int:
