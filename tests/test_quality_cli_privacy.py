@@ -45,7 +45,7 @@ class PrivateQualityCLIErrorTests(unittest.TestCase):
     def test_unknown_option_and_extra_sensitive_operand_do_not_echo_paths(self):
         for args in (
             (self.base, self.candidate, "--" + self.secret),
-            (self.base, self.candidate, self.root / (self.secret + ".extra")),
+            (self.base, self.candidate, "--fail-on-warnings=" + self.secret),
             ("--" + self.secret, self.base, self.candidate),
         ):
             with self.subTest(case=str(args[-1])[-18:]):
