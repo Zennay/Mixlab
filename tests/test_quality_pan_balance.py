@@ -500,6 +500,26 @@ class PanBalanceTests(unittest.TestCase):
             self.assertFalse(entry["metrics"]["stereo_pan_confound_review"])
         self.assertNotIn(str(self.root), json.dumps(report))
 
+    def test_group_strict_cli_rejects_inconclusive_candidate_not_just_pan_warning(self):
+        wav(self.a)
+        wav(self.b)
+        quiet_channel = self.root / "quiet private candidate.wav"
+        wav(quiet_channel, left=8000, right=10)
+        cli = [sys.executable, "-m", "mixlab.quality.pan_balance",
+               str(self.a), str(self.b), str(quiet_channel)]
+        normal = subprocess.run(cli, capture_output=True, text=True)
+        strict = subprocess.run(cli + ["--fail-on-review"], capture_output=True, text=True)
+        self.assertEqual(normal.returncode, 0, normal.stderr)
+        self.assertEqual(strict.returncode, 3, strict.stderr)
+        for result in (normal, strict):
+            report = json.loads(result.stdout)
+            self.assertEqual(report["candidate_count"], 2)
+            self.assertFalse(report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+            self.assertIsNone(report["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+            self.assertEqual(report["candidates"][1]["metrics"]["evidence_status"],
+                             "insufficient_active_audio")
+            self.assertNotIn(str(self.root), result.stdout + result.stderr)
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
