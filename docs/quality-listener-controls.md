@@ -37,8 +37,13 @@ exit 2 without echoing their raw values.
 - One labelled `required` select per pair binds to the corresponding trial,
   with the five unaltered options: choose-placeholder, A, B, Tie,
   Both unusable.
-- Hidden/inert/disabled, `aria-hidden=true`, negative tab order and
-  duplicate attributes are refused in the reviewer UI.
+- Hidden/inert/disabled, `aria-hidden=true`, arbitrary tab reordering,
+  inline styles/event handlers and duplicate attributes are refused. Browser-
+  inert or reinterpreted contexts such as `template`, `noscript`, `textarea`,
+  `xmp` and `plaintext` are rejected rather than trusted as usable DOM.
+- Form actions, unexpected fieldset/form metadata and remote script sources
+  are not accepted; the actual official JavaScript still needs independent
+  inspection or strict generated-template comparison.
 - The ratings status announcer is present. No private metadata is returned.
 - Ancestor and final path symlinks, FIFOs/nonregular files, oversized input,
   decode failures and local source replacement/mutation during the scan
