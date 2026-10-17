@@ -41,6 +41,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Compile study module
-        run: python3 -m compileall -q mixlab/evaluation tests/test_evaluation_study.py
+        run: python3 -m compileall -q mixlab/evaluation tests/test_evaluation_study.py tests/test_evaluation_study_pack.py
       - name: Frozen study regressions
         run: python3 -m unittest -v tests.test_evaluation_study tests.test_evaluation_study_pack tests.test_evaluation tests.test_evaluation_json_admission
+      - name: Recheck complete offline synthetic suite
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
