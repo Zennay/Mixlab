@@ -153,6 +153,43 @@ class ListenerPositionTests(unittest.TestCase):
             inspect_listener_sides(
                 self.pack, [parent_link / "votes.json", *self.paths[1:]])
 
+    def test_hostile_pathlike_never_executes_or_exposes_private_error(self):
+        self.ratings([["A", "B", "A", "B", "A"]] * 3)
+        class Hostile:
+            def __fspath__(self):
+                raise RuntimeError("TOP-SECRET-REVIEW-LOCATION")
+        with self.assertRaises(ListenerPositionError) as raised:
+            inspect_listener_sides(self.pack, [Hostile(), *self.paths[1:]])
+        self.assertNotIn("TOP-SECRET", str(raised.exception))
+        with self.assertRaises(ListenerPositionError):
+            inspect_listener_sides(Hostile(), self.paths)
+
+    def test_relative_rating_and_pack_paths_stay_pinned_on_cwd_change(self):
+        import os
+        from mixlab.quality import listener_position as module
+        self.ratings([["A", "B", "A", "B", "A"],
+                      ["B", "A", "B", "A", "B"],
+                      ["A", "B", "B", "A", "B"]])
+        first_cwd = Path.cwd()
+        genuine = module.aggregate
+        changed_cwd = self.root / "unrelated-cwd"
+        changed_cwd.mkdir()
+
+        def change_during_aggregation(pack, paths):
+            # Original paths were relative on entry. Name admission must
+            # remain tied to the initial lexical directory even after chdir.
+            os.chdir(changed_cwd)
+            return genuine(pack, paths)
+
+        try:
+            os.chdir(self.root)
+            relative = [path.name for path in self.paths]
+            with mock.patch.object(module, "aggregate", side_effect=change_during_aggregation):
+                report = inspect_listener_sides("pack", relative)
+            self.assertFalse(report["aggregate_position_dominance_review"])
+        finally:
+            os.chdir(first_cwd)
+
     def test_cli_exit_codes_and_no_private_identity_disclosure(self):
         self.ratings([["A", "B", "A", "B", "A"],
                       ["B", "A", "B", "A", "B"],
