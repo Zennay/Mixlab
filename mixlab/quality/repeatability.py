@@ -18,6 +18,8 @@ import stat
 import sys
 import wave
 
+from ..models import FAMILY_NAMES
+
 MAX_BYTES = 32 * 1024 * 1024
 MAX_FRAMES = 2_000_000
 CHUNK_FRAMES = 4096
@@ -143,12 +145,16 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
         if len(raw) > 16384:
             raise RepeatabilityError(_ERROR)
         channels, width, rate, frames = shape
-        if (receipt.get("schema_version") != 1
-                or not isinstance(receipt.get("engine_version"), str)
+        if (type(receipt.get("schema_version")) is not int
+                or receipt["schema_version"] != 1
+                or type(receipt.get("engine_version")) is not str
                 or not receipt["engine_version"]
-                or receipt.get("channels") != channels
-                or receipt.get("sample_rate") != rate
-                or receipt.get("frames") != frames
+                or type(receipt.get("channels")) is not int
+                or receipt["channels"] != channels
+                or type(receipt.get("sample_rate")) is not int
+                or receipt["sample_rate"] != rate
+                or type(receipt.get("frames")) is not int
+                or receipt["frames"] != frames
                 or width != 2):
             raise RepeatabilityError(_ERROR)
         recipe = receipt.get("recipe")
@@ -175,8 +181,8 @@ def _receipt_contract(receipt: object, shape: tuple[int, int, int, int]) -> tupl
             return (type(value) in (float, int)
                     and math.isfinite(value) and value > 0)
 
-        if (not isinstance(recipe.get("family"), str)
-                or not recipe["family"]
+        if (type(recipe.get("family")) is not str
+                or recipe["family"] not in FAMILY_NAMES
                 or not positive_number(recipe.get("bpm"))
                 or not 30 <= recipe["bpm"] <= 300
                 or type(recipe.get("beats")) is not int
