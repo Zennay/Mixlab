@@ -121,12 +121,45 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertIsNotNone(result["baseline"]["midpass_180_2500_ratio"])
         self.assertNotIn(str(self.base), json.dumps(result))
 
-    def test_gain_only_does_not_trigger_relative_spectrum(self):
+    def test_gain_only_keeps_spectral_ratios_but_flags_volume_bias(self):
         make_wav(self.other, gain=6000)
         row = self.report()["candidates"][0]
-        self.assertEqual([], row["warnings"])
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+        self.assertLess(row["rms_delta_db_vs_baseline"], -1.5)
+        self.assertFalse(any("spectral_balance_shift" in item for item in row["warnings"]))
         self.assertAlmostEqual(row["low_proxy_delta_db"], 0, delta=0.02)
         self.assertAlmostEqual(row["high_proxy_delta_db"], 0, delta=0.02)
+        self.assertAlmostEqual(row["mid_proxy_delta_db"], 0, delta=0.02)
+
+    def test_small_gain_change_is_not_a_technical_rms_confound(self):
+        make_wav(self.other, gain=7500)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(row["rms_delta_db_vs_baseline"], -0.56, delta=0.03)
+        self.assertNotIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+
+    def test_positive_gain_confound_is_symmetric_and_cli_strict(self):
+        make_wav(self.other, gain=12000)
+        report = self.report()
+        row = report["candidates"][0]
+        self.assertGreater(row["rms_delta_db_vs_baseline"], 1.5)
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+        reverse = compare_spectral_balance(self.other, [self.base])
+        self.assertAlmostEqual(
+            row["rms_delta_db_vs_baseline"],
+            -reverse["candidates"][0]["rms_delta_db_vs_baseline"],
+            delta=0.001
+        )
+        self.assertIn("rms_level_mismatch_inspect_not_lufs", reverse["candidates"][0]["warnings"])
+
+    def test_silent_level_delta_is_undefined_not_fabricated(self):
+        make_wav(self.other, gain=0)
+        row = self.report()["candidates"][0]
+        self.assertIsNone(row["rms_delta_db_vs_baseline"])
+        self.assertIn("insufficient_audible_energy_for_spectral_comparison", row["warnings"])
+
 
     def test_stereo_and_channel_order_are_symmetric(self):
         make_wav(self.base, freq=400, channels=2)
