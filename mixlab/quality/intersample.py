@@ -80,6 +80,12 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
     # reports UNCERTAINTY, never a measured or proven over.
     rapid_near_ceiling_crossings = 0
     previous_frame = None
+    # The first three / final four frame neighborhoods cannot be fully
+    # reconstructed by this finite centered filter. Near-ceiling PCM at
+    # either playback edge is a separate uncertainty, not a measured over.
+    leading_edge_peak = 0
+    trailing_frame_peaks = deque(maxlen=4)
+    frames_seen = 0
     # Scan every phase, not just areas with sample peaks close to full-scale.
     while seen < nframes:
         want = min(4096, nframes - seen)
@@ -92,7 +98,12 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
             values.byteswap()
         for offset in range(0, len(values), channels):
             frame = tuple(values[offset:offset + channels])
-            sample_peak = max(sample_peak, *(abs(v) for v in frame))
+            frame_peak = max(abs(v) for v in frame)
+            sample_peak = max(sample_peak, frame_peak)
+            if frames_seen < 4:
+                leading_edge_peak = max(leading_edge_peak, frame_peak)
+            trailing_frame_peaks.append(frame_peak)
+            frames_seen += 1
             if previous_frame is not None:
                 for ch in range(channels):
                     prev, current = previous_frame[ch], frame[ch]
@@ -112,6 +123,10 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
                             intersample_over_count += 1
         seen += want
     peak = max(sample_peak, interpolated_peak)
+    edge_ambiguity = (
+        nframes >= 8 and
+        (leading_edge_peak >= 31130 or max(trailing_frame_peaks, default=0) >= 31130)
+    )
     return {
         "sample_peak_dbfs": round(20 * math.log10(sample_peak / 32768), 3) if sample_peak else None,
         "interpolated_peak_dbfs_estimate": round(20 * math.log10(peak / 32768), 3) if peak else None,
@@ -120,9 +135,10 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "intersample_over_risk": bool(intersample_over_count),
         "high_frequency_near_ceiling_ambiguity_risk": bool(rapid_near_ceiling_crossings),
         "high_frequency_near_ceiling_crossings": rapid_near_ceiling_crossings,
+        "edge_interpolation_ambiguity_risk": edge_ambiguity,
         "technical_review_required": (
             nframes < 8 or bool(intersample_over_count) or
-            bool(rapid_near_ceiling_crossings)
+            bool(rapid_near_ceiling_crossings) or edge_ambiguity
         ),
     }
 
