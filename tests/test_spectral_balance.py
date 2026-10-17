@@ -130,6 +130,26 @@ def make_loudness_envelope_wav(path, gains, *, channels=1, rate=48000):
         out.writeframes(samples.tobytes())
 
 
+def make_stereo_band_segments(path, swaps, *, gain=8000):
+    """Each 6000-frame span has 100Hz on L and 5000Hz on R, or vice versa."""
+    samples = array("h")
+    for span, swap in enumerate(swaps):
+        left_freq, right_freq = (5000, 100) if swap else (100, 5000)
+        for i in range(6000):
+            frame = span * 6000 + i
+            samples.extend((
+                int(gain * math.sin(2 * math.pi * left_freq * frame / 48000)),
+                int(gain * math.sin(2 * math.pi * right_freq * frame / 48000)),
+            ))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(48000)
+        output.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -551,6 +571,56 @@ class SpectralBalanceTests(unittest.TestCase):
 
     def test_mono_files_never_claim_stereo_dropout_evidence(self):
         self.assertNotIn("stereo_temporal_channel_dropout_risk", self.report()["candidates"][0])
+
+    def test_timed_stereo_band_swap_hidden_from_all_whole_file_aggregates(self):
+        make_stereo_band_segments(self.base, [False] * 4 + [True] * 4)
+        make_stereo_band_segments(self.other, [True] * 4 + [False] * 4)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(0.0, row["rms_delta_db_vs_baseline"], delta=0.01)
+        for name in ("low", "mid", "high"):
+            self.assertAlmostEqual(0.0, row[name + "_proxy_delta_db"], delta=0.15)
+            self.assertFalse(row["stereo_channel_" + name + "_spectral_shift_risk"])
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertNotIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+        self.assertEqual(1.0, row["stereo_temporal_low_channel_spectral_mismatch_fraction"])
+        self.assertEqual(1.0, row["stereo_temporal_high_channel_spectral_mismatch_fraction"])
+        self.assertIn("stereo_temporal_low_channel_spectral_shift_inspect", row["warnings"])
+        self.assertIn("stereo_temporal_high_channel_spectral_shift_inspect", row["warnings"])
+        serialized = json.dumps(self.report())
+        self.assertNotIn("_channel_band_spans", serialized)
+        self.assertNotIn(str(self.dir), serialized)
+
+    def test_one_local_stereo_band_swap_does_not_qualify_as_persistent(self):
+        make_stereo_band_segments(self.base, [False] * 4 + [True] * 4)
+        make_stereo_band_segments(self.other, [True] + [False] * 3 + [True] * 4)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.125, row["stereo_temporal_low_channel_spectral_mismatch_fraction"])
+        self.assertNotIn("stereo_temporal_low_channel_spectral_shift_inspect", row["warnings"])
+        self.assertNotIn("stereo_temporal_high_channel_spectral_shift_inspect", row["warnings"])
+
+    def test_stereo_temporal_bands_are_gain_invariant(self):
+        patterns = [False, True, False, True, False, True, False, True]
+        make_stereo_band_segments(self.base, patterns, gain=8000)
+        make_stereo_band_segments(self.other, patterns, gain=6000)
+        row = self.report()["candidates"][0]
+        for band in ("low", "mid", "high"):
+            self.assertEqual(
+                0.0, row["stereo_temporal_" + band + "_channel_spectral_mismatch_fraction"]
+            )
+        self.assertFalse(any("channel_spectral_shift_inspect" in w for w in row["warnings"]))
+
+    def test_stereo_temporal_band_fraction_absent_for_mono(self):
+        row = self.report()["candidates"][0]
+        self.assertFalse(any(k.startswith("stereo_temporal_low_channel") for k in row))
+        self.assertNotIn("_channel_band_spans", scan_spectral_proxy(self.base))
+
+    def test_temporal_channel_band_shift_invariant_under_streaming_blocks(self):
+        make_stereo_band_segments(self.base, [False] * 4 + [True] * 4)
+        make_stereo_band_segments(self.other, [True] * 4 + [False] * 4)
+        reference = self.report()
+        for size in (1, 257, 4096, 8191):
+            with self.subTest(size=size), patch.object(spectral, "READ_FRAMES", size):
+                self.assertEqual(reference, self.report())
 
     def test_channel_swapped_stereo_can_hide_all_global_spectral_changes(self):
         make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
