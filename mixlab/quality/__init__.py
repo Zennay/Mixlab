@@ -592,6 +592,10 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         raise ValueError("At least one candidate WAV is required")
     if len(candidates) > 20:
         raise ValueError("At most 20 candidates can be screened in one request")
+    # Validate all operator controls before any lstat/header/PCM work. The
+    # low-level scanner also validates this for standalone scan_wav calls.
+    if not isinstance(window_ms, int) or isinstance(window_ms, bool) or not 20 <= window_ms <= 1000:
+        raise ValueError("window_ms must be an integer between 20 and 1000")
     if not isinstance(loudness_tolerance_db, (float, int)) or isinstance(loudness_tolerance_db, bool) or (
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
