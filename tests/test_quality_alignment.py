@@ -312,6 +312,34 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         self.assertIs(row2["regional_timing_shift_risk"], False)
 
 
+    def test_two_aligned_regions_do_not_clear_unrelated_remainder(self):
+        # Two of eight regions remain perfectly synchronized. The other six
+        # contain different nonperiodic audio, not identifiable time shifts.
+        # Before the fix two aligned windows wrongly returned False (clean).
+        import random
+        rng = random.Random(124)
+        baseline_bins = [rng.randint(3000, 27000) for _ in range(800)]
+        candidate_bins = baseline_bins[:200] + [
+            rng.randint(3000, 27000) for _ in range(600)
+        ]
+        make_wav(self.base, [v for v in baseline_bins for _ in range(40)])
+        make_wav(self.other, [v for v in candidate_bins for _ in range(40)])
+        row = self.row()
+        self.assertIsNone(row["regional_timing_shift_risk"])
+        self.assertIn("regional_timing_alignment_inconclusive_inspect",
+                      row["warnings"])
+        self.assertNotIn("regional_timing_shift_inspect_not_tempo_estimate",
+                         row["warnings"])
+
+    def test_partial_silence_cannot_be_declared_regionally_clean(self):
+        # Enough music at the beginning to anchor A/B, but no informative
+        # timing pattern in the remainder; abstain rather than approve.
+        from mixlab.quality.alignment import _regional_shift_risk
+        informative = [0.1, 0.3, 0.2, 0.4] * 50
+        quiet = [0.08] * 600
+        self.assertIsNone(_regional_shift_risk(informative + quiet,
+                                               informative + quiet))
+
     def test_result_independent_of_read_chunk_sizes(self):
         from unittest.mock import patch
         samples = regional_pattern()
