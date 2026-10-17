@@ -94,7 +94,10 @@ def _read_public_receipt_id(directory: Path, trial_count: int) -> str:
         raise ValueError("Official public pack receipt missing or linked")
     if path.stat().st_size > MAX_PUBLIC_RECEIPT_BYTES:
         raise ValueError("Official public pack receipt exceeds the size limit")
-    receipt = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (RecursionError, UnicodeError) as exc:
+        raise ValueError("Invalid official public pack receipt") from exc
     if not isinstance(receipt, dict):
         raise ValueError("Invalid official public pack receipt")
     pack_id = receipt.get("pack_id")
