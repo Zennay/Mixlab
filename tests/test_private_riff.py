@@ -126,6 +126,26 @@ class PrivateRiffQualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "alignment"):
             scan_wav(self.variant)
 
+    def test_supported_fmt_extension_and_unreported_private_metadata(self):
+        extension = self.original[:36] + b"\\x00\\x00" + self.original[36:]
+        extension = patch_header(extension, 16, (18).to_bytes(4, "little"))
+        extension = patch_header(extension, 4, (len(extension) - 8).to_bytes(4, "little"))
+        self.variant.write_bytes(extension)
+        self.assertEqual("baseline", compare_wavs(self.baseline, [self.variant])[
+            "candidates"][0]["duplicate_pcm_of"])
+        # A one-byte extension is invalid; with even pad it still has no cbSize.
+        partial = self.original[:36] + b"\\x00\\x00" + self.original[36:]
+        partial = patch_header(partial, 16, (17).to_bytes(4, "little"))
+        partial = patch_header(partial, 4, (len(partial) - 8).to_bytes(4, "little"))
+        self.variant.write_bytes(partial)
+        with self.assertRaisesRegex(ValueError, "extension"):
+            scan_wav(self.variant)
+        # Two-byte ext field must agree with actual extra size.
+        forged = patch_header(extension, 36, (2).to_bytes(2, "little"))
+        self.variant.write_bytes(forged)
+        with self.assertRaisesRegex(ValueError, "extension"):
+            scan_wav(self.variant)
+
     def test_both_cli_modes_fail_sanitized_on_malformed_pcm_container(self):
         invalid = patch_header(self.original, 28, bytes(4))
         self.variant.write_bytes(invalid)
