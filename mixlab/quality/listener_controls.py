@@ -114,7 +114,7 @@ class _ReviewControls(HTMLParser):
             self.buttons += 1
 
     def handle_data(self, data):
-        if self.label is not None:
+        if self.label is not None and self.option is None:
             self.label["text"].append(data)
         if self.option is not None:
             self.option["text"].append(data)
