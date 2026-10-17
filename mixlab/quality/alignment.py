@@ -27,6 +27,9 @@ MIN_ENVELOPE_BINS = 100
 MIN_ENVELOPE_SD = 0.01
 MIN_BEST_CORRELATION = 0.85
 MIN_CORRELATION_IMPROVEMENT = 0.20
+MAX_REGIONS = 8
+MIN_REGIONS_FOR_DRIFT = 3
+MIN_DRIFT_REGIONS = 2
 
 
 def _read_envelope(path: str | Path, *, expected: tuple[int, int, int] | None,
@@ -134,6 +137,52 @@ def _shift_risk(baseline: list[float], candidate: list[float], rate: int) -> boo
     return None
 
 
+def _regional_shift_risk(baseline: list[float], candidate: list[float]) -> bool | None:
+    """Flag persistent *within-clip* A/B offset, never expose region/lag.
+
+    Require at least one confidently aligned region as an anchor and two
+    independently shifted regions. A uniform global offset is classified by
+    _shift_risk instead, not misleadingly labelled a regional timing drift.
+    Abstain if most windows are silent, unstructured or strongly re-edited.
+    """
+    if len(baseline) != len(candidate):
+        return None
+    count = min(MAX_REGIONS, len(baseline) // MIN_ENVELOPE_BINS)
+    if count < MIN_REGIONS_FOR_DRIFT:
+        return None
+    length = len(baseline)
+    lag_max = round(MAX_LAG_SECONDS / BIN_SECONDS)
+    lag_min = math.ceil(MIN_LAG_SECONDS / BIN_SECONDS)
+    aligned = shifted = informative = 0
+    for i in range(count):
+        start = i * length // count
+        end = (i + 1) * length // count
+        target = baseline[start:end]
+        zero = _correlation(target, candidate[start:end], 0)
+        if zero is None:
+            continue
+        informative += 1
+        if zero >= MIN_BEST_CORRELATION:
+            aligned += 1
+            continue
+        best = zero
+        for lag in range(-lag_max, lag_max + 1):
+            if abs(lag) < lag_min or start + lag < 0 or end + lag > length:
+                continue
+            score = _correlation(target, candidate[start + lag:end + lag], 0)
+            if score is not None and score > best:
+                best = score
+        if best >= MIN_BEST_CORRELATION and best - zero >= MIN_CORRELATION_IMPROVEMENT:
+            shifted += 1
+    if informative < MIN_REGIONS_FOR_DRIFT:
+        return None
+    if aligned >= 1 and shifted >= MIN_DRIFT_REGIONS:
+        return True
+    if aligned >= 2 and shifted == 0:
+        return False
+    return None
+
+
 def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dict:
     if not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError("Candidate count rejected")
@@ -146,13 +195,21 @@ def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dic
                                       remaining_frames=remaining)
         remaining -= header[2]
         risk = _shift_risk(reference, candidate, header[0])
+        regional_risk = _regional_shift_risk(reference, candidate)
+        warnings = []
+        if risk is True:
+            warnings.append("microtiming_envelope_shift_inspect_not_beat_alignment")
+        elif risk is None:
+            warnings.append("microtiming_alignment_inconclusive_inspect")
+        if regional_risk is True:
+            warnings.append("regional_timing_shift_inspect_not_tempo_estimate")
+        elif regional_risk is None:
+            warnings.append("regional_timing_alignment_inconclusive_inspect")
         results.append({
             "id": f"candidate-{index:02d}",
             "temporal_envelope_shift_risk": risk,
-            "warnings": (["microtiming_envelope_shift_inspect_not_beat_alignment"]
-                         if risk is True else
-                         ["microtiming_alignment_inconclusive_inspect"]
-                         if risk is None else []),
+            "regional_timing_shift_risk": regional_risk,
+            "warnings": warnings,
         })
     return {"screen": "ml07-temporal-envelope-proxy-v1", "candidates": results,
             "human_listening_required": True}
