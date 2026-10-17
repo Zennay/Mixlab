@@ -63,6 +63,20 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual([True, True], data["candidates"][0]["per_channel_review"])
         self.assertEqual(1.0, data["candidates"][0]["candidate_channel_metrics"][0]["low_byte_zero_fraction"])
 
+    def test_exact_integer_thresholds_cannot_round_into_false_positive(self):
+        # Both reported six-decimal fractions can appear to meet the gate,
+        # even though the raw integer counts remain strictly below/above.
+        clean_base = {"eligible_samples": 2_000_000, "low_byte_zero_samples": 0}
+        almost_candidate = {"eligible_samples": 1_999_999, "low_byte_zero_samples": 1_989_999}
+        self.assertEqual(0.995, round(almost_candidate["low_byte_zero_samples"] / almost_candidate["eligible_samples"], 6))
+        self.assertFalse(bitdepth._coarse_loss(clean_base, almost_candidate))
+        just_over_base = {"eligible_samples": 1_999_999, "low_byte_zero_samples": 700_000}
+        clear_candidate = {"eligible_samples": 2_000_000, "low_byte_zero_samples": 1_990_000}
+        self.assertEqual(0.35, round(just_over_base["low_byte_zero_samples"] / just_over_base["eligible_samples"], 6))
+        self.assertFalse(bitdepth._coarse_loss(just_over_base, clear_candidate))
+        threshold_base = {"eligible_samples": 2_000_000, "low_byte_zero_samples": 700_000}
+        self.assertTrue(bitdepth._coarse_loss(threshold_base, clear_candidate))
+
     def test_single_channel_regression_detected(self):
         wav(self.bad, samples(collapse=True, right_only=True))
         result = bitdepth.inspect_ab(self.base, [self.bad])["candidates"][0]
