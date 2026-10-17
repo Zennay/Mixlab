@@ -413,6 +413,28 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         make_wav(self.other, [v for x in mono for v in (x, x)], channels=2)
         self.assertIs(self.row()["stereo_differential_timing_shift_risk"], True)
 
+    def test_stereo_channel_swap_cannot_hide_behind_clean_pooled_rms(self):
+        mono = pattern()
+        displaced = mono[-640:] + mono[:-640]
+        make_wav(self.base, [v for x, y in zip(mono, displaced)
+                             for v in (x, y)], channels=2)
+        make_wav(self.other, [v for x, y in zip(mono, displaced)
+                              for v in (y, x)], channels=2)
+        row = self.row()
+        # Pooling squared samples across channels erases a pure L/R swap.
+        self.assertIs(row["temporal_envelope_shift_risk"], False)
+        self.assertIs(row["regional_timing_shift_risk"], False)
+        self.assertIsNone(row["stereo_differential_timing_shift_risk"])
+        self.assertIn("stereo_channel_alignment_inconclusive_inspect",
+                      row["warnings"])
+        proc = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.alignment",
+             str(self.base), str(self.other), "--fail-on-warnings"],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(2, proc.returncode)
+        self.assertNotIn(str(self.folder.name), proc.stdout + proc.stderr)
+
     def test_stereo_both_channels_on_time_is_confidently_clean(self):
         mono = pattern()
         make_wav(self.base, [v for x in mono for v in (x, x)], channels=2)
