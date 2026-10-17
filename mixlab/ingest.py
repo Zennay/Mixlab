@@ -177,6 +177,40 @@ def _object(value, name):
     return value
 
 
+def _preflight_pair_schema(pairs, tracks_by_id):
+    """Reject manifest recipe mistakes before private WAV/hash inspections.
+
+    Format compatibility, true length and rights still require per-file
+    validation later; this only checks facts already present in the JSON.
+    """
+    if not isinstance(pairs, list) or not 1 <= len(pairs) <= 10:
+        raise ValueError("Register 1–10 pairs")
+    seen = set()
+    for pair in pairs:
+        _object(pair, "pair")
+        pid = _identifier(pair.get("id"), "pair id")
+        if pid in seen:
+            raise ValueError("Duplicate pair id")
+        seen.add(pid)
+        a_id = _identifier(pair.get("a"), "pair a")
+        b_id = _identifier(pair.get("b"), "pair b")
+        if a_id not in tracks_by_id or b_id not in tracks_by_id or a_id == b_id:
+            raise ValueError("Pair needs distinct registered tracks")
+        bpm = number(pair.get("bpm"), "pair bpm", 30, 300)
+        if bpm != tracks_by_id[a_id]["bpm"] or bpm != tracks_by_id[b_id]["bpm"]:
+            raise ValueError("Prototype requires equal source tempos; time stretching is not implemented")
+        # Do NOT reject cross-partition pairs here: inspect PCM identities
+        # first, so a reused recording is reported as a data leak rather
+        # than being masked by the weaker pair-partition error.
+        beats = pair.get("beats", 8)
+        if type(beats) is not int or not 1 <= beats <= 64:
+            raise ValueError("beats must be an integer from 1 to 64")
+        if beats * 60 / bpm > 120:
+            raise ValueError("Transition exceeds duration budget")
+        number(pair.get("a_start", 0), "a_start", 0, 250)
+        number(pair.get("b_start", 0), "b_start", 0, 250)
+
+
 def _pairs(pairs, tracks):
     if not isinstance(pairs, list) or not 1 <= len(pairs) <= 10:
         raise ValueError("Register 1–10 pairs")
@@ -321,12 +355,18 @@ def validate_library(manifest_path):
         raise ValueError("Library must contain 2–50 tracks")
     tracks, identities = {}, {}
     partitioned = any(isinstance(t, dict) and "partition" in t for t in records)
+    # Admit every record's cheap schema before opening any private WAV.
+    # A malformed final entry must not force inspection of 49 prior sources.
+    prepared = []
+    seen_ids = set()
     for track in records:
         _object(track, "track")
         tid = _identifier(track.get("id"), "track id")
-        if tid in tracks:
+        if tid in seen_ids:
             raise ValueError("Duplicate track id")
-        if track.get("rights") not in RIGHTS:
+        seen_ids.add(tid)
+        rights = track.get("rights")
+        if not isinstance(rights, str) or rights not in RIGHTS:
             raise ValueError("Explicit permission required")
         if not isinstance(track.get("provenance"), str) or not track["provenance"].strip():
             raise ValueError("Provenance required")
@@ -336,23 +376,40 @@ def validate_library(manifest_path):
         relative = Path(raw)
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("Source path must remain within the library directory; traversal rejected")
-        path = (source.parent / relative).resolve()
+        try:
+            path = (source.parent / relative).resolve()
+        except (OSError, RuntimeError):
+            # Python releases differ in whether cyclic symlinks raise
+            # RuntimeError or OSError. Neither may leak a private path or
+            # escape this untrusted manifest admission boundary.
+            raise ValueError("Source path could not be resolved safely") from None
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")
         sha = track.get("sha256")
         if not isinstance(sha, str) or not HASH.fullmatch(sha):
             raise ValueError("Invalid source checksum")
-        info, observed_sha = inspect_wav_and_digest(path)
-        if observed_sha != sha:
-            raise ValueError("Source checksum mismatch")
         number(track.get("bpm"), "manual bpm", 30, 300)
         if "downbeat_seconds" in track:
-            number(track["downbeat_seconds"], "manual downbeat", 0, info["duration_seconds"])
+            downbeat = track["downbeat_seconds"]
+            if (type(downbeat) not in (int, float) or not math.isfinite(downbeat)
+                    or downbeat < 0):
+                raise ValueError("manual downbeat must be finite and nonnegative")
         partition = track.get("partition")
-        if partitioned and partition not in {"development", "evaluation"}:
+        if partitioned and (not isinstance(partition, str) or
+                            partition not in {"development", "evaluation"}):
             raise ValueError("All tracks need a development/evaluation partition")
         recording = track.get("recording_id", tid)
         _identifier(recording, "recording id")
+        prepared.append((track, tid, path, sha, partition, recording))
+
+    _preflight_pair_schema(manifest.get("pairs"), {record_id: track for track, record_id, *_ in prepared})
+
+    for track, tid, path, sha, partition, recording in prepared:
+        info, observed_sha = inspect_wav_and_digest(path)
+        if observed_sha != sha:
+            raise ValueError("Source checksum mismatch")
+        if "downbeat_seconds" in track:
+            number(track["downbeat_seconds"], "manual downbeat", 0, info["duration_seconds"])
         for identity in ("pcm:" + info["pcm_sha256"], "recording:" + recording):
             if identity in identities and identities[identity] != partition:
                 raise ValueError("Recording leaks across partitions")
