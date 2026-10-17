@@ -15,7 +15,7 @@ import re
 import tempfile
 import wave
 
-from . import compare_wavs
+from . import MAX_SOURCE_BYTES, compare_wavs
 
 _TRIAL_WAV = re.compile(r"^(trial-([0-9]{3}))-([AB])\.wav$")
 MAX_TRIALS = 60
@@ -175,6 +175,40 @@ def _verify_public_review_page(
     return True
 
 
+def _verify_neutral_public_wav(path: Path) -> None:
+    """Reject non-audio RIFF chunks and trailing payloads in public A/B WAVs.
+
+    A normal PCM16 playback WAV needs only a standard fmt header and data.
+    LIST/INFO, bext, JUNK and similar metadata can reveal hidden study
+    labels/source identities to a reviewer inspecting public downloads.
+    This reads chunk headers only; PCM remains in the bounded audio scanner.
+    """
+    size = path.stat().st_size
+    if size < 44:
+        # Preserve the established corrupt-header diagnostic for truncated
+        # input, while enforcing a stricter *valid* public WAV container.
+        raise ValueError("Invalid review WAV header")
+    if size > MAX_SOURCE_BYTES:
+        raise ValueError("Review public WAV exceeds canonical container bounds")
+    with path.open("rb") as source:
+        riff = source.read(12)
+        if (len(riff) != 12 or riff[:4] != b"RIFF" or riff[8:] != b"WAVE"
+                or int.from_bytes(riff[4:8], "little") + 8 != size):
+            raise ValueError("Review public WAV has invalid RIFF bounds")
+        for expected in (b"fmt ", b"data"):
+            chunk = source.read(8)
+            if len(chunk) != 8 or chunk[:4] != expected:
+                raise ValueError("Review public WAV contains unexpected RIFF chunks")
+            length = int.from_bytes(chunk[4:8], "little")
+            if ((expected == b"fmt " and length != 16)
+                    or (expected == b"data" and length % 2)
+                    or length > size - source.tell()):
+                raise ValueError("Review public WAV has invalid PCM chunk bounds")
+            source.seek(length + length % 2, 1)
+        if source.tell() != size:
+            raise ValueError("Review public WAV contains extra payload or metadata")
+
+
 def _private_audio_fingerprint(path: Path, expected_metrics: dict) -> bytes:
     """Identify repeated *playback PCM* without exporting an audio fingerprint.
 
@@ -288,6 +322,7 @@ def inspect_review_pack(
     try:
         for labels in groups.values():
             for path in labels.values():
+                _verify_neutral_public_wav(path)
                 with wave.open(str(path), "rb") as src:
                     total_frames += src.getnframes()
                 if total_frames > MAX_REVIEW_PACK_FRAMES:

@@ -556,10 +556,17 @@ class QualityTests(unittest.TestCase):
         wav(review / "trial-001-B.wav", different_a)
         wav(review / "trial-002-A.wav", different_b)
         wav(review / "trial-002-B.wav", same_audio)
-        # Change the container without changing PCM to prove audio-only
-        # fingerprinting; a file hash would miss this repeat.
-        with (review / "trial-002-B.wav").open("ab") as f:
-            f.write(b"unrelated-non-audio-container-trailer")
+        # Public review containers now reject non-audio trailers, even when
+        # decoded PCM is unchanged. Keep the cross-trial audio-repeat test on
+        # the neutral published WAVs; separate compare_wavs tests still show
+        # that *private* PCM fingerprints ignore container metadata.
+        public_audio = review / "trial-002-B.wav"
+        unmodified = public_audio.read_bytes()
+        with public_audio.open("ab") as output:
+            output.write(b"unrelated-non-audio-container-trailer")
+        with self.assertRaisesRegex(ValueError, "Review public WAV"):
+            inspect_review_pack(review)
+        public_audio.write_bytes(unmodified)
         report = inspect_review_pack(review)
         self.assertEqual(2, report["trial_count"])
         self.assertEqual(1, report["cross_trial_repeated_variant_count"])
@@ -811,6 +818,56 @@ class QualityTests(unittest.TestCase):
         index.symlink_to(self.base)
         with self.assertRaisesRegex(ValueError, "Review index"):
             inspect_review_pack(review)
+
+    def test_public_review_wav_rejects_metadata_chunks_and_hidden_trailing_bytes(self):
+        review = self.root / "metadata-review"
+        review.mkdir()
+        a = review / "trial-001-A.wav"
+        b = review / "trial-001-B.wav"
+        wav(a, self.samples)
+        wav(b, [int(sample * .9) for sample in self.samples])
+        original = a.read_bytes()
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
+
+        def riff_with_extra(extra, *, before_data=False, update_size=True):
+            payload = (original[:36] + extra + original[36:] if before_data
+                       else original + extra)
+            modified = bytearray(payload)
+            if update_size:
+                modified[4:8] = (len(modified) - 8).to_bytes(4, "little")
+            return bytes(modified)
+
+        label = b"source-label"
+        metadata = b"LIST" + len(label).to_bytes(4, "little") + label
+        if len(label) % 2:
+            metadata += bytes([0])
+        junk = b"JUNK" + (4).to_bytes(4, "little") + b"ABCD"
+        variants = (
+            riff_with_extra(metadata),
+            riff_with_extra(junk, before_data=True),
+            riff_with_extra(b"hidden-answer", update_size=False),
+        )
+        for index, contents in enumerate(variants):
+            with self.subTest(case=index):
+                a.write_bytes(contents)
+                # Wave/PCM reading accepts metadata and trailing bytes, which
+                # is why this must be a separate public-container guard.
+                with wave.open(str(a), "rb") as source:
+                    self.assertEqual(len(self.samples), source.getnframes())
+                with patch("mixlab.quality.pack.compare_wavs",
+                           side_effect=AssertionError("PCM scanned too early")):
+                    with self.assertRaisesRegex(ValueError, "Review public WAV"):
+                        inspect_review_pack(review)
+                process = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.pack", str(review)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(3, process.returncode)
+                self.assertNotIn(str(self.root), process.stdout + process.stderr)
+                self.assertNotIn("source-label", process.stdout + process.stderr)
+                self.assertFalse(process.stdout)
+                a.write_bytes(original)
+        self.assertEqual(1, inspect_review_pack(review)["trial_count"])
 
     def test_review_page_links_reject_wrong_swapped_or_external_audio(self):
         review = self.root / "review"

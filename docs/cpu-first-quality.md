@@ -153,6 +153,23 @@ race detector, **not** a cryptographic seal, atomic transaction, guarantee
 against transient add-and-remove races, or proof of safe public release.
 Keep a frozen immutable pack and perform an independent rights review.
 
+Public blind-review WAVs are now subject to a **neutral RIFF container**
+preflight before PCM scanning: a canonical RIFF/WAVE file must contain
+exactly one 16-byte `fmt ` chunk followed by one `data` chunk, with a
+consistent declared RIFF/file length and no extra bytes. Additional
+`LIST`/`INFO`/`bext`/`JUNK` chunks, duplicate chunks, extended headers
+and trailing payloads are refused, even if Python's WAV reader can play the
+PCM normally. Such chunks can include source, title, artist or review
+assignment metadata that unblinds an otherwise neutral `trial-###-A/B.wav`
+filename. This protection applies only to *published neutral review WAVs*,
+not private source ingest. The header check reads a bounded number of bytes
+and skips PCM payload without decoding it; the existing streaming scanner
+still verifies PCM16 format and exact samples. Some legitimate third-party
+WAV exporters attach metadata or extended format headers: export a clean
+neutral PCM16 **review copy** after respecting source rights, rather than
+loosening the blind pack rule. This cannot certify that the audible material
+itself does not reveal identity, or replace the human protocol audit.
+
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral
 `repeated_pcm_across_trials_inspect_blinding` **trial-level** warning
