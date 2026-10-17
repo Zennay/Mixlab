@@ -214,5 +214,30 @@ class FrozenStudyBindingTests(unittest.TestCase):
 
 
 
+    def test_untrusted_unknown_option_does_not_expose_private_flag_or_path(self):
+        secret = "--PRIVATE_REVIEWER_SOURCE_KEY_5688"
+        result = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.study_binding",
+            str(self.study), str(self.pack), "--expected-study-id", self.pinned,
+            secret, str(self.root / "PRIVATE_AUDIO_OPERATOR_PATH"),
+        ], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid arguments", result.stderr)
+        self.assertNotIn(secret, result.stdout + result.stderr)
+        self.assertNotIn("PRIVATE_AUDIO_OPERATOR_PATH", result.stdout + result.stderr)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_missing_required_flag_has_static_nonsecret_error(self):
+        result = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.study_binding",
+            str(self.study), str(self.pack),
+        ], capture_output=True, text=True, timeout=8)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid arguments", result.stderr)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+
+
+
 if __name__ == "__main__":
     unittest.main()
