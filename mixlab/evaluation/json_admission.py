@@ -6,6 +6,7 @@ Only a stable regular, non-symlink file is admitted. No private paths are
 included in public errors; no audio or network access is performed.
 """
 import json
+import math
 import os
 from pathlib import Path
 import stat
@@ -113,8 +114,17 @@ def load_bounded_json(path):
     def refuse_nonfinite(_):
         raise ValueError("Nonfinite evaluation JSON constant")
 
+    def finite_float(token):
+        # JSON's ordinary exponent syntax (e.g. 1e999) can overflow
+        # Python float to infinity despite parse_constant rejecting NaN.
+        value = float(token)
+        if not math.isfinite(value):
+            raise ValueError("Nonfinite evaluation JSON number")
+        return value
+
     try:
         return json.loads(decoded, object_pairs_hook=unique_pairs,
-                          parse_constant=refuse_nonfinite)
+                          parse_constant=refuse_nonfinite,
+                          parse_float=finite_float)
     except RecursionError:
         raise ValueError("Evaluation JSON nesting limit exceeded") from None
