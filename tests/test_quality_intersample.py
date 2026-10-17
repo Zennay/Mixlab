@@ -268,6 +268,40 @@ class IntersampleTests(unittest.TestCase):
         self.assertTrue(row["edge_interpolation_ambiguity_risk"])
         self.assertNotIn(str(self.root), json.dumps(row))
 
+    def test_signed_pcm_rails_are_not_cleared_as_safe(self):
+        for rail in (-32768, 32767):
+            with self.subTest(rail=rail):
+                pcm = [0] * 80
+                pcm[40] = rail
+                write_wav(self.a, [0] * len(pcm))
+                write_wav(self.b, pcm)
+                row = compare_intersample(self.a, [self.b])["candidates"][0]
+                self.assertEqual(1, row["full_scale_pcm_samples"])
+                self.assertTrue(row["full_scale_pcm_risk"])
+                self.assertTrue(row["technical_review_required"])
+                self.assertFalse(row["edge_interpolation_ambiguity_risk"])
+                self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+                self.assertEqual(2, self.cli(str(self.a), str(self.b), "--fail-on-risk").returncode)
+
+    def test_near_rail_but_legal_pcm_does_not_get_rail_warning(self):
+        pcm = [0] * 80
+        pcm[40] = 32760
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertEqual(0, row["full_scale_pcm_samples"])
+        self.assertFalse(row["full_scale_pcm_risk"])
+
+    def test_stereo_single_channel_pcm_rail_redacted(self):
+        stereo = [0] * 160
+        stereo[81] = -32768
+        write_wav(self.a, [0] * len(stereo), channels=2)
+        write_wav(self.b, stereo, channels=2)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertEqual(1, row["full_scale_pcm_samples"])
+        self.assertTrue(row["technical_review_required"])
+        self.assertNotIn(str(self.root), json.dumps(row))
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
