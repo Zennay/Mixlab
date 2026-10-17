@@ -6,6 +6,7 @@ on:
       - "mixlab/quality/intersample.py"
       - "tests/test_quality_intersample.py"
       - "tests/test_quality_intersample_stress.py"
+      - "tests/test_quality_intersample_oracle.py"
       - "docs/quality-intersample.md"
       - ".github/workflows/ml07-intersample.yml"
 permissions:
@@ -25,10 +26,13 @@ jobs:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Compile isolated quality source and tests
-        run: python3 -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py tests/test_quality_intersample_stress.py
+        run: python3 -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py tests/test_quality_intersample_stress.py tests/test_quality_intersample_oracle.py
       - name: Synthetic privacy, clipping and A/B admission regression with RSS
         run: |
           /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample.py' -v
+      - name: Independent analytic sine recall and safe-control characterization
+        run: |
+          /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample_oracle.py' -v
       - name: Maximum-frame 48kHz stereo resource proof (192 MiB RSS gate)
         run: |
           /usr/bin/time -v python3 -m unittest discover -s tests -p 'test_quality_intersample_stress.py' -v
@@ -56,6 +60,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           python --version
-          python -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py
+          python -m compileall -q mixlab/quality/intersample.py tests/test_quality_intersample.py tests/test_quality_intersample_oracle.py
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_intersample.py' -v
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_cli_privacy.py' -v
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_intersample_oracle.py' -v
