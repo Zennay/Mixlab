@@ -44,6 +44,18 @@ Nonadjacent two-bin patterns are deliberately excluded: for example, residues
 detector's lower-resolution limit. This only covers simple adjacent-phase
 jitter, **not arbitrary dithering/noise shaping** or perceptual quality.
 
+When the reference itself is quantized, its maximum residue-bin fraction
+may exceed 10%, masking real *additional* degradation. The detector also
+allows a relative loss pattern only when **at least four** baseline residue
+bins at the candidate's grid each hold **at least 5%** of the reference's
+informative samples. For example, a 12-bit-equivalent baseline (step 16)
+versus a 10-bit-equivalent candidate (step 64) produces four populated
+baseline residues at step 64 and one candidate residue. A baseline on
+step 16 versus a candidate on step 32 has only two residues and remains
+conservatively unflagged. Already-equivalent coarse baselines are likewise
+not treated as higher-resolution merely because their phase differs. This
+does **not** estimate a source's true bit depth or prove audibility.
+
 To catch a damaged part hidden by the undamaged rest, the same check runs
 across **8 fixed, corresponding time regions** per channel, each requiring
 >=512 informative samples and >=16 distinct values on both sides. At least
@@ -147,7 +159,8 @@ quality/companion/privacy suites run separately.
 
 Adversarial tests also exercise signed PCM, shifted 16/32/64/128/256-step quantization,
 one-LSB alternating adjacent-phase quantization (with half-step negative
-control), cross-stereo noncontiguous time-region persistence,
+control), a 12-to-10-bit relative quantization regression (with a one-step
+negative control), cross-stereo noncontiguous time-region persistence,
 different quantizer offsets in noncontiguous regions, partial one-channel
 loss, unknown/short regions, chunk-size invariance, read-only file hashes,
 nonregular sources, and redacted CLI errors. Healthy and suspicious verdicts
