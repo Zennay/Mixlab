@@ -171,23 +171,21 @@ def aggregate(root, rating_paths):
     # persistent mid-analysis edits; it is not a guarantee against an
     # attacker swapping bytes and restoring them between observations.
     verify_pack(root)
-    # Private evidence.kind is editable metadata *outside* the frozen pack
-    # identity hash. Do not let relabelling an all-synthetic source pack
-    # suppress the explicit "not musical preference evidence" limitation.
-    # This cross-check does not independently authenticate permission claims.
-    all_synthetic = all(
-        isinstance(row.get("metrics"), dict)
-        and isinstance(row["metrics"].get("source_permission_declarations"), dict)
-        and row["metrics"]["source_permission_declarations"].get("a") == "synthetic"
-        and row["metrics"]["source_permission_declarations"].get("b") == "synthetic"
-        for row in evidence["renders"]
-    )
+    # Neither evidence.kind nor per-render source declarations are authenticated
+    # by pack_id: it hashes output WAV digests and answer assignments, not
+    # editable descriptive metadata. An attacker can relabel a synthetic pack
+    # and erase or forge even *all* source declarations without changing audio.
+    # A blanket conditional caution is therefore the only honest inference;
+    # do not promote any report based solely on editable provenance labels.
     multiple_candidates = any(sum(p == row["pair"] for p,f in rows) > 1 for row in summaries)
     limitations = ["RMS comparison is not perceptual loudness matching",
-                   "listener identities are pseudonyms, not independently verified"]
+                   "listener identities are pseudonyms, not independently verified",
+                   "source permission declarations are not independently authenticated",
+                   # This is a universal conditional caveat, not a claim that
+                   # every pack contains synthetic music. Never hide it based
+                   # on metadata that is not authenticated by the pack ID.
+                   "synthetic input cannot establish musical preference"]
     if multiple_candidates: limitations.append("exploratory multi-candidate pack; not a preselected single-candidate pilot")
-    if evidence.get("kind") == "synthetic-smoke-only" or all_synthetic:
-        limitations.append("synthetic input cannot establish musical preference")
     return {"schema_version":1,"pack_id":receipt["pack_id"],"reviewers":len(reviewers),
             "trials":len(trials),"counts":total,"non_tied_preferences":decisive,
             "candidate_preference_fraction":total["candidate"]/decisive if decisive else None,
