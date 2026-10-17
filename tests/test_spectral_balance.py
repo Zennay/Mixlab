@@ -432,6 +432,43 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("stereo_temporal_level_balance_shift_inspect", row["warnings"])
         self.assertIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
 
+    def test_relative_stereo_balance_ignores_small_pan_below_six_db(self):
+        make_stereo_levels_wav(self.base, [(8000, 8000)] * 8)
+        make_stereo_levels_wav(self.other, [(7000, 9000)] * 8)
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_channel_level_balance_shift_risk"])
+        self.assertNotIn("stereo_channel_level_balance_shift_inspect", row["warnings"])
+        self.assertEqual(0.0, row["stereo_temporal_level_balance_mismatch_fraction"])
+
+    def test_baseline_candidate_reversal_preserves_stereo_balance_risks(self):
+        a = [(4000, 8000)] * 4 + [(8000, 4000)] * 4
+        b = a[::-1]
+        make_stereo_levels_wav(self.base, a)
+        make_stereo_levels_wav(self.other, b)
+        forward = self.report()["candidates"][0]
+        reverse = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        self.assertEqual(
+            forward["stereo_temporal_level_balance_mismatch_fraction"],
+            reverse["stereo_temporal_level_balance_mismatch_fraction"],
+        )
+        self.assertEqual(
+            "stereo_temporal_level_balance_shift_inspect" in forward["warnings"],
+            "stereo_temporal_level_balance_shift_inspect" in reverse["warnings"],
+        )
+
+    def test_stereo_volume_swap_sibling_candidate_remains_warning_free(self):
+        third = self.dir / "PRIVATE_SWAPPED_STEREO.wav"
+        make_stereo_levels_wav(self.base, [(4000, 8000)] * 8)
+        make_stereo_levels_wav(self.other, [(4000, 8000)] * 8)
+        make_stereo_levels_wav(third, [(8000, 4000)] * 8)
+        rows = compare_spectral_balance(self.base, [self.other, third])["candidates"]
+        self.assertEqual(["candidate-01", "candidate-02"], [r["id"] for r in rows])
+        self.assertEqual([], rows[0]["warnings"])
+        self.assertFalse(rows[0]["stereo_channel_level_balance_shift_risk"])
+        self.assertTrue(rows[1]["stereo_channel_level_balance_shift_risk"])
+        self.assertNotIn(str(third), json.dumps(rows))
+        self.assertNotIn(third.name, json.dumps(rows))
+
     def test_one_brief_stereo_balance_swap_does_not_trigger_persistence(self):
         a = [(4000, 8000)] * 8
         b = [(8000, 4000)] + [(4000, 8000)] * 7
