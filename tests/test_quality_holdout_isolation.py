@@ -264,6 +264,56 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
                     self.study["pairs"][0][("a" if index == 0 else "b") + "_sha256"] = sha
         self.freeze()
 
+    def _make_unique_stereo_with_shared_silent_right(self):
+        # Deliberately unrelated left-channel melodies, but an all-zero
+        # right channel in both sets. Silence is not musical provenance.
+        for group, directory in ((self.dev, self.dev_dir),
+                                 (self.eva, self.eva_dir)):
+            for i in (0, 1):
+                path = directory / f"clip-{i:02d}.wav"
+                with wave.open(str(path), "rb") as reader:
+                    mono = reader.readframes(reader.getnframes())
+                stereo = b"".join(struct.pack("<hh", value, 0)
+                                  for (value,) in struct.iter_unpack("<h", mono))
+                with wave.open(str(path), "wb") as writer:
+                    writer.setnchannels(2)
+                    writer.setsampwidth(2)
+                    writer.setframerate(8000)
+                    writer.writeframes(stereo)
+                sha = hashlib.sha256(path.read_bytes()).hexdigest()
+                group["tracks"][i]["sha256"] = sha
+                if group is self.eva:
+                    self.study["pairs"][0][
+                        ("a" if i == 0 else "b") + "_sha256"] = sha
+        self.freeze()
+
+    def test_shared_silent_stereo_channel_is_not_source_contamination(self):
+        self._make_unique_stereo_with_shared_silent_right()
+        report = self.audit()
+        self.assertIs(report["development_evaluation_source_identity_separate"], True)
+        self.assertIs(report["milestone_pass"], False)
+
+    def test_copy_of_real_audible_channel_rejected_even_with_shared_silence(self):
+        self._make_unique_stereo_with_shared_silent_right()
+        donor = self.eva_dir / "clip-00.wav"
+        receiver = self.dev_dir / "clip-00.wav"
+        with wave.open(str(donor), "rb") as reader:
+            source = list(struct.iter_unpack(
+                "<hh", reader.readframes(reader.getnframes())))
+        with wave.open(str(receiver), "rb") as reader:
+            original = list(struct.iter_unpack(
+                "<hh", reader.readframes(reader.getnframes())))
+        edited = b"".join(struct.pack("<hh", donor_l, right)
+                          for (donor_l, _), (_, right) in zip(source, original))
+        with wave.open(str(receiver), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(edited)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(
+            receiver.read_bytes()).hexdigest()
+        self.rejected()
+
     def test_stereo_source_pair_accepts_independent_channels(self):
         self._prepare_stereo_pair()
         self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
