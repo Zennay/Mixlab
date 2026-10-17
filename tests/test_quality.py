@@ -479,6 +479,35 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(0, report["cross_trial_repeated_variant_count"])
         self.assertFalse(report["trials"][1]["trial_warnings"])
 
+    def test_review_pack_total_resource_budget_is_checked_before_pcm_scan(self):
+        review = self.root / "review"
+        review.mkdir()
+        first, second = review / "trial-001-A.wav", review / "trial-001-B.wav"
+        wav(first, self.samples)
+        wav(second, [int(x / 2) for x in self.samples])
+        total_bytes = first.stat().st_size + second.stat().st_size
+        # No sample-domain scan should happen if *either* aggregate limit
+        # already rules out the pack from header/metadata inspection.
+        with patch("mixlab.quality.pack.MAX_REVIEW_PACK_BYTES", total_bytes - 1), \
+             patch("mixlab.quality.pack.compare_wavs", side_effect=AssertionError("PCM read")):
+            with self.assertRaisesRegex(ValueError, "total byte budget"):
+                inspect_review_pack(review)
+        with patch("mixlab.quality.pack.MAX_REVIEW_PACK_FRAMES", 15999), \
+             patch("mixlab.quality.pack.compare_wavs", side_effect=AssertionError("PCM read")):
+            with self.assertRaisesRegex(ValueError, "total frame budget"):
+                inspect_review_pack(review)
+        # Exact thresholds remain accepted and the normal diagnostic still
+        # runs, so one-trial valid packs are not accidentally disabled.
+        with patch("mixlab.quality.pack.MAX_REVIEW_PACK_BYTES", total_bytes), \
+             patch("mixlab.quality.pack.MAX_REVIEW_PACK_FRAMES", 16000):
+            report = inspect_review_pack(review)
+        self.assertEqual(1, report["trial_count"])
+        self.assertEqual(1, len(report["trials"]))
+        second.write_bytes(b"corrupt header data")
+        with patch("mixlab.quality.pack.compare_wavs", side_effect=AssertionError("PCM read")):
+            with self.assertRaisesRegex(ValueError, "Invalid review WAV header"):
+                inspect_review_pack(review)
+
     def test_review_pack_rejects_untrusted_incomplete_or_oversized_inventories(self):
         review = self.root / "review"
         review.mkdir()
