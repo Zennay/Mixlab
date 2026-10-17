@@ -4,22 +4,14 @@ import json
 from pathlib import Path
 import re
 from ..ingest import digest
+from .json_admission import load_bounded_json as _load
 
 CHOICES = {"A", "B", "Tie", "Both unusable"}
 
 
-def _load(path):
-    path = Path(path)
-    if path.stat().st_size > 4 * 1024 * 1024:
-        raise ValueError("Evaluation JSON exceeds 4 MiB")
-    def unique(items):
-        out = {}
-        for key, value in items:
-            if key in out: raise ValueError("Duplicate JSON field")
-            out[key] = value
-        return out
-    return json.loads(path.read_text(), object_pairs_hook=unique,
-                      parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")))
+# Reuse the independently validated, single-FD, regular-file-only admission
+# primitive.  stat(path) followed by Path.read_text() could block forever on
+# FIFOs, race with a replacement file and read beyond the original size check.
 
 
 def verify_pack(root):
@@ -136,6 +128,8 @@ def main():
     args=parser.parse_args()
     try:
         result=aggregate(args.pack,args.ratings)
-    except (OSError,ValueError,KeyError,TypeError) as exc:
-        parser.exit(2,f"MixLab evaluation: {exc}\n")
+    except (OSError,ValueError,KeyError,TypeError):
+        # OSError/KeyError may carry private source paths or reviewer data.
+        # Do not pass untrusted exception text to stderr.
+        parser.exit(2,"MixLab evaluation: invalid or unavailable private input\n")
     print(json.dumps(result,sort_keys=True,allow_nan=False,indent=2))
