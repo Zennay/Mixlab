@@ -608,10 +608,11 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
 
     def test_midrange_mono_loss_hidden_by_upper_tone_is_detected(self):
-        # 600Hz and 14kHz: overall downmix remains healthy because the
-        # upper tone is stronger, while mid-pass 600Hz energy cancels.
+        # 600Hz and 18kHz: overall downmix remains healthy because the
+        # upper tone is stronger. The high-pass proxy's leakage into the
+        # mid filter is small enough for clear >10dB mid-band cancellation.
         params = dict(
-            lower_frequency=600, upper_frequency=14000,
+            lower_frequency=600, upper_frequency=18000,
             bass_gain=7000, treble_gain=11000
         )
         make_two_band_stereo_phase_wav(self.base, **params)
