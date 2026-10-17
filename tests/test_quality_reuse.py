@@ -193,10 +193,10 @@ class PcmReuseTests(unittest.TestCase):
                 dst.setnchannels(2)
                 dst.setsampwidth(2)
                 dst.setframerate(96000)
-                chunk = b"\\x88\\x13\\x78\\xec" * 4096
+                chunk = b"\x88\x13\x78\xec" * 4096
                 for _ in range(488):
                     dst.writeframesraw(chunk)
-                dst.writeframesraw(b"\\x88\\x13\\x78\\xec" * 1152)
+                dst.writeframesraw(b"\x88\x13\x78\xec" * 1152)
         row = self.row()
         self.assertEqual(1.0, row["exact_frame_reuse_fraction"])
         self.assertEqual(1.0, row["active_fraction"])
@@ -207,10 +207,10 @@ class PcmReuseTests(unittest.TestCase):
             dst.setnchannels(1)
             dst.setsampwidth(2)
             dst.setframerate(8000)
-            chunk = b"\\x88\\x13" * 4096
+            chunk = b"\x88\x13" * 4096
             for _ in range(488):
                 dst.writeframesraw(chunk)
-            dst.writeframesraw(b"\\x88\\x13" * 1153)
+            dst.writeframesraw(b"\x88\x13" * 1153)
         with self.assertRaises(ValueError):
             self.row()
 
