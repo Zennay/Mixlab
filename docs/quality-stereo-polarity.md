@@ -445,3 +445,35 @@ are mandatory in `tests/test_discovery_contract.py`.
 These are deliberately **signal-level heuristics**, not integrated
 BS.1770/LUFS or human preference evidence. No private media enters GitHub
 or CI and no audio changes are made.
+
+
+## Computed mono-playback RMS versus configured A/B tolerance
+
+Even a **4 dB** relative mono playback difference can slip below the
+conservative **6 dB fold-down loss warning** while both stereo channel
+and whole-file RMS look level-matched. For example, identical-amplitude
+stereo sine channels with a phase angle of ~103 degrees between L/R
+retain equal per-channel and combined stereo power but lose ~4 dB when
+summed to mono. This also falls below the 9 dB short-window warning.
+
+The additive `mono_playback_rms_delta_db_vs_baseline` now combines
+the already-measured **stereo RMS dBFS and mono fold-down loss dB** for
+both baseline and candidate. The difference is measured against the
+same configurable `loudness_tolerance_db` used by the whole-stereo RMS
+gate (default **1.5 dB**). A mismatch raises
+`mono_playback_level_confound_risk` and neutral
+`ab_mono_playback_rms_level_mismatch_not_lufs`; it also prevents
+`rms_and_window_level_preflight_pass` from claiming a level-balanced
+technical comparison. No second audio scan, PCM, per-window envelope
+or source path is added to the report. Mono sources and fully silent
+stereo remain inapplicable; an exactly cancelling stereo clip has
+**undefined** finite mono-playback delta (JSON null), not a fabricated
+gain value.
+
+`tests/test_mono_playback_level.py` covers the ~4 dB hidden phase
+case, slight phase shift, configurable tolerance, reversing the
+baseline/candidate sign of the delta, complete cancellation, silence,
+mono inputs and output anonymity. The CI companion-discovery contract
+requires the module. This is a technical level preflight only:
+integrated LUFS, format playback, artistic panning, and listener
+preference demand separate independent real-audio review.
