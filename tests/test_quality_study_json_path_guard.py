@@ -94,6 +94,28 @@ class PinnedJSONPathTests(unittest.TestCase):
                 self.assertNotIn("PRIVATE", str(caught.exception))
                 self.assertNotIn("SECRET", str(caught.exception))
 
+    def test_relative_paths_stay_bound_to_original_cwd_after_a_scan(self):
+        """A callback changing cwd must not redirect the final inventory."""
+        original_cwd = Path.cwd()
+        verifier = gate.verify_study_pack_binding
+        try:
+            os.chdir(self.fx.root)
+
+            def move_cwd_after_real_validation(*args, **kwargs):
+                result = verifier(*args, **kwargs)
+                os.chdir(original_cwd)
+                return result
+
+            with patch.object(gate, "verify_study_pack_binding",
+                              side_effect=move_cwd_after_real_validation):
+                report = self.checked(
+                    study=Path(self.fx.study.name),
+                    pack=Path(self.fx.pack.name),
+                )
+            self.assertEqual(report["technical_gate"], "pass")
+        finally:
+            os.chdir(original_cwd)
+
     def test_parent_symlink_on_pack_root_is_rejected(self):
         linked = self.fx.root / "linked-pack"
         linked.symlink_to(self.fx.pack, target_is_directory=True)
