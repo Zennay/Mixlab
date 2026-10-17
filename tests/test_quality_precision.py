@@ -569,6 +569,30 @@ class BatchPrecisionTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 3)
         self.assertNotIn(str(self.root), proc.stdout + proc.stderr)
 
+    def test_malformed_fmt_chunk_errors_are_redacted_for_single_and_batch(self):
+        import struct
+        bad = self.root / "PRIVATE-secret-malformed-fmt.wav"
+        # RIFF is recognizable, but fmt declares only 2 bytes where PCM
+        # requires 16; CPython's wave parser may raise struct.error.
+        fmt = b"fmt " + struct.pack("<I", 2) + b"\x01\x00"
+        data = b"data" + struct.pack("<I", 2) + b"\x00\x00"
+        bad.write_bytes(b"RIFF" + struct.pack("<I", 4 + len(fmt) + len(data))
+                        + b"WAVE" + fmt + data)
+        commands = [
+            [sys.executable, "-m", "mixlab.quality.precision",
+             str(self.base), str(bad)],
+            [sys.executable, "-m", "mixlab.quality.precision",
+             str(self.base), str(self.c1), str(bad), "--batch"],
+        ]
+        for cmd in commands:
+            with self.subTest(batch="--batch" in cmd):
+                proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+                self.assertEqual(proc.returncode, 3)
+                self.assertEqual(proc.stdout, "")
+                self.assertNotIn("PRIVATE", proc.stderr)
+                self.assertNotIn(str(self.root), proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+
     def test_batch_invalid_file_does_not_publish_partial_results(self):
         missing = self.root / "PRIVATE-secret-not-found.wav"
         cmd = [sys.executable, "-m", "mixlab.quality.precision",
