@@ -483,6 +483,67 @@ class PrivateFdGuardTests(unittest.TestCase):
                 self.assertNotIn(marker, proc.stderr)
                 self.assertNotIn(str(self.root), proc.stderr)
 
+    def test_ab_group_caller_lowered_budget_admits_exact_bound(self):
+        candidate = self.root / "RESOURCE_SAFE_VARIANT.wav"
+        make_wav(candidate)
+        with patch.object(wave.Wave_read, "readframes",
+                          side_effect=AssertionError("cannot decode pre-rejected PCM")) as decode:
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                validate_private_ab_group([self.source, candidate],
+                                          max_total_frames=399)
+            decode.assert_not_called()
+        report = validate_private_ab_group([self.source, candidate],
+                                           max_total_frames=400)
+        self.assertTrue(report["pcm16_payloads_complete"])
+        self.assertEqual(1, report["candidate_count"])
+        self.assertNotIn("budget", json.dumps(report))
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_ab_group_invalid_budget_is_rejected_before_any_open(self):
+        from mixlab.quality.fd_guard import MAX_GROUP_FRAMES
+        invalid = (True, False, None, -1, 0, 1.0, 400.5, "400",
+                   float("nan"), MAX_GROUP_FRAMES + 1)
+        for budget in invalid:
+            with self.subTest(budget=repr(budget)):
+                with patch("mixlab.quality.fd_guard.os.open",
+                           side_effect=AssertionError("must not open")) as opener:
+                    with self.assertRaisesRegex(ValueError, "details withheld"):
+                        validate_private_ab_group(
+                            [self.source, self.root / "PRIVATE.wav"],
+                            max_total_frames=budget
+                        )
+                    opener.assert_not_called()
+
+    def test_ab_group_budget_cli_below_limit_fails_closed(self):
+        candidate = self.root / "PRIVATE_BUDGET_WAV.wav"
+        make_wav(candidate)
+        base = [sys.executable, "-m", "mixlab.quality.fd_guard",
+                "--ab-group", str(self.source), str(candidate),
+                "--max-group-frames"]
+        for budget, exit_code in (("400", 0), ("399", 3),
+                                  ("0", 3), ("8000001", 3),
+                                  ("PRIVATE_DO_NOT_LOG", 2)):
+            with self.subTest(budget=budget):
+                done = subprocess.run(base + [budget], capture_output=True, text=True)
+                self.assertEqual(exit_code, done.returncode)
+                self.assertNotIn(str(self.root), done.stdout + done.stderr)
+                self.assertNotIn("PRIVATE", done.stdout + done.stderr)
+                self.assertNotIn("DO_NOT_LOG", done.stdout + done.stderr)
+                if exit_code == 0:
+                    self.assertTrue(json.loads(done.stdout)["shape_comparable"])
+                else:
+                    self.assertFalse(done.stdout)
+
+    def test_single_file_mode_rejects_lowered_group_budget(self):
+        process = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.fd_guard",
+             str(self.source), "--max-group-frames", "200"],
+            capture_output=True, text=True
+        )
+        self.assertEqual(2, process.returncode)
+        self.assertFalse(process.stdout)
+        self.assertNotIn(str(self.root), process.stderr)
+
     def test_ab_group_validates_multiple_sources_anonymously_and_immutably(self):
         c1, c2 = self.root / "PRIVATE_CANDIDATE1.wav", self.root / "PRIVATE_CANDIDATE2.wav"
         make_wav(c1)
