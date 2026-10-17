@@ -61,6 +61,21 @@ failing the strict warning gate**. Both sample RMS and these filters are
 distinct from EBU/BS.1770 perceptual loudness; the dedicated loudness
 evaluation and human blind listening remain required.
 
+A separate **eight-span relative RMS-envelope** check tests when loud and
+quiet passages occur, even if the whole-file RMS is equal. For each mutually
+audible time span, the per-span sample RMS is divided by its own file's
+whole-track RMS before comparing A and B. Thus *constant gain-only* changes
+do not produce this envelope warning; the independent 1.5dB whole-RMS
+check still catches those. If at least **two** and **25% of at least three**
+comparable spans differ by >=**3dB**, the report emits
+`temporal_rms_envelope_shift_inspect_not_lufs` and reports only the
+`temporal_rms_envelope_mismatch_fraction`. With fewer than three
+comparable spans the fraction is `null`, never false 0% evidence.
+A/B may legitimately have differently timed transitions; this is a
+blind-comparability inspection, not a musical defect verdict or
+perceptual loudness calculation. It does not publish time locations or
+span amplitudes, only the aggregate mismatch fraction.
+
 An additional **eight-span temporal proxy** checks whether the same
 low/mid/high content occurred at the same *time* in both variants.
 A/B silence alignment is screened independently: when one source is audible
