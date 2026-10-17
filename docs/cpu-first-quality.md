@@ -41,6 +41,7 @@ do not supply the private answer-key folder or any recording/source library.
     python3 -m mixlab.quality.pack /private/pack/review
     python3 -m mixlab.quality.pack /private/pack/review --fail-on-warnings
     python3 -m mixlab.quality.pack /private/pack/review --require-generated-html --fail-on-warnings
+    python3 -m mixlab.quality.pack /private/pack/review --require-generated-html --require-receipt --fail-on-warnings
 
 The pack inspector rejects empty, incomplete, improperly named, linked or
 excessive (more than 60) trial WAV inventories and errors out with a
@@ -82,6 +83,19 @@ the default remains `false` to avoid implying a performed check.
 Matching the official template does **not** prove its JavaScript safe,
 replace human JS/CSP security review, establish listening preference or
 authorize publication of third-party music.
+
+For an actual frozen listening pack, also set `--require-receipt`. This
+opt-in reads **only** the bounded regular `receipt.json` sibling of the
+public `review/` directory (maximum 8 KiB); it checks schema v1, the
+receipt trial count against A/B pairs, and its 64-hex `pack_id` against
+the listener form's public `data-pack-id`. The report sets
+`public_receipt_pack_id_verified=true` only when this check succeeds.
+It never reads `private/answer-key.json`, and rejects symlinked, missing,
+malformed or mismatched receipts with a sanitized exit **3**. This prevents
+accidentally collecting ratings under the wrong pack ID, **not** malicious
+joint replacement of both receipt and page: the receipt is not
+cryptographically signed. Preserve the original frozen pack and obtain
+independent evidence review before a human benchmark.
 
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral
