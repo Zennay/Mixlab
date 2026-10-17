@@ -27,6 +27,10 @@ RMS_LEVEL_CONFOUND_DB = 1.5
 # mastering are not simulated; this detects obvious polarity cancellation.
 MONO_FOLD_LOSS_DB = -10.0
 MONO_FOLD_CHANGE_DB = 6.0
+# Only inspect band-specific mono cancellation when the *source* has
+# appreciable band energy; never alarm on numerical filter leakage.
+BAND_FOLD_MIN_PROXY_RATIO = 0.1
+BAND_FOLD_LOSS_DB = -10.0
 # Relative L/R gain moves can be hidden by identical whole-stereo RMS,
 # full-band ratios, mono-fold and gain-normalized channel spectra.
 STEREO_BALANCE_SHIFT_DB = 6.0
@@ -91,6 +95,7 @@ def _scan_spectral_private(
                 # migrations hidden by an identical total stereo spectrum.
                 channel_energy = [[0.0, 0.0, 0.0, 0.0] for _ in range(channels)]
                 stereo_cross_energy = 0.0
+                stereo_band_cross_energy = [0.0, 0.0, 0.0]
                 # Constant memory (eight aggregate bins), never samples or
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
@@ -138,6 +143,11 @@ def _scan_spectral_private(
                         if channels == 2 and channel == 1:
                             # Adjacent samples form one stereo PCM16 frame.
                             stereo_cross_energy += (samples[index - 1] / 32768) * value
+                            stereo_band_cross_energy[0] += low_state[0] * low_state[1]
+                            stereo_band_cross_energy[1] += mid_state[0] * mid_state[1]
+                            stereo_band_cross_energy[2] += (
+                                (samples[index - 1] / 32768 - high_state[0]) * high_residual
+                            )
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
                         span_channel_energy[span][channel] += sample_energy
@@ -188,6 +198,17 @@ def _scan_spectral_private(
             math.sqrt(max(0.0, min(1.0, (0.5 * total_energy + stereo_cross_energy) / total_energy)))
             if channels == 2 and total_energy else None
         ),
+        # Private filtered-band mono-fold ratios and their whole-source
+        # energy shares. Never publish the individual ratios or channel signs.
+        "_mono_fold_bands": [
+            (
+                math.sqrt(energy / total_energy),
+                math.sqrt(max(0.0, min(1.0, 0.5 + cross / energy))),
+            ) if channels == 2 and energy > 0 and total_energy > 0 else None
+            for energy, cross in zip(
+                (low_energy, mid_energy, high_energy), stereo_band_cross_energy
+            )
+        ],
         # Only used privately to flag aliases / hardlinks in a blind pack.
         "_source_key": (before.st_dev, before.st_ino),
         "_source_stat_identity": _source_identity(before),
@@ -321,6 +342,27 @@ def compare_spectral_balance(
             else:
                 deltas["stereo_mono_fold_ratio_delta_db"] = None
                 warnings.append("stereo_mono_fold_unresolved_inspect")
+        # Broadband fold energy may look normal when a strong treble
+        # component hides mono-cancelled bass (or vice versa). Each filtered
+        # band's L/R cross-energy remains an inspect-only private proxy.
+        if reference["channels"] == 2:
+            for name, band in zip(
+                ("low", "mid", "high"), range(3)
+            ):
+                sources = (
+                    reference["_mono_fold_bands"][band], current["_mono_fold_bands"][band]
+                )
+                meaningful_cancellation = any(
+                    proxy is not None
+                    and proxy[0] >= BAND_FOLD_MIN_PROXY_RATIO
+                    and proxy[1] <= 10 ** (BAND_FOLD_LOSS_DB / 20)
+                    and source["_rms"] >= SILENT_WINDOW_RMS
+                    for proxy, source in zip(sources, (reference, current))
+                )
+                deltas["stereo_" + name + "_band_mono_fold_cancellation_risk"] = meaningful_cancellation
+                if meaningful_cancellation:
+                    warnings.append("stereo_" + name + "_band_mono_fold_cancellation_inspect")
+
         # The ratios below intentionally normalize out overall gain.
         # Report an independent sample-RMS confound, *not* perceptual LUFS.
         if reference["_rms"] >= SILENT_WINDOW_RMS and current["_rms"] >= SILENT_WINDOW_RMS:
