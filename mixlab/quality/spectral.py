@@ -24,6 +24,12 @@ MIN_RESOLVABLE_RATIO = 1e-4
 READ_FRAMES = 4096
 MAX_CANDIDATES = 8
 MAX_AGGREGATE_FRAMES = 8_000_000
+# Eight equal-duration private spans spot a shift in *when* spectral balance
+# changes, even if whole-file band-energy proxies remain very similar.
+SPECTRAL_SPANS = 8
+TEMPORAL_PROXY_THRESHOLD_DB = 9.0
+TEMPORAL_PROXY_MIN_FRACTION = 0.25
+TEMPORAL_PROXY_MIN_SPANS = 3
 
 
 def _source_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -56,6 +62,9 @@ def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES
                 low_state = [0.0] * channels
                 high_state = [0.0] * channels
                 total_energy = low_energy = high_energy = 0.0
+                # Constant memory (eight aggregate bins), never samples or
+                # per-span envelopes in the public report.
+                span_energy = [[0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
                 remaining = frames
                 while remaining:
                     count = min(READ_FRAMES, remaining)
@@ -72,9 +81,18 @@ def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES
                         low_state[channel] += low_alpha * (value - low_state[channel])
                         high_state[channel] += high_alpha * (value - high_state[channel])
                         high_residual = value - high_state[channel]
-                        total_energy += value * value
-                        low_energy += low_state[channel] ** 2
-                        high_energy += high_residual * high_residual
+                        sample_energy = value * value
+                        low_sample_energy = low_state[channel] ** 2
+                        high_sample_energy = high_residual * high_residual
+                        total_energy += sample_energy
+                        low_energy += low_sample_energy
+                        high_energy += high_sample_energy
+                        span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
+                        span_energy[span][0] += sample_energy
+                        span_energy[span][1] += low_sample_energy
+                        span_energy[span][2] += high_sample_energy
+                        if channel == 0:
+                            span_energy[span][3] += 1
                     remaining -= count
             if _source_identity(before) != _source_identity(os.fstat(handle.fileno())):
                 raise ValueError("WAV changed while being inspected")
@@ -95,6 +113,14 @@ def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES
         "lowpass_180_ratio": math.sqrt(low_energy / total_energy) if total_energy else None,
         "highpass_2500_ratio": math.sqrt(high_energy / total_energy) if total_energy else None,
         "_rms": rms,
+        "_spans": [
+            (
+                math.sqrt(low / total) if total else None,
+                math.sqrt(high / total) if total else None,
+                math.sqrt(total / (count * channels)) if count else 0.0,
+            )
+            for total, low, high, count in span_energy
+        ],
     }
 
 
@@ -137,6 +163,28 @@ def compare_spectral_balance(
                         warnings.append(name + "_spectral_balance_shift_inspect")
         for name in ("low", "high"):
             deltas.setdefault(name + "_proxy_delta_db", None)
+
+        # A/B can have *equal global* low/high ratios even if the bass and
+        # treble moments were swapped. Eight private time-aligned summaries
+        # expose persistent level-normalized band changes without exporting
+        # source time coordinates, band envelopes, or audio. Skip quiet or
+        # unresolved spans; never create a false 0dB from missing evidence.
+        for name, slot in (("low", 0), ("high", 1)):
+            eligible = differing = 0
+            for ref_span, cur_span in zip(reference["_spans"], current["_spans"]):
+                if min(ref_span[2], cur_span[2]) < SILENT_WINDOW_RMS:
+                    continue
+                a, b = ref_span[slot], cur_span[slot]
+                if a is None or b is None or min(a, b) < MIN_RESOLVABLE_RATIO:
+                    continue
+                eligible += 1
+                if abs(20 * math.log10(b / a)) >= TEMPORAL_PROXY_THRESHOLD_DB:
+                    differing += 1
+            fraction = round(differing / eligible, 6) if eligible else None
+            deltas["temporal_" + name + "_proxy_mismatch_fraction"] = fraction
+            if (eligible >= TEMPORAL_PROXY_MIN_SPANS and differing >= 2
+                    and differing / eligible >= TEMPORAL_PROXY_MIN_FRACTION):
+                warnings.append(name + "_temporal_spectral_shift_inspect")
         rows.append({
             "id": f"candidate-{index:02d}",
             "metrics": _public_metrics(current),
