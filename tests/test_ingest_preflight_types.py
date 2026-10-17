@@ -3,6 +3,7 @@
 Uses only the generated synthetic fixtures; no real audio, VPS or network.
 """
 import json
+import traceback
 from pathlib import Path
 import tempfile
 import unittest
@@ -89,6 +90,10 @@ class IngestPreflightTypesTests(unittest.TestCase):
                 audio.assert_not_called()
         self.assertIn("resolved safely", str(caught.exception))
         self.assertNotIn("PRIVATE_AUDIO_SOURCE", str(caught.exception))
+        # Rendering an unhandled traceback must not reveal the original
+        # filesystem exception's private name through exception chaining.
+        rendered = "".join(traceback.format_exception(caught.exception))
+        self.assertNotIn("PRIVATE_AUDIO_SOURCE", rendered)
 
     def test_invalid_pair_recipes_never_open_any_audio(self):
         # Prior implementation verified every WAV before checking pairs.
