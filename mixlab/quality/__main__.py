@@ -5,8 +5,20 @@ import json
 from . import compare_wavs
 
 
+class _PrivateArgumentParser(argparse.ArgumentParser):
+    """Never include caller-supplied paths or values in parser diagnostics.
+
+    argparse's default errors quote unknown positional arguments and invalid
+    option values verbatim. CLI arguments often contain private track names,
+    so a CI preflight must redact errors *before* WAV validation runs.
+    """
+
+    def error(self, message):
+        self.exit(2, "quality preflight: invalid command-line arguments (details withheld)\\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Offline technical preflight; NOT a musical-quality ranking")
+    parser = _PrivateArgumentParser(description="Offline technical preflight; NOT a musical-quality ranking")
     parser.add_argument("baseline", help="Local PCM16 WAV baseline")
     parser.add_argument("candidates", nargs="+", help="Local PCM16 WAV candidate(s)")
     parser.add_argument("--window-ms", type=int, default=100)
