@@ -342,6 +342,40 @@ class IntersampleTests(unittest.TestCase):
             self.assertEqual(16, len(coeff))
             self.assertAlmostEqual(1.0, sum(coeff), places=12)
 
+    def test_adaptive_eighth_sample_catches_quarter_rate_phase_false_negative(self):
+        # At pi/16 phase an ideal 33,000 peak has legal PCM samples;
+        # even 16-tap 4x samples stay <32768 (~32,369), but eighth
+        # phases resolve a >32768 crossing (~33,001).
+        pcm = [round(33000 * math.sin(2 * math.pi * 0.25 * i + math.pi / 16))
+               for i in range(320)]
+        self.assertLess(max(map(abs, pcm)), 32768)
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["intersample_over_risk"])
+        self.assertGreater(row["adaptive_8x_refined_windows"], 0)
+        self.assertGreater(row["interpolated_peak_dbfs_estimate"], 0)
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertEqual(2, self.cli(str(self.a), str(self.b), "--fail-on-risk").returncode)
+
+    def test_quiet_signal_avoids_adaptive_cpu_work(self):
+        pcm = [round(12000 * math.sin(2 * math.pi * .25 * i + math.pi / 16))
+               for i in range(320)]
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertEqual(0, row["adaptive_8x_refined_windows"])
+        self.assertFalse(row["intersample_over_risk"])
+
+    def test_loud_but_safe_dc_refined_without_fabricating_overs(self):
+        pcm = [32600] * 128
+        write_wav(self.a, pcm)
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertGreater(row["adaptive_8x_refined_windows"], 0)
+        self.assertFalse(row["intersample_over_risk"])
+        self.assertTrue(row["edge_interpolation_ambiguity_risk"])
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
