@@ -19,7 +19,8 @@ from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 
 def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
         seed=1, rate=48000, quiet_channels=(), coarse_step=256,
-        coarse_offset=0, coarse_regions=(), coarse_region_offsets=None):
+        coarse_offset=0, coarse_regions=(), coarse_region_offsets=None,
+        channel_coarse_regions=None):
     state = seed
     samples = array("h")
     for frame in range(frames):
@@ -28,8 +29,10 @@ def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
             value = ((state >> 8) & 0xffff) - 32768
             if silence or channel in quiet_channels:
                 value = 0
-            elif channel in coarse and (not coarse_regions or
-                    min(7, (frame * 8) // frames) in coarse_regions):
+            elif channel in coarse and (
+                    not (channel_coarse_regions or {}).get(channel, coarse_regions)
+                    or min(7, (frame * 8) // frames) in
+                    (channel_coarse_regions or {}).get(channel, coarse_regions)):
                 region = min(7, (frame * 8) // frames)
                 offset = (coarse_region_offsets or {}).get(region, coarse_offset)
                 value = (value // coarse_step) * coarse_step + offset
@@ -101,6 +104,34 @@ class PrecisionTest(unittest.TestCase):
         wav(self.a)
         wav(self.b, coarse=(0,), coarse_regions=(7,))
         self.assertIsNone(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_migrating_stereo_loss_in_two_distinct_regions_is_flagged(self):
+        # Before this fix each channel has only one affected region, so
+        # evaluating per-channel persistence produced an inconclusive null.
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0, 1),
+            channel_coarse_regions={0: (0,), 1: (7,)},
+            coarse_offset=7)
+        result = compare_precision(self.a, self.b)
+        self.assertIs(result["candidate_precision_loss_inspect"], True)
+        self.assertEqual(result["warnings"], ["candidate_low_bit_precision_loss_inspect"])
+
+    def test_one_region_in_both_channels_does_not_count_twice(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0, 1), coarse_regions=(3,))
+        result = compare_precision(self.a, self.b)
+        self.assertIsNone(result["candidate_precision_loss_inspect"])
+        self.assertEqual(result["warnings"], [])
+
+    def test_migrating_stereo_loss_unchanged_by_streaming_chunk_size(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0, 1),
+            channel_coarse_regions={0: (1,), 1: (6,)},
+            coarse_offset=13)
+        small = compare_precision(self.a, self.b, chunk_frames=1)
+        large = compare_precision(self.a, self.b, chunk_frames=4096)
+        self.assertEqual(small, large)
+        self.assertIs(small["candidate_precision_loss_inspect"], True)
 
     def test_regional_offset_loss_is_chunk_independent(self):
         wav(self.a, channels=2)
@@ -401,6 +432,17 @@ class BatchPrecisionTest(unittest.TestCase):
         self.assertNotIn(str(self.root), payload)
         self.assertNotIn("PRIVATE", payload)
         self.assertNotIn("_source_identity", payload)
+
+    def test_batch_catches_migrating_stereo_defect_with_neutral_output(self):
+        wav(self.base, channels=2)
+        wav(self.c1, channels=2, seed=2)
+        wav(self.c2, channels=2, coarse=(0, 1),
+            channel_coarse_regions={0: (0,), 1: (6,)})
+        result = precision.compare_precision_batch(self.base, [self.c1, self.c2])
+        self.assertEqual(
+            [entry["candidate_precision_loss_inspect"] for entry in result["candidates"]],
+            [False, True])
+        self.assertNotIn(str(self.root), json.dumps(result))
 
     def test_single_candidate_batch_matches_single_pair_verdict(self):
         one = precision.compare_precision(self.base, self.c2)
