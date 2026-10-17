@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 import statistics
 from typing import Protocol
+from types import MappingProxyType
 from ..ingest import digest, inspect_wav, number, pcm_blocks
 
 VERSION = "energy-onset-v2"
@@ -146,18 +147,51 @@ class EnergyOnsetProvider:
 
 class ManualProvider:
     """Explicit human annotations, kept separate from measured provider output."""
+    def __setattr__(self, name, value):
+        # MappingProxyType prevents item mutation. Prevent rebinding the
+        # attributes as well: a new config under an old cache version would
+        # otherwise silently change the meaning of a manual analysis.
+        if name in ("config", "version") and name in self.__dict__:
+            raise AttributeError("Versioned manual analysis settings are immutable")
+        super().__setattr__(name, value)
+
     def __init__(self, bpm, first_beat=0., downbeats=(), phrases=(), key=None, annotator=""):
         number(bpm, "bpm", 30, 300)
         number(first_beat, "first beat", 0, 250)
         if not isinstance(annotator, str) or not annotator.strip():
             raise ValueError("Manual annotations need an annotator")
-        if key is not None and key not in {f"{n} {mode}" for n in
+        if key is not None and (not isinstance(key, str) or key not in {
+                f"{n} {mode}" for n in
                 ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
-                for mode in ("major", "minor")}:
+                for mode in ("major", "minor")}):
             raise ValueError("Unsupported manual key")
-        self.config = dict(bpm=bpm, first_beat=first_beat, downbeats=tuple(downbeats),
-                           phrases=tuple(phrases), key=key, annotator=annotator)
-        self.version = "manual-v1-" + hashlib.sha256(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
+        def admitted_points(points, label):
+            # Do not consume arbitrary iterators, string characters or huge
+            # inputs before an audio file is inspected; the cache also caps
+            # serialized beat grids. These values are part of the version ID.
+            if not isinstance(points, (tuple, list)) or len(points) > 10000:
+                raise ValueError("Invalid manual annotation sequence")
+            previous = -1.
+            for point in points:
+                number(point, label, 0, 250)
+                if point <= previous:
+                    raise ValueError("Annotations must increase strictly")
+                beat = (point - first_beat) * bpm / 60
+                if beat < -1e-6 or abs(beat - round(beat)) > .02:
+                    raise ValueError("Annotation is not on the declared beatgrid")
+                previous = point
+            return tuple(points)
+        downbeats = admitted_points(downbeats, "downbeats")
+        phrases = admitted_points(phrases, "phrases")
+        if not set(phrases).issubset(downbeats):
+            raise ValueError("Phrase starts must be confirmed downbeats")
+        config = dict(bpm=bpm, first_beat=first_beat, downbeats=downbeats,
+                      phrases=phrases, key=key, annotator=annotator)
+        self.version = "manual-v1-" + hashlib.sha256(
+            json.dumps(config, sort_keys=True).encode()).hexdigest()
+        # A post-construction edit must never silently reuse a prior
+        # config-addressed cache/version as a different manual annotation.
+        self.config = MappingProxyType(config)
 
     def analyze(self, path):
         info = inspect_wav(path)
@@ -312,6 +346,42 @@ def _validate_cached_analysis(document, identity, source_hash, provider, info):
             raise ValueError("Invalid cached analysis energy")
         number(amplitude, "cached energy", 0, 1)
         previous = position
+    # Public checksums detect corruption, not authorization: a rewritten
+    # receipt can be rehashed locally. Reject impossible claims that turn a
+    # manual observation into a measured provider (or invented key/phrase).
+    # Limit this contract to the exact built-in provider implementations;
+    # third-party provider schemas remain independently versioned.
+    if type(provider) is ManualProvider:
+        config = provider.config
+        period = 60 / config["bpm"]
+        start = config["first_beat"]
+        expected_grid = tuple(round(start + n * period, 6) for n in
+                              range(math.ceil((duration - start) / period)))
+        if (analysis["provider"] != "manual" or
+                analysis["timing_source"] != "manual" or
+                analysis["tempo_confidence"] != 0 or
+                analysis["bpm"] != config["bpm"] or
+                analysis["key"] != config["key"] or
+                analysis["key_source"] != ("manual" if config["key"] else "unavailable") or
+                tuple(analysis["beats_seconds"]) != expected_grid or
+                tuple(analysis["downbeats_seconds"]) != config["downbeats"] or
+                tuple(analysis["phrase_starts_seconds"]) != config["phrases"] or
+                analysis["energy"] or
+                tuple(analysis["warnings"]) != ("human annotation; not automatically measured",)):
+            raise ValueError("Manual analysis cache provenance/config mismatch")
+    elif type(provider) is EnergyOnsetProvider:
+        required_warnings = (
+            "tempo octave ambiguity; verify beatgrid before rendering",
+            "downbeats, phrases, key and vocals are not inferred",
+        )
+        if (tuple(analysis["warnings"])[-2:] != required_warnings or
+                analysis["provider"] != "energy-onset" or
+                analysis["timing_source"] != "measured-heuristic" or
+                analysis["key"] is not None or
+                analysis["key_source"] != "unavailable" or
+                analysis["downbeats_seconds"] or
+                analysis["phrase_starts_seconds"]):
+            raise ValueError("Measured analysis cache provenance mismatch")
     return analysis
 
 
