@@ -52,7 +52,7 @@ class _ReviewPageLinks(HTMLParser):
                 or any(k.startswith("on") or k in _RESOURCE_ATTRIBUTES
                        or k == "style" for k in attributes)
                 or (tag == "script" and (attributes or "src" in attributes))
-                or (tag == "meta" and attributes.get("http-equiv", "").lower() == "refresh")
+                or (tag == "meta" and (attributes.get("http-equiv") or "").lower() == "refresh")
                 or (tag != "audio" and "src" in attributes)):
             self.unsafe_external_resource = True
         if tag == "style":
