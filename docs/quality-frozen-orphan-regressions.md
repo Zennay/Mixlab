@@ -19,7 +19,7 @@ does require precisely two outputs for each frozen 5–10 pair study, with
 no unknown or duplicate study-pair identity, and validates the
 preselected baseline/candidate recipe and source hashes **before PCM work**.
 
-This add-only PR locks down that important distinction using ten synthetic
+This add-only PR locks down that important distinction using eleven synthetic
 unit tests and multiple mutation subcases: one orphan with an unknown study
 ID, third render in an expected pair, reassigned render (same count),
 family replacement, source-identity substitution, asymmetric gain,
@@ -30,6 +30,17 @@ worker claims are accessed or modified. The tests exercise *only* metadata
 admission and cannot verify real source licensing, PCM integrity or a
 listener's preference. They belong alongside, not instead of, the existing
 `verify_study_pack_binding` and composed PR #84 pilot gate.
+
+The regression suite also constructs **genuine short rights-free PCM16 WAVs**
+using the repository's existing procedural frozen-study fixture, appends an
+unselected orphan render, **recomputes the new pack ID and receipt render
+count**, and proves that the generic `verify_pack()` still accepts the
+checksum-consistent pack with 5 trials / 11 render records. The existing
+independently pinned `verify_study_pack_binding()` refuses that same pack
+*before invoking the private PCM scanner*. This is real, reproducible
+generator-independent RED-vs-GREEN gate discrimination, not a speculative
+code-inspection claim; the orphan's arbitrary digest is not interpreted as a
+real or authorized sound recording.
 
 ## Integration requirement
 
