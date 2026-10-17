@@ -180,6 +180,31 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(report["evidence_status"], "insufficient_active_audio")
         self.assertEqual(report["format"]["frames"], rate)
 
+    def test_batch_strict_mode_abstains_if_only_later_candidate_has_sparse_pulses(self):
+        # Guard against a first clean candidate masking a misleadingly
+        # equal-RMS pulsed second candidate in a multi-render listening set.
+        wav(self.a)
+        wav(self.b)
+        second = self.root / "private pulsed alternative.wav"
+        pulse = (struct.pack("<hh", 14142, 14142) * 160 +
+                 struct.pack("<hh", 0, 0) * 1840)
+        with wave.open(str(second), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(pulse * 4)
+        report = pan_balance.inspect_batch(self.a, [self.b, second])
+        self.assertEqual(report["candidate_count"], 2)
+        self.assertFalse(report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        self.assertIsNone(report["candidates"][1]["metrics"]["stereo_pan_confound_review"])
+        cli = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.pan_balance",
+            str(self.a), str(self.b), str(second), "--fail-on-review",
+        ], capture_output=True, text=True)
+        self.assertEqual(cli.returncode, 3, cli.stderr)
+        self.assertEqual(json.loads(cli.stdout)["candidate_count"], 2)
+        self.assertNotIn(str(self.root), cli.stdout + cli.stderr)
+
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
             with self.subTest(key=key):
