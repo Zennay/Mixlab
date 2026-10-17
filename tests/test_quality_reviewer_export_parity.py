@@ -85,6 +85,42 @@ class ReviewerExportParityTests(unittest.TestCase):
                 self.patch(old, new)
                 self.assertEqual(self.checked()["technical_gate"], "hold")
 
+
+    def test_injected_bias_or_changed_export_script_cannot_certify_parity(self):
+        attacks = (
+            ("<form data-pack-id=", '<h2>Correct answer: A</h2><form data-pack-id='),
+            ("<form data-pack-id=", '<a href="https://example.invalid">Send your rating</a><form data-pack-id='),
+            ("preference:f.get(el.dataset.trial)", "preference:'A'"),
+            ("document.querySelector('form').addEventListener", "document.querySelector('form').addEventListener('change',()=>{});document.querySelector('form').addEventListener"),
+            ('<audio controls preload="none" src="trial-001-A.wav">',
+             '<audio controls preload="none" src="trial-001-B.wav">'),
+            ("<button>Download my ratings</button>",
+             '<button>Download my ratings</button><script>fetch("https://example.invalid")</script>'),
+            ("<style>", "<style>fieldset{display:none;}"),
+        )
+        for old, new in attacks:
+            with self.subTest(attack=old):
+                write_review(self.page, ["trial-001", "trial-002"], "a" * 64)
+                self.fixed()
+                self.patch(old, new)
+                self.assertEqual(self.checked()["technical_gate"], "hold")
+
+    def test_fake_pack_id_or_noncontiguous_trial_never_passes(self):
+        edits = (
+            ('data-pack-id="' + 'a' * 64 + '"',
+             'data-pack-id="' + 'not-a-digest' + '"'),
+            ('<fieldset data-trial="trial-002">',
+             '<fieldset data-trial="trial-003">'),
+            ('<fieldset data-trial="trial-002">',
+             '<fieldset data-trial="trial-001">'),
+        )
+        for before, after in edits:
+            with self.subTest(edit=before):
+                write_review(self.page, ["trial-001", "trial-002"], "a" * 64)
+                self.fixed()
+                self.patch(before, after)
+                self.assertEqual(self.checked()["technical_gate"], "hold")
+
     def test_duplicate_reviewer_input_is_rejected(self):
         self.fixed()
         self.patch('<button>Download my ratings</button>',
