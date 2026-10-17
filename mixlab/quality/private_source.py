@@ -37,14 +37,14 @@ def private_path_identity(path: str | Path):
 
 
 
-def private_wav_frame_count(path: str | Path, *, max_bytes: int) -> int:
-    """Admit source headers only; never decode PCM during workload planning.
+def private_wav_format(path: str | Path, *, max_bytes: int) -> tuple[int, int, int]:
+    """Admit PCM16 channels, rate and frame count without decoding PCM.
 
-    Reuse the same read-only descriptor guard as the actual quality scan.
-    A subsequent report-wide identity check detects observable changes.
+    Reuse the same bounded fd/RIFF verification as normal streaming scans.
+    A subsequent report-wide identity check catches observable file changes.
     """
     with open_verified_private_pcm16(path, max_bytes=max_bytes) as reader:
-        return reader.getnframes()
+        return reader.getnchannels(), reader.getframerate(), reader.getnframes()
 
 
 @contextmanager
