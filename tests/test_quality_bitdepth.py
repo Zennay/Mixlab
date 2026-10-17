@@ -542,6 +542,41 @@ class ResolutionTests(unittest.TestCase):
                 displaced.rename(permitted)
         self.assertTrue(moved, "The parent replacement must actually occur")
 
+    def test_pathlike_is_resolved_once_before_lexical_and_inode_admission(self):
+        # A PathLike can legally return different names on repeated calls.
+        # Never validate one string and open a different private string.
+        class FlippingPath:
+            def __init__(self, allowed, private):
+                self.allowed = allowed
+                self.private = private
+                self.calls = 0
+
+            def __fspath__(self):
+                self.calls += 1
+                return str(self.allowed if self.calls == 1 else self.private)
+
+        object_path = FlippingPath(self.base, self.bad)
+        result = bitdepth.inspect_ab(object_path, [self.good])
+        self.assertEqual(1, object_path.calls)
+        self.assertIs(result["candidates"][0]["coarse_resolution_review"], False)
+
+    def test_pathlike_cannot_expose_private_exception_on_second_resolution(self):
+        class OneSafeResolution:
+            def __init__(self, filename):
+                self.filename = filename
+                self.calls = 0
+
+            def __fspath__(self):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("PRIVATE_TRACK_NAME")
+                return str(self.filename)
+
+        object_path = OneSafeResolution(self.base)
+        report = bitdepth.inspect_ab(object_path, [self.good])
+        self.assertIs(report["candidates"][0]["coarse_resolution_review"], False)
+        self.assertEqual(1, object_path.calls)
+
     def test_non_regular_and_missing_sources_do_not_leak_path(self):
         for path in [self.root / "not-found-private.wav", self.root]:
             with self.assertRaises(ValueError) as ctx:
