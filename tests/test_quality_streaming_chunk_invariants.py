@@ -24,7 +24,7 @@ CHUNK = 4096
 
 
 def _write(path: Path, channels: int, frames: list[tuple[int, ...]], *,
-           extra_chunk: bool = False) -> None:
+           extra_chunk: bool = False, sample_rate: int = RATE) -> None:
     pcm = array("h", (sample for frame in frames for sample in frame))
     if sys.byteorder != "little":
         pcm.byteswap()
@@ -32,7 +32,7 @@ def _write(path: Path, channels: int, frames: list[tuple[int, ...]], *,
     if extra_chunk:
         # RIFF JUNK is not part of the audible PCM and must not alter
         # the private stream fingerprint or computed signal metrics.
-        fmt = struct.pack("<HHIIHH", 1, channels, RATE, RATE * channels * 2,
+        fmt = struct.pack("<HHIIHH", 1, channels, sample_rate, sample_rate * channels * 2,
                           channels * 2, 16)
         chunks = ((b"fmt ", fmt), (b"JUNK", b"synthetic-not-private"),
                   (b"data", raw))
@@ -44,7 +44,7 @@ def _write(path: Path, channels: int, frames: list[tuple[int, ...]], *,
         with wave.open(str(path), "wb") as output:
             output.setnchannels(channels)
             output.setsampwidth(2)
-            output.setframerate(RATE)
+            output.setframerate(sample_rate)
             output.writeframes(raw)
 
 
@@ -55,7 +55,7 @@ class StreamingChunkInvariants(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def _make(self, name: str, channels: int, *, spike=None, gap=None,
-              left_gap=None, extra_chunk=False, amplitude=4000):
+              left_gap=None, extra_chunk=False, amplitude=4000, sample_rate=RATE):
         frames = [[amplitude] * channels for _ in range(FRAMES)]
         if spike is not None:
             for offset in (-1, 1):
@@ -69,7 +69,7 @@ class StreamingChunkInvariants(unittest.TestCase):
             for index in range(left_gap, left_gap + 480):
                 frames[index][0] = 0
         result = self.root / name
-        _write(result, channels, [tuple(f) for f in frames], extra_chunk=extra_chunk)
+        _write(result, channels, [tuple(f) for f in frames],\n               extra_chunk=extra_chunk, sample_rate=sample_rate)
         return result
 
     def test_isolated_click_detected_on_both_sides_of_read_boundary(self):
@@ -90,6 +90,21 @@ class StreamingChunkInvariants(unittest.TestCase):
                     if reference is None:
                         reference = stable
                     self.assertEqual(stable, reference)
+
+    def test_chunk_click_detection_across_supported_sample_rates(self):
+        # A readframe(4096) split is measured in frames, not seconds.
+        # Preserve sample-local impulse detection at 8k, 16k, 48k and 96k.
+        for rate in (8000, 16000, 48000, 96000):
+            for channels in (1, 2):
+                with self.subTest(rate=rate, channels=channels):
+                    path = self._make(f"rate-{rate}-{channels}.wav", channels,
+                                      spike=CHUNK, sample_rate=rate)
+                    result = scan_wav(path)
+                    self.assertEqual(result["sample_rate"], rate)
+                    self.assertEqual(result["frames"], FRAMES)
+                    self.assertEqual(result["isolated_sample_impulse_count"],
+                                     channels)
+                    self.assertTrue(result["isolated_sample_impulse_risk"])
 
     def test_global_pcm_dropout_straddling_internal_read_boundary(self):
         for channels in (1, 2):
