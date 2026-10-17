@@ -354,6 +354,22 @@ class ResolutionTests(unittest.TestCase):
         report = bitdepth.inspect_ab(self.base, [self.good])
         self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
 
+    def test_disjoint_window_intersection_across_fractional_rates(self):
+        # The 100ms boundaries vary when samplerate % 10 != 0. Prove that
+        # disjoint and matched one-second intervals remain distinguishable,
+        # without assuming an exact integral samples-per-window.
+        for rate in (8000, 11025, 44101, 96000):
+            with self.subTest(rate=rate):
+                chunk = samples(frames=rate, channels=1)
+                silence = b"\x00\x00" * rate
+                wav(self.base, chunk + silence, rate=rate, channels=1)
+                wav(self.good, silence + chunk, rate=rate, channels=1)
+                disjoint = bitdepth.inspect_ab(self.base, [self.good])
+                self.assertIsNone(disjoint["candidates"][0]["coarse_resolution_review"])
+                wav(self.good, chunk + silence, rate=rate, channels=1)
+                matched = bitdepth.inspect_ab(self.base, [self.good])
+                self.assertIs(matched["candidates"][0]["coarse_resolution_review"], False)
+
     def test_low_energy_abstains_without_claiming_a_clean_pair(self):
         wav(self.good, samples(quiet=True))
         data = bitdepth.inspect_ab(self.base, [self.good])
