@@ -149,7 +149,13 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
+    class PrivateParser(argparse.ArgumentParser):
+        def error(self, _message):
+            # argparse normally echoes unrecognized options verbatim.
+            # Untrusted options may carry private source names or tokens.
+            self.exit(2, "MixLab study binding: invalid arguments\\n")
+
+    parser = PrivateParser(
         description="Private frozen-study/pack metadata QA (not a music quality certificate)")
     parser.add_argument("study", help="private preregistered study manifest")
     parser.add_argument("pack", help="private frozen review pack root")
