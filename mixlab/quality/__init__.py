@@ -98,6 +98,10 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             # Stereo L/R exchange changes the interleaved PCM digest even
             # when the audible material is otherwise an exact reuse.
             swapped_stereo_digest = hashlib.sha256() if channels == 2 else None
+            # Private polarity-inverted fingerprint: sign inversion is
+            # often another PCM-only no-op. -32768 cannot be negated as
+            # signed PCM16, so fail closed on that edge rather than clip.
+            inverse_digest = hashlib.sha256()
             peak_sample = 0
             near_full_scale = 0
             total_samples = 0
@@ -197,6 +201,14 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                     if sys.byteorder != "little":
                         swapped.byteswap()
                     swapped_stereo_digest.update(swapped.tobytes())
+                if inverse_digest is not None:
+                    if -32768 in values:
+                        inverse_digest = None
+                    else:
+                        inverted = array("h", (-sample for sample in values))
+                        if sys.byteorder != "little":
+                            inverted.byteswap()
+                        inverse_digest.update(inverted.tobytes())
                 for i in range(0, len(values), channels):
                     frame = values[i:i + channels]
                     if first_frame is None:
@@ -352,7 +364,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     }
     return metrics, pcm_digest.digest(), window_peaks, (
         swapped_stereo_digest.digest() if swapped_stereo_digest is not None else None
-    )
+    ), (inverse_digest.digest() if inverse_digest is not None else None)
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -361,7 +373,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -431,15 +443,15 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
-    base, base_digest, base_windows, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows, _, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
     seen_candidate_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest, candidate_windows, swapped_digest = _scan_wav_with_digest(
-            candidate, window_ms=window_ms
+        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest = (
+            _scan_wav_with_digest(candidate, window_ms=window_ms)
         )
         for field in ("sample_rate", "channels", "frames"):
             if metrics[field] != base[field]:
@@ -485,6 +497,14 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 stereo_swapped_pcm_of = seen_candidate_digests[swapped_digest]
             if stereo_swapped_pcm_of is not None:
                 warnings.append("stereo_channel_swapped_pcm_inspect_for_reused_audio")
+        polarity_inverted_pcm_of = None
+        if inverse_digest is not None and candidate_digest != base_digest:
+            if inverse_digest == base_digest:
+                polarity_inverted_pcm_of = "baseline"
+            elif inverse_digest in seen_candidate_digests:
+                polarity_inverted_pcm_of = seen_candidate_digests[inverse_digest]
+            if polarity_inverted_pcm_of is not None:
+                warnings.append("polarity_inverted_pcm_inspect_for_reused_audio")
         duplicate_pcm_of = None
         if candidate_digest == base_digest:
             duplicate_pcm_of = "baseline"
@@ -510,6 +530,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "warnings": warnings,
             "duplicate_pcm_of": duplicate_pcm_of,
             "stereo_swapped_pcm_of": stereo_swapped_pcm_of,
+            "polarity_inverted_pcm_of": polarity_inverted_pcm_of,
             "requires_human_review": True,
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
         })
