@@ -54,3 +54,6 @@ jobs:
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_streaming_chunk_invariants.py' -v
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality.py' -v
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_cli.py' -v
+          # A genuine synthetic five-pair/four-gate M1 compatibility smoke test.
+          # No private audio, reviewer IDs or live zCloud worker required.
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_composed_m1_gates.py' -v
