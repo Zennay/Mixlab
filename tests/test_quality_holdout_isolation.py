@@ -183,7 +183,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
             writer.setnchannels(1)
             writer.setsampwidth(2)
             writer.setframerate(8000)
-            writer.writeframes(b"\\x00" * 8000 + shared + b"\\x00" * 8000)
+            writer.writeframes(b"\x00" * 8000 + shared + b"\x00" * 8000)
 
     def test_full_hashes_and_recording_ids_miss_embedded_same_recording_crop(self):
         # Both ordinary file and decoded-whole-file digests differ; no shared
@@ -213,7 +213,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
             output.setnchannels(1)
             output.setsampwidth(2)
             output.setframerate(8000)
-            output.writeframes(b"\\x00" * 16000)
+            output.writeframes(b"\x00" * 16000)
         self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
         self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
 
