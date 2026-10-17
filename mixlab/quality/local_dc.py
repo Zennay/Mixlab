@@ -92,7 +92,7 @@ def _validate_riff_envelope(handle, physical_bytes: int) -> int:
                         not 8000 <= rate <= 96000 or
                         block_align != channels * 2 or
                         byte_rate != rate * block_align):
-                    raise ValueError("Inconsistent private PCM format header")
+                    raise ValueError("Inconsistent private PCM16 format header")
                 # Keep container subtype validation with wave.open; recent
                 # Python versions can also accept PCM WAVE_FORMAT_EXTENSIBLE.
                 fmt_seen = True
