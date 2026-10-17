@@ -236,6 +236,12 @@ def inspect_review_pack(
             raise ValueError("Review directory exceeds the trial limit")
     if not groups:
         raise ValueError("Review directory contains no trial WAV pairs")
+    # The canonical benchmark and rating aggregation use trial-001, -002,
+    # ... with no gaps. A partially copied pack can otherwise look complete
+    # if its public receipt trial count has also been modified.
+    expected_trial_ids = [f"trial-{index:03d}" for index in range(1, len(groups) + 1)]
+    if sorted(groups) != expected_trial_ids:
+        raise ValueError("Review trial identifiers are not a contiguous sequence")
     if any(set(labels) != {"A", "B"} for labels in groups.values()):
         raise ValueError("Review directory contains an incomplete trial WAV pair")
     # Headers are cheap to read. Bound the total *declared* frame workload
