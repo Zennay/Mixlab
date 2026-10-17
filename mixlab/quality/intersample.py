@@ -1,4 +1,4 @@
-"""Bounded 4x windowed-sinc estimate of PCM16 intersample overs.
+"""Bounded 4x 16-tap windowed-sinc estimate of PCM16 intersample overs.
 
 This is a technical screening proxy, NOT a calibrated BS.1770 true-peak
 meter, perceptual loudness measurement or proof of musical preference.
@@ -22,7 +22,7 @@ MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_FRAMES_PER_SOURCE = 2_000_000
 MAX_TOTAL_FRAMES = 8_000_000
 MAX_CANDIDATES = 3
-_TAPS = range(-3, 5)
+_TAPS = range(-7, 9)
 
 
 def _sinc(x: float) -> float:
@@ -30,11 +30,11 @@ def _sinc(x: float) -> float:
 
 
 def _coefficients(fraction: float) -> tuple[float, ...]:
-    # Symmetric 8-tap Blackman-windowed sinc; normalize to preserve DC.
+    # Symmetric 16-tap Blackman-windowed sinc; normalize to preserve DC.
     raw = []
     for offset in _TAPS:
         x = offset - fraction
-        window = 0.42 + 0.5 * math.cos(math.pi * x / 4) + 0.08 * math.cos(math.pi * x / 2)
+        window = 0.42 + 0.5 * math.cos(math.pi * x / 8) + 0.08 * math.cos(math.pi * x / 4)
         raw.append(_sinc(x) * window)
     scale = sum(raw)
     if scale <= 0:
@@ -68,8 +68,8 @@ def _open_pcm(stack: ExitStack, private_path: str):
 
 
 def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
-    """Read <=4096 PCM frames at once with an eight-frame interpolation ring."""
-    history = deque(maxlen=8)
+    """Read <=4096 PCM frames at once with a sixteen-frame interpolation ring."""
+    history = deque(maxlen=16)
     seen = 0
     sample_peak = 0
     # Discrete PCM hitting signed 16-bit rails is not necessarily clipped,
@@ -77,17 +77,17 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
     full_scale_pcm_sample_count = 0
     interpolated_peak = 0.0
     intersample_over_count = 0
-    # The short finite interpolation kernel attenuates signals near Nyquist.
+    # Even this finite interpolation kernel attenuates signals near Nyquist.
     # A high-amplitude sign reversal can hide an analog over even when the
     # interpolated estimate stays below full-scale. This conservative guard
     # reports UNCERTAINTY, never a measured or proven over.
     rapid_near_ceiling_crossings = 0
     previous_frame = None
-    # The first three / final four frame neighborhoods cannot be fully
+    # The first seven / final eight frame neighborhoods cannot be fully
     # reconstructed by this finite centered filter. Near-ceiling PCM at
     # either playback edge is a separate uncertainty, not a measured over.
     leading_edge_peak = 0
-    trailing_frame_peaks = deque(maxlen=4)
+    trailing_frame_peaks = deque(maxlen=8)
     frames_seen = 0
     # Scan every phase, not just areas with sample peaks close to full-scale.
     while seen < nframes:
@@ -104,7 +104,7 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
             frame_peak = max(abs(v) for v in frame)
             sample_peak = max(sample_peak, frame_peak)
             full_scale_pcm_sample_count += sum(abs(v) >= 32767 for v in frame)
-            if frames_seen < 4:
+            if frames_seen < 8:
                 leading_edge_peak = max(leading_edge_peak, frame_peak)
             trailing_frame_peaks.append(frame_peak)
             frames_seen += 1
@@ -117,18 +117,18 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
                         rapid_near_ceiling_crossings += 1
             previous_frame = frame
             history.append(frame)
-            if len(history) == 8:
-                # Ring indices 3 and 4 bracket the fractional reconstruction.
+            if len(history) == 16:
+                # Ring indices 7 and 8 bracket the fractional reconstruction.
                 for coeffs in _PHASES:
                     for ch in range(channels):
-                        value = abs(sum(coeffs[k] * history[k][ch] for k in range(8)))
+                        value = abs(sum(coeffs[k] * history[k][ch] for k in range(16)))
                         interpolated_peak = max(interpolated_peak, value)
                         if value > 32768.0:
                             intersample_over_count += 1
         seen += want
     peak = max(sample_peak, interpolated_peak)
     edge_ambiguity = (
-        nframes >= 8 and
+        nframes >= 16 and
         (leading_edge_peak >= 31130 or max(trailing_frame_peaks, default=0) >= 31130)
     )
     return {
@@ -137,13 +137,13 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "intersample_overs_estimated": intersample_over_count,
         "full_scale_pcm_samples": full_scale_pcm_sample_count,
         "full_scale_pcm_risk": bool(full_scale_pcm_sample_count),
-        "screen_evaluable": nframes >= 8,
+        "screen_evaluable": nframes >= 16,
         "intersample_over_risk": bool(intersample_over_count),
         "high_frequency_near_ceiling_ambiguity_risk": bool(rapid_near_ceiling_crossings),
         "high_frequency_near_ceiling_crossings": rapid_near_ceiling_crossings,
         "edge_interpolation_ambiguity_risk": edge_ambiguity,
         "technical_review_required": (
-            nframes < 8 or bool(intersample_over_count) or
+            nframes < 16 or bool(intersample_over_count) or
             bool(rapid_near_ceiling_crossings) or edge_ambiguity or
             bool(full_scale_pcm_sample_count)
         ),
@@ -181,7 +181,7 @@ def compare_intersample(baseline: str | Path, candidates: list[str | Path]) -> d
                 raise AudioInputError("Source changed during group read")
     return {
         "schema_version": 1,
-        "method": "four_times_eight_tap_windowed_sinc_screen_not_bs1770",
+        "method": "four_times_sixteen_tap_windowed_sinc_screen_not_bs1770",
         "sample_rate_hz": shapes[0][0],
         "channels": shapes[0][1],
         "frames_per_source": shapes[0][2],
