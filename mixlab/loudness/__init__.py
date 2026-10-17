@@ -12,9 +12,11 @@ equality removes a known listening confound; it is not a musical quality score.
 from __future__ import annotations
 
 from array import array
+import hashlib
 import math
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 import wave
@@ -46,24 +48,59 @@ def k_weighting(rate: int) -> tuple[tuple, tuple]:
     return shelf, highpass
 
 
+class _HashingReader:
+    """Sequential reader that hashes every byte it serves.
+
+    It deliberately has no seek/tell, so ``wave`` reads the file front to back
+    and the digest covers exactly the bytes that were decoded.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._hash = hashlib.sha256()
+
+    def read(self, size=-1):
+        data = self._stream.read(size)
+        self._hash.update(data)
+        return data
+
+    def finish(self):
+        for chunk in iter(lambda: self._stream.read(65536), b""):
+            self._hash.update(chunk)
+        self._stream.close()
+        return self._hash.hexdigest()
+
+
 def _open(path):
-    path = Path(path)
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("Loudness input must be a regular file")
-    if path.stat().st_size > MAX_SOURCE_BYTES:
-        raise ValueError("WAV exceeds the 32 MiB loudness limit")
+    """Open one regular file once; returns (wave reader, hashing reader, params)."""
     try:
-        source = wave.open(str(path), "rb")
-    except (wave.Error, EOFError) as exc:
-        raise ValueError(f"Invalid PCM16 WAV: {exc}") from exc
-    channels, width, rate, count, compression, _ = source.getparams()
-    if compression != "NONE" or width != 2 or channels not in (1, 2):
-        source.close()
-        raise ValueError("Only uncompressed PCM16 mono/stereo WAV is supported")
-    if not 8000 <= rate <= 96000 or not 1 <= count <= MAX_SOURCE_FRAMES:
-        source.close()
-        raise ValueError("Sample rate must be 8000..96000 Hz and frames 1..2,000,000")
-    return source, channels, rate, count
+        # Validate the opened descriptor, not the path, so a swap cannot slip in between.
+        fd = os.open(Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as exc:
+        if Path(path).is_symlink():
+            raise ValueError("Loudness input must be a regular file") from None
+        raise exc
+    stream = os.fdopen(fd, "rb")
+    try:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Loudness input must be a regular file")
+        if info.st_size > MAX_SOURCE_BYTES:
+            raise ValueError("WAV exceeds the 32 MiB loudness limit")
+        reader = _HashingReader(stream)
+        try:
+            source = wave.open(reader, "rb")
+        except (wave.Error, EOFError) as exc:
+            raise ValueError(f"Invalid PCM16 WAV: {exc}") from exc
+        channels, width, rate, count, compression, _ = source.getparams()
+        if compression != "NONE" or width != 2 or channels not in (1, 2):
+            raise ValueError("Only uncompressed PCM16 mono/stereo WAV is supported")
+        if not 8000 <= rate <= 96000 or not 1 <= count <= MAX_SOURCE_FRAMES:
+            raise ValueError("Sample rate must be 8000..96000 Hz and frames 1..2,000,000")
+    except BaseException:
+        stream.close()
+        raise
+    return source, reader, channels, rate, count
 
 
 def _blocks(source, channels, count, block_frames=4096):
@@ -91,7 +128,7 @@ def measure(path: str | Path) -> dict:
     Returns ``integrated_lufs`` None when no block passes the absolute gate
     (silence) or the clip is shorter than one 400 ms block.
     """
-    source, channels, rate, count = _open(path)
+    source, reader, channels, rate, count = _open(path)
     (s0, s1, s2, sa1, sa2), (h0, h1, h2, ha1, ha2) = k_weighting(rate)
     # Direct form II transposed state per channel and stage.
     state = [[0.0, 0.0, 0.0, 0.0] for _ in range(channels)]
@@ -118,8 +155,11 @@ def measure(path: str | Path) -> dict:
                     if filled == step:
                         subblocks.append(acc)
                         acc, filled = 0.0, 0
+        sha256 = reader.finish()
     except (wave.Error, EOFError) as exc:
         raise ValueError(f"Invalid PCM16 WAV: {exc}") from exc
+    finally:
+        reader._stream.close()
     # Channel weights are 1.0, so a block's weighted power is the sum of channel means.
     block_power = [sum(subblocks[j:j + 4]) / (4 * step) for j in range(len(subblocks) - 3)]
     gated = [p for p in block_power if p > 0 and _lufs(p) > ABSOLUTE_GATE_LUFS]
@@ -131,12 +171,17 @@ def measure(path: str | Path) -> dict:
     sample_peak = peak / 32768
     return {"method": METHOD, "sample_rate": rate, "channels": channels, "frames": count,
             "integrated_lufs": integrated, "gating_blocks": len(block_power),
-            "blocks_above_absolute_gate": len(gated),
+            "blocks_above_absolute_gate": len(gated), "sha256": sha256,
             "sample_peak_dbfs": round(20 * math.log10(sample_peak), 3) if sample_peak else None}
 
 
-def apply_gain(source_path: str | Path, out_path: str | Path, gain_db: float) -> dict:
-    """Write an attenuated PCM16 copy; refuses boosts and never overwrites."""
+def apply_gain(source_path: str | Path, out_path: str | Path, gain_db: float,
+               expected_sha256: str | None = None) -> dict:
+    """Write an attenuated PCM16 copy; refuses boosts and never overwrites.
+
+    With ``expected_sha256`` the output is published only if the bytes that
+    were actually scaled hash to that value, pinning it to the measured source.
+    """
     if isinstance(gain_db, bool) or not isinstance(gain_db, (int, float)) or not math.isfinite(gain_db):
         raise ValueError("gain_db must be finite")
     if not -60 <= gain_db <= 0:
@@ -145,7 +190,7 @@ def apply_gain(source_path: str | Path, out_path: str | Path, gain_db: float) ->
     if out.exists() or out.is_symlink():
         raise ValueError("Output already exists")
     gain = 10 ** (gain_db / 20)
-    source, channels, rate, count = _open(source_path)
+    source, reader, channels, rate, count = _open(source_path)
     fd, temporary = tempfile.mkstemp(prefix=".mixlab-level-", suffix=".wav", dir=out.parent)
     os.close(fd)
     try:
@@ -156,8 +201,11 @@ def apply_gain(source_path: str | Path, out_path: str | Path, gain_db: float) ->
                 if sys.byteorder != "little":
                     scaled.byteswap()
                 target.writeframesraw(scaled.tobytes())
+        if expected_sha256 is not None and reader.finish() != expected_sha256:
+            raise ValueError("Source changed after loudness measurement; refusing to publish")
         os.link(temporary, out)  # exclusive publication of a complete file
     finally:
+        reader._stream.close()
         Path(temporary).unlink(missing_ok=True)
     return {"gain_db": round(gain_db, 6), "gain_linear": gain}
 
@@ -183,7 +231,7 @@ def match_group(paths: dict[str, Path], destination: Path, suffix: str = "-match
     for label, path in paths.items():
         out = Path(destination) / f"{Path(path).stem}{suffix}.wav"
         gain_db = target - before[label]["integrated_lufs"]
-        gain = apply_gain(path, out, gain_db)
+        gain = apply_gain(path, out, gain_db, expected_sha256=before[label]["sha256"])
         after = measure(out)
         if after["integrated_lufs"] is None or abs(after["integrated_lufs"] - target) > MATCH_TOLERANCE_LU:
             raise ValueError("Level matching missed its target; refusing to package unequal loudness")

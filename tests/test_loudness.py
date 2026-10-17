@@ -2,6 +2,8 @@ import json
 import math
 from pathlib import Path
 import random
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -105,6 +107,51 @@ class LoudnessTests(unittest.TestCase):
             match_group({"a": sine(self.root / "a.wav"), "b": self.root / "silent.wav"}, self.root)
         with self.assertRaisesRegex(ValueError, "share"):
             match_group({"a": self.root / "a.wav", "c": sine(self.root / "c.wav", seconds=2.)}, self.root)
+
+    def test_apply_gain_refuses_bytes_other_than_measured(self):
+        source = sine(self.root / "src.wav")
+        with self.assertRaisesRegex(ValueError, "changed"):
+            apply_gain(source, self.root / "out.wav", -1., expected_sha256="0" * 64)
+        self.assertFalse((self.root / "out.wav").exists())
+        self.assertEqual([p.name for p in self.root.iterdir()], ["src.wav"])
+
+    def test_match_group_detects_source_swapped_after_measurement(self):
+        # Same loudness, different audible content: matching by LUFS alone would pass.
+        paths = {"a": sine(self.root / "a.wav", amp=.1), "b": sine(self.root / "b.wav", amp=.2)}
+        decoy = sine(self.root / "decoy.wav", amp=.2, freq=1001.)
+        self.assertAlmostEqual(measure(decoy)["integrated_lufs"], measure(paths["b"])["integrated_lufs"], delta=.05)
+        original = measure
+        def measure_then_swap(path):
+            result = original(path)
+            if Path(path) == paths["b"]:
+                Path(decoy).replace(paths["b"])
+            return result
+        out = self.root / "matched"
+        out.mkdir()
+        with mock.patch("mixlab.loudness.measure", side_effect=measure_then_swap), \
+                self.assertRaisesRegex(ValueError, "changed"):
+            match_group(paths, out)
+        self.assertFalse((out / "b-matched.wav").exists())
+
+    def test_cli_does_not_disclose_private_paths(self):
+        secret = self.root / "PRIVATE-client-wedding-set" / "do-not-log.wav"
+        bad = self.root / "PRIVATE-corrupt-upload.wav"
+        bad.write_bytes(b"not a wav")
+        for target in (secret, bad):
+            with self.subTest(target=target.name):
+                run = subprocess.run([sys.executable, "-m", "mixlab", "loudness", str(target)],
+                                     capture_output=True, text=True, timeout=60,
+                                     cwd=Path(__file__).resolve().parents[1])
+                self.assertEqual(run.returncode, 2)
+                for stream in (run.stdout, run.stderr):
+                    self.assertNotIn("PRIVATE", stream)
+                    self.assertNotIn(str(self.root), stream)
+                self.assertIn("input 1", run.stderr)
+        ok = subprocess.run([sys.executable, "-m", "mixlab", "loudness", str(sine(self.root / "ok.wav"))],
+                            capture_output=True, text=True, timeout=60, cwd=Path(__file__).resolve().parents[1])
+        self.assertEqual(ok.returncode, 0)
+        self.assertNotIn("sha256", ok.stdout)
+        self.assertNotIn(str(self.root), ok.stdout)
 
 
 class PackLoudnessTests(unittest.TestCase):

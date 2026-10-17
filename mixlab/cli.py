@@ -166,7 +166,18 @@ def main():
             manifest, _ = validate_library(args.manifest)
             print(json.dumps({"valid": True, "tracks": len(manifest["tracks"]), "pairs": len(manifest["pairs"])}))
         elif args.command == "loudness":
-            print(json.dumps([measure_loudness(path) for path in args.wavs], indent=2, allow_nan=False))
+            results = []
+            for index, path in enumerate(args.wavs, start=1):
+                try:
+                    result = measure_loudness(path)
+                except OSError as exc:
+                    # Never echo private source locations into job logs.
+                    parser.exit(2, f"MixLab loudness: input {index} unreadable ({type(exc).__name__})\n")
+                except ValueError as exc:
+                    parser.exit(2, f"MixLab loudness: input {index}: {exc}\n")
+                result.pop("sha256")
+                results.append(result)
+            print(json.dumps(results, indent=2, allow_nan=False))
         else:
             print(benchmark(args.manifest, args.destination, args.seed, not args.no_loudness_match))
     except (ValueError, OSError, KeyError, TypeError) as exc:
