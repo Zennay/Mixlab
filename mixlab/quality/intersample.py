@@ -151,7 +151,7 @@ def compare_intersample(baseline: str | Path, candidates: list[str | Path]) -> d
 
 class _PrivateParser(argparse.ArgumentParser):
     def error(self, message):
-        self.exit(2, "intersample preflight: invalid arguments (details withheld)\\n")
+        self.exit(2, "intersample preflight: invalid arguments (details withheld)\n")
 
 
 def main(argv=None) -> int:
@@ -163,7 +163,7 @@ def main(argv=None) -> int:
     try:
         report = compare_intersample(args.baseline, args.candidates)
     except (OSError, ValueError, EOFError, wave.Error, OverflowError):
-        parser.exit(3, "intersample preflight: invalid or unreadable WAV (details withheld)\\n")
+        parser.exit(3, "intersample preflight: invalid or unreadable WAV (details withheld)\n")
     print(json.dumps(report, sort_keys=True, allow_nan=False))
     if args.fail_on_risk and (report["baseline"]["intersample_over_risk"] or
                               any(c["intersample_over_risk"] for c in report["candidates"])):
