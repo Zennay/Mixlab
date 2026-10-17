@@ -31,6 +31,11 @@ STEREO_CHANNEL_LOSS_MIN_FRACTION = 0.2
 # A >50% full-scale adjacent PCM step is suspicious for a splice pop,
 # but percussion and intentional cuts still require human inspection.
 SEVERE_SAMPLE_JUMP = 0.5 * 32768
+# A one-frame click can have <50%-FS adjacent steps and escape the severe
+# jump screen. Inspect a sample >=25% FS surrounded by samples <=6.25% FS
+# on the SAME channel. This is a heuristic; short percussion is possible.
+ISOLATED_IMPULSE_MIN_SAMPLE = 8192
+ISOLATED_IMPULSE_QUIET_NEIGHBOR = 2048
 # An isolated playback excerpt starting or ending far from zero may click
 # even without a large jump *between* its existing PCM samples.
 PLAYBACK_EDGE_STEP_WARNING = 0.25 * 32768
@@ -90,9 +95,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             stereo_mid_sum_squares = 0.0
             max_jump = 0
             severe_jump_count = 0
+            isolated_impulse_count = 0
             high_flat_top_plateau_count = 0
             flat_top_run = [0] * channels
             previous = None
+            previous_previous = None
             first_frame = None
             window_sum_squares = 0
             window_channel_sum_squares = [0] * channels
@@ -178,6 +185,11 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                             jump = abs(sample - previous[ch])
                             max_jump = max(max_jump, jump)
                             severe_jump_count += jump >= SEVERE_SAMPLE_JUMP
+                        if (previous_previous is not None
+                                and abs(previous[ch]) >= ISOLATED_IMPULSE_MIN_SAMPLE
+                                and abs(previous_previous[ch]) <= ISOLATED_IMPULSE_QUIET_NEIGHBOR
+                                and magnitude <= ISOLATED_IMPULSE_QUIET_NEIGHBOR):
+                            isolated_impulse_count += 1
                         if (previous is not None and sample == previous[ch]
                                 and magnitude >= FLAT_TOP_MIN_ABS_SAMPLE):
                             flat_top_run[ch] += 1
@@ -185,6 +197,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                             flat_top_run[ch] = 1
                         if flat_top_run[ch] == FLAT_TOP_MIN_CONSECUTIVE:
                             high_flat_top_plateau_count += 1
+                    previous_previous = previous
                     previous = frame
                     if channels == 2:
                         left, right = frame
@@ -273,6 +286,8 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "max_adjacent_sample_jump": round(max_jump / 32768, 6),
         "severe_adjacent_jump_count": severe_jump_count,
         "severe_sample_discontinuity_risk": severe_jump_count > 0,
+        "isolated_sample_impulse_count": isolated_impulse_count,
+        "isolated_sample_impulse_risk": isolated_impulse_count > 0,
         "playback_start_peak": round(playback_start_peak, 6),
         "playback_end_peak": round(playback_end_peak, 6),
         "playback_boundary_pop_risk": playback_boundary_pop_risk,
@@ -317,6 +332,8 @@ def _signal_warnings(metrics: dict) -> list[str]:
         warnings.append("dc_offset_inspect_for_headroom")
     if metrics["severe_sample_discontinuity_risk"]:
         warnings.append("severe_sample_discontinuity_inspect_for_pops")
+    if metrics["isolated_sample_impulse_risk"]:
+        warnings.append("isolated_sample_impulse_inspect_for_clicks")
     if metrics["playback_boundary_pop_risk"]:
         warnings.append("playback_boundary_step_inspect_for_clicks")
     if metrics["high_flat_top_plateau_risk"]:
