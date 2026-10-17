@@ -127,6 +127,26 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(1, data["channels"])
         self.assertEqual([True], data["candidates"][0]["per_channel_review"])
 
+    def test_coarsened_baseline_cannot_become_a_false_clean_ab_pair(self):
+        # If the reference itself has only 8-bit steps, there is no
+        # trustworthy high-resolution baseline for a "clean" judgement.
+        wav(self.base, samples(collapse=True))
+        wav(self.good, samples(collapse=True))
+        first = bitdepth.inspect_ab(self.base, [self.good])["candidates"][0]
+        self.assertEqual([None, None], first["per_channel_review"])
+        self.assertIsNone(first["coarse_resolution_review"])
+        wav(self.good, samples())
+        second = bitdepth.inspect_ab(self.base, [self.good])["candidates"][0]
+        self.assertEqual([None, None], second["per_channel_review"])
+        self.assertIsNone(second["coarse_resolution_review"])
+        self.assertEqual(3, self.cli(self.base, self.good, "--strict").returncode)
+
+    def test_partial_coarsened_baseline_abstains_only_on_affected_channel(self):
+        wav(self.base, samples(collapse=True, right_only=True))
+        result = bitdepth.inspect_ab(self.base, [self.good])["candidates"][0]
+        self.assertEqual([False, None], result["per_channel_review"])
+        self.assertIsNone(result["coarse_resolution_review"])
+
     def test_low_energy_abstains_without_claiming_a_clean_pair(self):
         wav(self.good, samples(quiet=True))
         data = bitdepth.inspect_ab(self.base, [self.good])
