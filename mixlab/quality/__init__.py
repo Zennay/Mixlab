@@ -160,6 +160,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
             window_mid_sum_squares = 0.0
             window_samples = 0
             window_peaks = []
+            # Only small per-window RMS summaries are held privately; no
+            # channel audio, source paths or envelopes enter the report.
+            channel_window_peaks = []
             silent_windows = 0
             windows = 0
             seen_audible_window = False
@@ -188,6 +191,12 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                 if window_samples:
                     wrms = math.sqrt(window_sum_squares / window_samples) / 32768
                     window_peaks.append(wrms)
+                    if channels == 2:
+                        frames_in_window = window_samples // channels
+                        channel_window_peaks.append(tuple(
+                            math.sqrt(sumsq / frames_in_window) / 32768
+                            for sumsq in window_channel_sum_squares
+                        ))
                     is_silent = wrms < SILENT_WINDOW_RMS
                     silent_windows += is_silent
                     if is_silent:
@@ -515,7 +524,7 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
     ), edge_trimmed_pcm.digest(), tuple(
         fingerprint.digest() if fingerprint is not None else None
         for fingerprint in edge_transformed_pcm
-    )
+    ), channel_window_peaks
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -524,7 +533,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _, _, _, _, _, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -602,6 +611,30 @@ def _stereo_channel_level_confound(baseline: dict, candidate: dict) -> bool:
     return False
 
 
+def _stereo_window_channel_level_confound(
+    base: list[tuple[float, float]], candidate: list[tuple[float, float]]
+) -> tuple[float | None, bool]:
+    """Inspect paired stereo channel RMS windows; never return source curves."""
+    if len(base) != len(candidate):
+        raise ValueError("Candidate stereo window count differs from baseline")
+    audible = 0
+    mismatched = 0
+    for original, changed in zip(base, candidate):
+        if max(*original, *changed) < SILENT_WINDOW_RMS:
+            continue
+        audible += 1
+        for before, after in zip(original, changed):
+            if max(before, after) < SILENT_WINDOW_RMS:
+                continue
+            if min(before, after) < SILENT_WINDOW_RMS or (
+                abs(20 * math.log10(after / before)) >= STEREO_CHANNEL_LEVEL_MISMATCH_DB
+            ):
+                mismatched += 1
+                break
+    fraction = round(mismatched / audible, 6) if audible else None
+    return fraction, audible >= 3 and mismatched / audible >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -653,7 +686,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             raise ValueError("Quality comparison exceeds the total PCM frame budget")
     if tuple(private_path_identity(p) for p in all_paths) != initial_identities:
         raise ValueError("Private WAV input changed during quality comparison")
-    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows, _, _, _, _, base_trimmed_digest, _, base_channel_windows = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
@@ -661,7 +694,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
     seen_trimmed_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest, transformed_trimmed_digests = (
+        metrics, candidate_digest, candidate_windows, swapped_digest, inverse_digest, channel_inverse_digests, signed_swap_digests, trimmed_digest, transformed_trimmed_digests, candidate_channel_windows = (
             _scan_wav_with_digest(candidate, window_ms=window_ms)
         )
         for field in ("sample_rate", "channels", "frames"):
@@ -679,6 +712,14 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         stereo_channel_level_confound_risk = _stereo_channel_level_confound(base, metrics)
         if stereo_channel_level_confound_risk:
             warnings.append("stereo_channel_level_mismatch_inspect_not_lufs")
+        stereo_window_channel_level_mismatch_fraction = None
+        stereo_window_channel_level_confound_risk = False
+        if base["channels"] == 2:
+            stereo_window_channel_level_mismatch_fraction, stereo_window_channel_level_confound_risk = (
+                _stereo_window_channel_level_confound(base_channel_windows, candidate_channel_windows)
+            )
+            if stereo_window_channel_level_confound_risk:
+                warnings.append("stereo_window_channel_level_mismatch_inspect_not_lufs")
         # Aligned durations do not guarantee aligned audible starts/ends.
         # Only inspect non-silent pairs; a completely silent side is handled
         # by the existing silence-specific warning.
@@ -796,6 +837,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "short_window_level_mismatch_fraction": short_window_level_mismatch_fraction,
             "short_window_level_mismatch_risk": short_window_level_mismatch_risk,
             "stereo_channel_level_confound_risk": stereo_channel_level_confound_risk,
+            "stereo_window_channel_level_mismatch_fraction": stereo_window_channel_level_mismatch_fraction,
+            "stereo_window_channel_level_confound_risk": stereo_window_channel_level_confound_risk,
             "edge_silence_mismatch_risk": edge_silence_mismatch_risk,
             "prominent_onset_mismatch_ms": onset_gap_ms,
             "prominent_onset_mismatch_risk": prominent_onset_mismatch_risk,
@@ -817,6 +860,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 level_difference is not None and abs(level_difference) <= loudness_tolerance_db
                 and audible_level_windows >= 3 and not short_window_level_mismatch_risk
                 and not stereo_channel_level_confound_risk
+                and not stereo_window_channel_level_confound_risk
             ),
         })
     # Do not publish a result if any baseline or candidate changed at any
