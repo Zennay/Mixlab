@@ -92,11 +92,14 @@ class ResolutionTests(unittest.TestCase):
         self.assertIsNone(bitdepth.inspect_ab(self.base, [self.good])["candidates"][0]["coarse_resolution_review"])
 
     def test_short_burst_does_not_satisfy_four_windows(self):
-        # Eligible-sample total is high but concentrated in 100ms, not sustained.
-        frame = samples(frames=800, channels=1)
-        wav(self.base, frame + b"\x00\x00" * 7200, channels=1)
-        wav(self.good, frame + b"\x00\x00" * 7200, channels=1)
+        # At 96 kHz, 4096 high-level samples meet the total-sample requirement,
+        # but span only ONE 100ms bucket; the temporal-coverage guard must abstain.
+        frame = samples(frames=4096, channels=1) + b"\x00\x00" * (9600 - 4096)
+        wav(self.base, frame, channels=1, rate=96000)
+        wav(self.good, frame, channels=1, rate=96000)
         report = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual(4096, report["baseline_channel_metrics"][0]["eligible_samples"])
+        self.assertEqual(1, report["baseline_channel_metrics"][0]["active_windows"])
         self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
 
     def test_mismatched_duration_rate_channels_and_width_rejected(self):
