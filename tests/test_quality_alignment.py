@@ -158,6 +158,17 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         self.assertEqual(2, bad.returncode)
         self.assertNotIn(secret, bad.stdout + bad.stderr)
 
+    def test_cli_argument_error_uses_real_linebreak_not_raw_escape(self):
+        private = "CANARY_200MS_SECRET"
+        proc = subprocess.run([sys.executable, "-m", "mixlab.quality.alignment",
+                               str(self.base), str(self.other),
+                               "--" + private],
+                              capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 2)
+        self.assertTrue(proc.stderr.endswith("\\n"))
+        self.assertNotIn(r"\\n", proc.stderr)
+        self.assertNotIn(private, proc.stderr + proc.stdout)
+
     def test_cli_fail_on_warnings_is_bounded_and_redacted(self):
         offset = 640
         make_wav(self.other, self.samples[-offset:] + self.samples[:-offset])
