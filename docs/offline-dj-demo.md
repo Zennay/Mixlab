@@ -1,90 +1,82 @@
-# MixLab Offline DJ Demo — hear the product without providing music
+# MixLab Offline DJ Demo — hoor een complete drie-track DJ-set
 
-The MixLab M1 demo is a **product entry point**, not a QA/test suite.
-With one command, it synthesizes two original short musical recordings
-entirely on your machine, then exercises the ordinary user-facing
-music importer, real four-family DSP Transition Studio, visual cue editor
-and complete two-track WAV mix exporter.
+Deze **productdemo** maakt drie originele tracks volledig lokaal aan en
+gebruikt vervolgens de normale MixLab-ingest, Transition Studio, visuele
+cue-editor, offline Set Composer en Full Set Player. De drie audiobronnen
+bestaan uitsluitend uit door MixLab gegenereerde eigen synthesizergeluiden:
+geen samples van artiesten, streamingcatalogus, AI-model of upload.
 
-It needs **only Python 3.10+**, no FFmpeg, internet connection,
-AI model download, music subscription or copyrighted sample files.
+De demo is **geen QA-suite of bewijs van muzikale superioriteit**.
+Voor canonieke PCM16-WAV volstaat Python 3.10+; FFmpeg en internet zijn niet
+nodig.
 
-## Start the demo
+## Start
 
-From a local checkout of Zennay/Mixlab, pick a new private directory
-outside the checkout:
+Gebruik vanuit een lokale MixLab checkout een nieuw privépad **buiten Git**:
 
 ~~~bash
 python3 -m mixlab.demo /private/mixlab-demo-01
 ~~~
 
-Open /private/mixlab-demo-01/index.html in your local browser.
+Open daarna `/private/mixlab-demo-01/index.html`. De landingspagina biedt:
 
-You can now choose:
+- **Complete set beluisteren:** één echt gerenderde `three-song-set.wav`
+  met drie tracks, twee verschillende DSP-overgangen, interactieve
+  hoofdstukken, vorige/volgende knoppen en een downloadbare CUE-sheet.
+- **Zelf een mix programmeren:** de volledige Set Composer met alle acht
+  reeds gerenderde audio-overgangen, de vier families voor beide paren,
+  routeopbouw en privé keuzeplan-download.
+- **Korte overgangen vergelijken:** de bestaande Transition Studio voor
+  baseline, bass swap, echo exit en hard cut.
+- **Waveform-cues aanpassen:** dezelfde visuele editor als bij eigen muziek.
+- **Klassieke tweetrackmix:** de eerdere two-song export blijft beschikbaar.
 
-1. **Hear the transition styles** — the standard M1 local Transition
-   Studio renders baseline, bass swap, echo exit and hard cut on real
-   generated PCM16 audio, not mock UI.
-2. **Play the complete two-song mix** — a continuous WAV with a
-   song-A lead-in, actual bass-swap DSP transition and remainder of song B.
-   Download the private WAV from the local listening page.
-3. **Edit cue positions visually** — see each track's actual RMS
-   energy waveform, click to change the start, nudge by beats and
-   audition the selected segment. Saving exports a JSON with the
-   original source checksum rather than embedding audio.
+Alle drie de tracks duren 24 seconden, hebben handmatig vastgelegde
+120 BPM en zijn 44,1 kHz PCM16 stereo. A → B gebruikt 16 beats vanaf
+A=16 seconden en B=0; B → C eveneens 16 beats vanaf B=16 en C=0.
+Er ontstaat zo een **56 seconden doorlopende set**, met 8 seconden
+overlapping per overgang. Dit is een bewust gekunstelde voorbeeldset
+op originele synthetische drums, bass en pads; er wordt geen muzikaal
+begrip of mensenvoorkeur geclaimd.
 
-The two source recordings are 24 seconds each, 120 BPM in 44.1 kHz
-PCM16 stereo. They contain original procedural kick, snare, hats,
-bass and chord/pad tones. They use no commercial recording or
-downloaded samples, with a 16-beat declared transition from
-song A at 16 seconds to song B at 8 seconds.
-
-## Generated private files
+## Resultaatbestanden
 
 ~~~text
 /private/mixlab-demo-01/
-  index.html                         # Open this
+  index.html                              # Open deze startpagina
   sources/
     demo-song-01.wav
     demo-song-02.wav
-    demo-source-spec.json            # Rights: synthetic
+    demo-song-03.wav
+    demo-source-spec.json                # Rechtendeclaratie: synthetic
   audition/
-    sources/
-      source_manifest.json
-      audio/*.wav
-      cue-editor.html
-    excerpts/
-      library.json
-      *.wav
-    studio/
-      index.html
-      auditions/demo-pair-001/*.wav
-  full-song/
-    full-song-mix.wav
-    index.html
-    full-mix-receipt.private.json
+    sources/cue-editor.html
+    sources/source_manifest.json
+    excerpts/library.json
+    studio/index.html
+    studio/auditions/demo-pair-001/*.wav
+    studio/auditions/demo-pair-002/*.wav
+    set-composer/index.html
+  full-song/index.html                   # Eerdere 2-track export
+  three-song-set.wav                     # Complete 3-track mix
+  three-song-set.wav.receipt.private.json
+  three-song-set.wav.player.html         # Offline hoofdstukspeler
 ~~~
 
-All music and rendered assets are local, private and stored outside Git.
-The generator does not open ports or upload files, and never touches
-or overwrites an existing directory. A failed first run removes only
-its newly created demo folder.
+De toepassing maakt uitsluitend een nieuw projectpad aan, slaat gegevens
+privé op en opent geen poorten. Bij fouten verwijdert ze alleen de volledig
+nieuw aangemaakte demo, geen bronbestanden of eerder werk.
 
-## What this does — and does not — establish
+## Schakel daarna over op je eigen muziek
 
-This is a **playable product demonstration** showing the creative
-capabilities with synthetic, automatically generated source material.
-It makes no claims about actual artist recordings, musical transition
-quality preferences, rights to external tracks, learned beat/downbeat
-models, source separation or autonomous set planning.
+Voor echte opnames gebruik je [de begeleide projectmaker](guided-local-project.md)
+en [de interactieve MixLab-sessie](interactive-private-studio.md).
+De [offline Set Composer](offline-set-composer.md) en
+[Full Set Player](private-full-set-player.md) werken daarop op dezelfde
+manier. Ondersteunde 44,1 kHz PCM16-WAV's werken zonder FFmpeg; MP3, FLAC en
+M4A vragen een reeds geïnstalleerde lokale FFmpeg/FFprobe.
 
-The M1 milestone remains open until its predeclared, externally
-rights-cleared real-track and blind-listener comparison gates are
-actually satisfied. A functional demo is not a scientific preference
-result or permission to distribute other people's copyrighted music.
-
-To switch from this safe synthetic example to real local music,
-follow docs/guided-local-project.md and
-docs/interactive-private-studio.md. For supported native PCM16 WAV the
-entire pipeline stays Python-only. MP3, FLAC and M4A still require
-preinstalled local FFmpeg and FFprobe.
+M1 blijft **OPEN** totdat een onafhankelijk rechtenveilig muziekexperiment
+met echte luisteraars de vooraf gedefinieerde acceptatiecriteria haalt.
+De demo is geen bewijs van auteursrecht op andermans tracks of van
+automatisch beat-, key-, phrase- of stembegrip.
