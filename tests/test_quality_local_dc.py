@@ -91,6 +91,26 @@ class LocalDCQualityTests(unittest.TestCase):
         self.assertNotIn(str(self.tmp.name), json.dumps(result))
         self.assertNotIn("_identity", result)
 
+    def test_batch_single_candidate_parity_and_reproducible_thresholds(self):
+        _wav(self.base)
+        candidate = self._batch_candidate(1, offset=3400)
+        single = local_dc.inspect(self.base, candidate)
+        multi = local_dc.inspect_batch(self.base, [candidate])
+        self.assertIs(multi["warning"], single["warning"])
+        self.assertEqual(multi["baseline_bias_warning"], single["baseline_bias_warning"])
+        self.assertEqual(multi["candidates"][0]["candidate_excess_bias_warning"],
+                         single["candidate_excess_bias_warning"])
+        self.assertEqual(multi["complete_windows"], single["complete_windows"])
+        self.assertEqual(multi["thresholds"], single["thresholds"])
+        self.assertEqual(multi, local_dc.inspect_batch(self.base, [candidate]))
+
+    def test_batch_short_signal_never_reports_clear(self):
+        _wav(self.base, duration=.5)
+        candidate = self._batch_candidate(1, duration=.5)
+        data = local_dc.inspect_batch(self.base, [candidate])
+        self.assertIsNone(data["warning"])
+        self.assertIsNone(data["candidates"][0]["warning"])
+
     def test_batch_scans_baseline_exactly_once(self):
         _wav(self.base)
         candidates = [self._batch_candidate(i) for i in range(3)]
