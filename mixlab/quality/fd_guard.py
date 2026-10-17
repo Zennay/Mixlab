@@ -41,6 +41,7 @@ def _locate_data_chunk(stream, size):
     declared_end = 8 + int.from_bytes(prefix[4:8], "little")
     if not 44 <= declared_end <= size:
         raise ValueError(_ERROR)
+    seen_fmt = False
     for _ in range(MAX_PRE_DATA_CHUNKS):
         if stream.tell() + 8 > declared_end:
             raise ValueError(_ERROR)
@@ -52,7 +53,27 @@ def _locate_data_chunk(stream, size):
         next_chunk = data_start + chunk_size + (chunk_size & 1)
         if next_chunk > declared_end:
             raise ValueError(_ERROR)
+        if chunk[:4] == b"fmt ":
+            # wave.Wave_read validates channels/rate/width, but does not
+            # enforce PCM block alignment or byte rate. Contradictory fmt
+            # metadata can cause other players to misinterpret A/B samples.
+            if seen_fmt or chunk_size < 16:
+                raise ValueError(_ERROR)
+            raw_fmt = stream.read(16)
+            if len(raw_fmt) != 16:
+                raise ValueError(_ERROR)
+            format_tag, channels, rate, byte_rate, block_align, bits = struct.unpack(
+                "<HHIIHH", raw_fmt
+            )
+            if (format_tag not in (1, 0xFFFE) or channels not in (1, 2)
+                    or not 8000 <= rate <= 96000 or bits != 16
+                    or block_align != channels * 2
+                    or byte_rate != rate * block_align):
+                raise ValueError(_ERROR)
+            seen_fmt = True
         if chunk[:4] == b"data":
+            if not seen_fmt:
+                raise ValueError(_ERROR)
             stream.seek(0)
             return data_start, chunk_size
         stream.seek(next_chunk)
