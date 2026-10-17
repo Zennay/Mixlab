@@ -556,10 +556,17 @@ class QualityTests(unittest.TestCase):
         wav(review / "trial-001-B.wav", different_a)
         wav(review / "trial-002-A.wav", different_b)
         wav(review / "trial-002-B.wav", same_audio)
-        # Change the container without changing PCM to prove audio-only
-        # fingerprinting; a file hash would miss this repeat.
-        with (review / "trial-002-B.wav").open("ab") as f:
-            f.write(b"unrelated-non-audio-container-trailer")
+        # Public review containers now reject non-audio trailers, even when
+        # decoded PCM is unchanged. Keep the cross-trial audio-repeat test on
+        # the neutral published WAVs; separate compare_wavs tests still show
+        # that *private* PCM fingerprints ignore container metadata.
+        public_audio = review / "trial-002-B.wav"
+        unmodified = public_audio.read_bytes()
+        with public_audio.open("ab") as output:
+            output.write(b"unrelated-non-audio-container-trailer")
+        with self.assertRaisesRegex(ValueError, "Review public WAV"):
+            inspect_review_pack(review)
+        public_audio.write_bytes(unmodified)
         report = inspect_review_pack(review)
         self.assertEqual(2, report["trial_count"])
         self.assertEqual(1, report["cross_trial_repeated_variant_count"])
