@@ -54,3 +54,64 @@ jobs:
           ulimit -v 196608
           python -m py_compile mixlab/quality/pilot_sensitivity.py tests/test_quality_pilot_sensitivity.py
           /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_pilot_sensitivity.py' -v
+
+      - name: Read-only checkout of pinned real ML-05 frozen study producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: e512d8fc2eae79efe765dc9a523105fad68a196f
+          path: upstream-pr71
+          persist-credentials: false
+      - name: Full pinned study render, 3 synthetic raters and omitted-pair sensitivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-pr71 rev-parse HEAD)" = "e512d8fc2eae79efe765dc9a523105fad68a196f"
+          cp mixlab/quality/pilot_sensitivity.py upstream-pr71/mixlab/quality/pilot_sensitivity.py
+          cp mixlab/quality/study_binding.py upstream-pr71/mixlab/quality/study_binding.py
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          from mixlab.evaluation import aggregate, verify_pack
+          from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+
+          spec = importlib.util.spec_from_file_location(
+              "real_pinned_ml05_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              receipt, evidence, trials = verify_pack(fixture.pack)
+              assert len(trials) == 5
+              assert evidence["study_id"] == fixture.study_doc["study_id"]
+              votes = []
+              for reviewer in range(3):
+                  path = fixture.root / f"independent-synthetic-{reviewer}.json"
+                  path.write_text(json.dumps({
+                      "schema_version": 1, "pack_id": receipt["pack_id"],
+                      "reviewer": f"synthetic-{reviewer:02d}",
+                      "ratings": [
+                          {"trial": tid, "preference":
+                           ("A" if row["A"] != "baseline" else "B")}
+                          for tid, row in sorted(trials.items())
+                      ],
+                  }))
+                  votes.append(path)
+              original = aggregate(fixture.pack, votes)
+              assert original["reviewers"] == 3
+              assert original["counts"]["candidate"] == 15
+              report = inspect_real_pilot(
+                  fixture.study, fixture.pack, fixture.study_doc["study_id"], votes)
+              assert report["one_sided_pair_sign_reference_probability"] == 1 / 32
+              assert report["worst_leave_one_pair_out_reference_probability"] == 1 / 16
+              assert report["pair_sensitivity_review_required"] is True
+              assert report["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(report)
+              assert receipt["pack_id"] not in json.dumps(report)
+              print("Real pinned ML-05: valid 5-pair 10-WAV PCM + 3 synthetic raters => 1/32 falls to 1/16 under pair omission; HOLD")
+          finally:
+              fixture.tearDownClass()
+          PY
