@@ -23,24 +23,61 @@ WINDOW_MS = 250
 MIN_ACTIVE_RMS = 10 ** (-45 / 20)
 WARN_SHIFT_DB = 6.0
 WARN_PERSIST_MS = 1000
+MAX_PATH_COMPONENTS = 64
+MAX_PATH_BYTES = 4096
 
 
 def _identity(st):
     return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
 
 
+
+def _open_no_symlink_components(path):
+    """Read-only Linux dirfd walk, refusing symlinks anywhere in the path.
+
+    Keep lexical '..': a symlink/../safe.wav path still traverses the
+    symlink *before* processing '..'. Resolve() or abspath() would conceal it.
+    Bound path length and depth before opening even the root directory.
+    """
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        raise ValueError("Private PCM path traversal protection unavailable")
+    p = Path(path)
+    absolute = p if p.is_absolute() else Path.cwd() / p
+    pieces = absolute.parts
+    if (len(pieces) < 2 or len(pieces) > MAX_PATH_COMPONENTS
+            or len(os.fspath(absolute)) > MAX_PATH_BYTES
+            or len(os.fsencode(absolute)) > MAX_PATH_BYTES):
+        raise ValueError("Private PCM path outside bounded admission")
+    common = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    dir_flags = common | os.O_DIRECTORY | getattr(os, "O_NONBLOCK", 0)
+    file_flags = common | getattr(os, "O_NONBLOCK", 0)
+    with ExitStack() as dirs:
+        parent = os.open(os.sep, dir_flags)
+        dirs.callback(os.close, parent)
+        for component in pieces[1:-1]:
+            fd = os.open(component, dir_flags, dir_fd=parent)
+            dirs.callback(os.close, fd)
+            parent = fd
+        return os.open(pieces[-1], file_flags, dir_fd=parent)
+
+
 def _admit(path, stack):
     """Open a regular file without following the last symlink; no audio copies."""
     p = Path(path)
+    fd = _open_no_symlink_components(p)
+    try:
+        actual = os.fstat(fd)
+        if not stat.S_ISREG(actual.st_mode) or not 44 <= actual.st_size <= MAX_BYTES:
+            raise ValueError("Invalid private PCM source")
+        handle = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    stack.enter_context(handle)
+    # Independently check that the caller's current name still resolves to
+    # this descriptor. The post-read check reopens the entire nofollow path.
     before = p.lstat()
-    if not stat.S_ISREG(before.st_mode) or not 44 <= before.st_size <= MAX_BYTES:
-        raise ValueError("Invalid private PCM source")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(p, flags)
-    handle = stack.enter_context(os.fdopen(fd, "rb"))
-    actual = os.fstat(handle.fileno())
-    if not stat.S_ISREG(actual.st_mode) or _identity(before) != _identity(actual):
+    if not stat.S_ISREG(before.st_mode) or _identity(before) != _identity(actual):
         raise ValueError("Private source changed during admission")
     hdr = handle.read(44)
     if (len(hdr) != 44 or hdr[:4] != b"RIFF" or hdr[8:16] != b"WAVEfmt "
@@ -62,8 +99,12 @@ def _unchanged(record):
     p, handle, expected, _, _ = record
     try:
         after_fd = os.fstat(handle.fileno())
-        after_path = p.lstat()
-    except OSError:
+        named_fd = _open_no_symlink_components(p)
+        try:
+            after_path = os.fstat(named_fd)
+        finally:
+            os.close(named_fd)
+    except (OSError, ValueError):
         raise ValueError("Private PCM source changed") from None
     if (_identity(after_fd) != expected or _identity(after_path) != expected or
             not stat.S_ISREG(after_path.st_mode)):
