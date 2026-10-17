@@ -420,6 +420,40 @@ class RepeatabilityTests(unittest.TestCase):
             one, two, receipts=(original_a, original_b)
         )["render_receipts_consistent"])
 
+    def test_invalid_receipt_is_rejected_before_any_private_pcm_read(self):
+        # A contradictory or typed-spoofed metadata declaration must never
+        # cause the quality gate to consume private PCM, even transiently.
+        # Both public outputs and exceptions remain path-agnostic.
+        import copy
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        invalid_pairs = []
+        for field, value in (("schema_version", True),
+                             ("sample_rate", 8000.0),
+                             ("frames", 4000.0),
+                             ("channels", True),
+                             ("duration_seconds", 123)):
+            a, b = copy.deepcopy(ra), copy.deepcopy(rb)
+            a[field] = value
+            b[field] = value
+            invalid_pairs.append((a, b))
+        for field, value in (("family", "not_a_family"),
+                             ("beats", 2)):
+            a, b = copy.deepcopy(ra), copy.deepcopy(rb)
+            a["recipe"][field] = value
+            b["recipe"][field] = value
+            invalid_pairs.append((a, b))
+        with patch.object(wave.Wave_read, "readframes",
+                          side_effect=AssertionError("private PCM was read")), patch(
+            "mixlab.quality.repeatability._digest_open_file",
+            side_effect=AssertionError("private file was hashed")
+        ):
+            for index, pair in enumerate(invalid_pairs):
+                with self.subTest(case=index):
+                    with self.assertRaisesRegex(
+                        RepeatabilityError, "^invalid, changed or incompatible source$"
+                    ):
+                        verify_repeatability(one, two, receipts=pair)
+
     def test_untrusted_receipt_size_and_nesting_are_rejected_before_serialization(self):
         # JSON serialization *before* checking the 16KiB cap can allocate
         # arbitrarily large data on hostile private metadata. The validator
