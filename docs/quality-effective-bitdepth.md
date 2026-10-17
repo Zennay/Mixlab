@@ -1,9 +1,9 @@
 # ML-07 — PCM16 effective-resolution A/B preflight
 
 This optional **CPU-only technical diagnostic** checks whether a candidate appears to
-have undergone coarse 8-bit-step quantisation packed inside nominal PCM16,
-including 8-bit-left-shifted samples with an arbitrary fixed low-byte offset,
-when the corresponding baseline has genuinely diverse low bits. A file labelled "16-bit PCM" does not prove 16 bits of source
+have undergone candidate-specific 14-, 12- or 8-bit-effective quantisation
+packed inside nominal PCM16, including arbitrary fixed residual offsets,
+when the matching baseline has sufficient diversity at the relevant precision. A file labelled "16-bit PCM" does not prove 16 bits of source
 resolution. This fills a narrow signal-integrity gap; **it is not music quality,
 LUFS, true peak, beat detection, spectral judgement or a perceptual test**.
 
@@ -33,22 +33,25 @@ returning **any** JSON. Stat-based checks cannot make arbitrary malicious
 filesystem rewrites atomic; continue to use private immutable local files.
 
 The heuristic counts each channel's **high-level samples** (absolute signed
-PCM value >=2048), their 256 possible low-byte residue bins, and the most
-populated bin. Streaming histograms use a fixed 256 counts per channel; the
+PCM value >=2048), and their modulo-4, modulo-16 and modulo-256 residue bins.
+Streaming histograms use a fixed 4 + 16 + 256 counters per channel; the
 actual residue values, PCM and source names are never included in reports.
 A channel is evidenced only when it has >=4096 eligible samples and **at least
 four consecutive full 100ms windows** with >=50% high-level frame occupancy.
 Sparse 20ms-in-100ms pulses and separated islands of three active windows
 must abstain even if global sample totals or global RMS look conclusive.
-A candidate-specific warning requires baseline dominant low-byte fraction <=0.35
-and candidate dominant fraction >=0.995 on at least one evidenced channel;
-exact integer counts, not rounded display fractions, decide the result.
-**If the baseline channel itself has insufficient PCM diversity (>35% of
-eligible samples in one residue bin), that channel must abstain** rather than
-report a clean candidate. This avoids treating two equally damaged inputs
-as proof that the blind listening stimulus is technically comparable. These conservative
-thresholds deliberately permit false negatives: this method does not reliably
-identify 16-to-12-bit conversion, dithered 8-bit data or lossy codec artifacts.
+At a checked precision (2, 4 or 8 lower bits), a candidate-specific warning
+requires baseline dominant-residue fraction <=0.35 and candidate dominant
+fraction >=0.995; exact integer counts, not display rounding, decide the
+result. This now catches strongly quantised 14-bit and 12-bit samples, even
+when the nominal WAV container remains 16-bit and when low-byte-zero counts
+alone look normal. A degraded 14-bit baseline may still establish **further**
+12-bit degradation via the modulo-16 comparison, but it must **not** be used
+to proclaim a clean candidate when no further degradation is found.
+**If any baseline precision band lacks sufficient diversity (>35% in a single
+residue bin), an otherwise negative channel must abstain**, not report clean.
+These conservative thresholds deliberately permit false negatives: dithered
+quantisation and lossy-codec artifacts are not reliably measured.
 Intentional bit-restricted synthesizers, waveforms with coarse amplitude grids
 and gain or DC offsets can cause false positives. Inspect original
 source rights, gain history and blind playback before attributing cause.
