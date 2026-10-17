@@ -74,7 +74,8 @@ class FrozenStudyBindingTests(unittest.TestCase):
                                 "output_sha256": hashlib.sha256(wav.read_bytes()).hexdigest()})
 
         document = {"schema_version": 1, "kind": "mixlab-frozen-pair-study",
-                    "protocol": {"minimum_listeners": 3}, "pairs": pairs}
+                    "protocol": {"minimum_listeners": 3},
+                    "max_track_uses": 2, "pairs": pairs}
         self.pinned = _canonical_sha(document)
         document["study_id"] = self.pinned
         _write_json(self.study, document)
@@ -265,6 +266,53 @@ class FrozenStudyBindingTests(unittest.TestCase):
                         wraps=original) as scanner:
             self.assertTrue(self.check()["study_pack_metadata_consistent_with_pinned_id"])
             scanner.assert_called_once()
+
+
+
+    def _assert_bad_rehashed_study(self, mutation):
+        # Even a newly calculated SHA-256 supplied as the expected ID cannot
+        # turn an invalid study protocol into a valid frozen blind experiment.
+        from mixlab.quality.study_binding import _verified_study
+        doc = json.loads(self.study.read_text(encoding="utf-8"))
+        mutation(doc)
+        doc.pop("study_id")
+        new_id = _canonical_sha(doc)
+        doc["study_id"] = new_id
+        _write_json(self.study, doc)
+        with self.assertRaisesRegex(ValueError, "do not match"):
+            _verified_study(self.study, new_id)
+
+    def test_rehashed_all_same_candidate_family_fails_protocol(self):
+        self._assert_bad_rehashed_study(lambda d: [
+            p.__setitem__("candidate_family", "bass_swap") for p in d["pairs"]])
+
+    def test_rehashed_track_use_above_frozen_limit_fails_protocol(self):
+        def bad(doc):
+            doc["max_track_uses"] = 1
+            doc["pairs"][1]["a"] = doc["pairs"][0]["a"]
+            doc["pairs"][1]["a_sha256"] = doc["pairs"][0]["a_sha256"]
+        self._assert_bad_rehashed_study(bad)
+
+    def test_rehashed_bool_or_missing_reuse_limit_rejected(self):
+        for invalid in (None, False, True, 0, 2.0, 5):
+            with self.subTest(value=invalid):
+                doc = json.loads(self.study.read_text(encoding="utf-8"))
+                doc["max_track_uses"] = invalid
+                from mixlab.quality.study_binding import _verified_study
+                doc.pop("study_id")
+                candidate_id = _canonical_sha(doc)
+                doc["study_id"] = candidate_id
+                _write_json(self.study, doc)
+                with self.assertRaisesRegex(ValueError, "do not match"):
+                    _verified_study(self.study, candidate_id)
+
+    def test_rehashed_source_recording_alias_under_new_track_id_rejected(self):
+        self._assert_bad_rehashed_study(lambda d:
+            d["pairs"][1].__setitem__("a_sha256", d["pairs"][0]["a_sha256"]))
+
+    def test_rehashed_same_track_id_claims_two_different_sources_rejected(self):
+        self._assert_bad_rehashed_study(lambda d:
+            d["pairs"][1].__setitem__("a", d["pairs"][0]["a"]))
 
 
 
