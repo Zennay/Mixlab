@@ -199,8 +199,9 @@ def _preflight_pair_schema(pairs, tracks_by_id):
         bpm = number(pair.get("bpm"), "pair bpm", 30, 300)
         if bpm != tracks_by_id[a_id]["bpm"] or bpm != tracks_by_id[b_id]["bpm"]:
             raise ValueError("Prototype requires equal source tempos; time stretching is not implemented")
-        if tracks_by_id[a_id].get("partition") != tracks_by_id[b_id].get("partition"):
-            raise ValueError("Pair crosses dataset partitions")
+        # Do NOT reject cross-partition pairs here: inspect PCM identities
+        # first, so a reused recording is reported as a data leak rather
+        # than being masked by the weaker pair-partition error.
         beats = pair.get("beats", 8)
         if type(beats) is not int or not 1 <= beats <= 64:
             raise ValueError("beats must be an integer from 1 to 64")
