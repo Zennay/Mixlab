@@ -94,7 +94,19 @@ class CrestDynamicsTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     compare_crest_factors(self.base, [self.alt], crest_tolerance_db=value)
-        self.assertIsNone(_crest_factor_db({"peak": 0, "rms": 0}))
+        self.assertIsNone(_crest_factor_db({"peak_dbfs": None, "rms_dbfs": None}))
+
+    def test_quiet_one_lsb_constant_is_exact_zero_crest(self):
+        # Scanner's presentation-rounded linear peak overestimates a
+        # one-LSB amplitude. dBFS-derived crest must remain precisely zero.
+        write_wav(self.base, [1] * 8000)
+        write_wav(self.alt, [-1] * 8000)
+        report = compare_crest_factors(self.base, [self.alt])
+        self.assertEqual(0.0, report["baseline_crest_factor_db"])
+        row = report["candidates"][0]
+        self.assertEqual(0.0, row["crest_factor_db"])
+        self.assertEqual(0.0, row["crest_delta_db_vs_baseline"])
+        self.assertFalse(row["crest_factor_confound_risk"])
 
     def test_reject_mismatched_format_without_mutating_inputs(self):
         before = self.base.read_bytes()
