@@ -302,6 +302,46 @@ class IntersampleTests(unittest.TestCase):
         self.assertTrue(row["technical_review_required"])
         self.assertNotIn(str(self.root), json.dumps(row))
 
+    def test_sixteen_tap_detects_analytic_quarter_rate_over_missed_by_eight_taps(self):
+        # A 0.25-cycles/sample sine with phase pi/4 is sampled at only
+        # ~70.7% of its true peak; 8-tap Blackman interpolation stayed at
+        # 32,273 (<32,768), but 16 taps reconstruct ~33,008 (>32,768).
+        amp = 33000
+        pcm = [round(amp * math.sin(2 * math.pi * 0.25 * i + math.pi / 4))
+               for i in range(320)]
+        self.assertLess(max(map(abs, pcm)), 32768)
+        self.assertGreater(amp, 32768)
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["screen_evaluable"])
+        self.assertTrue(row["intersample_over_risk"])
+        self.assertGreater(row["interpolated_peak_dbfs_estimate"], 0)
+        self.assertFalse(row["high_frequency_near_ceiling_ambiguity_risk"])
+        self.assertFalse(row["edge_interpolation_ambiguity_risk"])
+
+    def test_quarter_rate_lower_amplitude_has_no_intersample_over(self):
+        pcm = [round(28000 * math.sin(2 * math.pi * 0.25 * i + math.pi / 4))
+               for i in range(320)]
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["intersample_over_risk"])
+        self.assertFalse(row["technical_review_required"])
+
+    def test_fifteen_frames_are_insufficient_for_sixteen_tap_screen(self):
+        write_wav(self.a, [0] * 15)
+        write_wav(self.b, [0] * 15)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertFalse(row["screen_evaluable"])
+        self.assertTrue(row["technical_review_required"])
+        self.assertEqual(2, self.cli(str(self.a), str(self.b), "--fail-on-risk").returncode)
+
+    def test_sixteen_tap_kernel_span_is_fixed_and_dc_preserving(self):
+        for coeff in _PHASES:
+            self.assertEqual(16, len(coeff))
+            self.assertAlmostEqual(1.0, sum(coeff), places=12)
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
