@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import wave
 
 from mixlab.quality.holdout_isolation import audit_holdout_isolation
@@ -175,7 +176,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.rejected()
 
 
-    def _replace_wav_with_embedded(self, destination, source):
+    def _replace_wav_with_embedded(self, destination, source, prefix_frames=4000):
         """Create a distinct longer WAV containing a copied 0.5s PCM crop."""
         with wave.open(str(source), "rb") as reader:
             shared = reader.readframes(reader.getnframes())
@@ -183,7 +184,7 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
             writer.setnchannels(1)
             writer.setsampwidth(2)
             writer.setframerate(8000)
-            writer.writeframes(b"\x00" * 8000 + shared + b"\x00" * 8000)
+            writer.writeframes(b"\x00" * (prefix_frames * 2) + shared + b"\x00" * 8000)
 
     def test_full_hashes_and_recording_ids_miss_embedded_same_recording_crop(self):
         # Both ordinary file and decoded-whole-file digests differ; no shared
@@ -198,6 +199,34 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.assertNotEqual(self.dev["tracks"][0]["recording_id"],
                             self.eva["tracks"][0]["recording_id"])
         self.rejected()
+
+
+    def test_reused_pcm_crossing_a_stream_block_boundary_is_detected(self):
+        # Auditable prefix length: playback PCM starts 8 frames before the
+        # 32,768-frame streaming boundary and continues after the boundary.
+        source = self.eva_dir / "clip-00.wav"
+        target = self.dev_dir / "clip-00.wav"
+        self._replace_wav_with_embedded(target, source, prefix_frames=32760)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.rejected()
+
+    def test_mutation_after_excerpt_preflight_fails_on_final_source_rescan(self):
+        from mixlab.quality import holdout_isolation
+        self.persist()
+        original_screen = holdout_isolation._exact_pcm_excerpt_overlap
+
+        def damage_after_pass(dev, eva):
+            outcome = original_screen(dev, eva)
+            self.assertFalse(outcome)
+            (self.dev_dir / "clip-00.wav").write_bytes(b"source changed")
+            return outcome
+
+        with mock.patch.object(holdout_isolation, "_exact_pcm_excerpt_overlap",
+                               side_effect=damage_after_pass):
+            with self.assertRaises(ValueError) as error:
+                holdout_isolation.audit_holdout_isolation(
+                    self.dev_file, self.eva_file, self.study_file, self.pinned)
+        self.assertNotIn(str(self.root), str(error.exception))
 
     def test_frozen_evaluation_cannot_use_an_embedded_copy_as_new_track(self):
         target = self.eva_dir / "clip-01.wav"
