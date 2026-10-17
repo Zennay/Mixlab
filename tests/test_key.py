@@ -12,7 +12,7 @@ from mixlab.analysis.key import KEYS, PITCH_CLASSES, ChromaKeyProvider, camelot,
 from mixlab.engine import write_wav
 
 
-def progression(path, key, rate=8000, seconds=6., drums=0., cents=0., channels=2):
+def progression(path, key, rate=8000, seconds=2.4, drums=0., cents=0., channels=2):
     """I-IV-V-I (major) or i-iv-V-i with raised leading tone (minor), three harmonics."""
     tonic = PITCH_CLASSES.index(key.split()[0])
     third = 3 if key.endswith("minor") else 4
@@ -65,7 +65,7 @@ class ChromaKeyTests(unittest.TestCase):
         # Synthetic triads verify mechanics only; real-audio accuracy is unmeasured.
         for key in KEYS:
             with self.subTest(key=key):
-                result = estimate(progression(self.root / "k.wav", key))
+                result = estimate(progression(self.root / "k.wav", key, seconds=4.))
                 self.assertEqual(result["key"], key, result["candidates"])
                 self.assertIsNone(result["abstain_reason"])
                 (self.root / "k.wav").unlink()
@@ -75,13 +75,13 @@ class ChromaKeyTests(unittest.TestCase):
                  ("D major", dict(rate=22050, cents=40))]
         for key, options in cases:
             with self.subTest(key=key, **options):
-                self.assertEqual(estimate(progression(self.root / f"{key[0]}.wav", key, seconds=4., **options))["key"], key)
+                self.assertEqual(estimate(progression(self.root / f"{key[0]}.wav", key, seconds=2., **options))["key"], key)
 
     def test_abstains_without_tonal_evidence(self):
         rng = random.Random(9)
-        signals = {"noise": [(rng.gauss(0, .2),) * 2 for _ in range(8000 * 5)],
-                   "clicks": [(.6 * math.exp(-(i / 8000 % .5) * 80),) * 2 for i in range(8000 * 5)],
-                   "silence": [(0., 0.)] * (8000 * 5),
+        signals = {"noise": [(rng.gauss(0, .2),) * 2 for _ in range(8000 * 2)],
+                   "clicks": [(.6 * math.exp(-(i / 8000 % .5) * 80),) * 2 for i in range(8000 * 2)],
+                   "silence": [(0., 0.)] * (8000 * 2),
                    "short": [(.3 * math.sin(i * .2),) * 2 for i in range(4000)]}
         for name, frames in signals.items():
             with self.subTest(name=name):
@@ -110,7 +110,7 @@ class ChromaKeyTests(unittest.TestCase):
         self.assertEqual(silent.key_confidence, 0.)
 
     def test_cli_provider_choice(self):
-        wav = progression(self.root / "b.wav", "C major", seconds=4.)
+        wav = progression(self.root / "b.wav", "C major", seconds=2.)
         run = subprocess.run([sys.executable, "-m", "mixlab.analysis", str(wav), "--cache", str(self.root / "c"),
                               "--provider", "chroma-key"], capture_output=True, text=True, timeout=120,
                              cwd=Path(__file__).resolve().parents[1])

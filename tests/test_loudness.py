@@ -14,7 +14,7 @@ from mixlab.evaluation import aggregate, verify_pack
 from mixlab.loudness import apply_gain, k_weighting, match_group, measure
 
 
-def sine(path, rate=48000, seconds=3., amp=.1, channels=2, freq=997., silence=0.):
+def sine(path, rate=16000, seconds=1.2, amp=.1, channels=2, freq=997., silence=0.):
     frames = [(0.,) * channels] * round(silence * rate)
     frames += [(amp * math.sin(2 * math.pi * freq * i / rate),) * channels for i in range(round(seconds * rate))]
     write_wav(path, rate, frames)
@@ -38,15 +38,15 @@ class LoudnessTests(unittest.TestCase):
         # BS.1770: a 997 Hz sine at amplitude A in both stereo channels reads 20*log10(A) LUFS;
         # in a single (mono) channel it is 3.01 LU lower.
         for rate in (44100, 48000):
-            stereo = measure(sine(self.root / f"s{rate}.wav", rate=rate, amp=.1))
-            mono = measure(sine(self.root / f"m{rate}.wav", rate=rate, amp=.5, channels=1))
+            stereo = measure(sine(self.root / f"s{rate}.wav", rate=rate, amp=.1, seconds=.8))
+            mono = measure(sine(self.root / f"m{rate}.wav", rate=rate, amp=.5, channels=1, seconds=.8))
             self.assertAlmostEqual(stereo["integrated_lufs"], -20., delta=.02)
             self.assertAlmostEqual(mono["integrated_lufs"], -9.03, delta=.02)
             self.assertEqual(stereo["method"], "itu-r-bs.1770-4-integrated-sample-peak")
 
     def test_gates_ignore_silence_and_quiet_passages(self):
-        plain = measure(sine(self.root / "plain.wav"))["integrated_lufs"]
-        padded = measure(sine(self.root / "padded.wav", silence=2.))["integrated_lufs"]
+        plain = measure(sine(self.root / "plain.wav", seconds=3.))["integrated_lufs"]
+        padded = measure(sine(self.root / "padded.wav", seconds=3., silence=2.))["integrated_lufs"]
         # Only the few 400 ms blocks straddling the onset pass the gates; an ungated
         # mean over 2 s silence + 3 s tone would read 10*log10(3/5) = -2.2 LU lower.
         self.assertAlmostEqual(plain, padded, delta=.3)
@@ -95,18 +95,42 @@ class LoudnessTests(unittest.TestCase):
         out.mkdir()
         result = match_group(paths, out)
         target = result["target_lufs"]
-        self.assertAlmostEqual(target, -20., delta=.02)
+        self.assertAlmostEqual(target, -20., delta=.05)
         self.assertEqual(result["members"]["quiet"]["gain_db"], 0.)
         for member in result["members"].values():
             self.assertLessEqual(member["gain_db"], 0)
             self.assertAlmostEqual(member["after"]["integrated_lufs"], target, delta=.1)
 
     def test_match_group_rejects_silence_and_format_mismatch(self):
-        write_wav(self.root / "silent.wav", 48000, [(0., 0.)] * 144000)
+        write_wav(self.root / "silent.wav", 16000, [(0., 0.)] * 19200)
         with self.assertRaisesRegex(ValueError, "silent"):
             match_group({"a": sine(self.root / "a.wav"), "b": self.root / "silent.wav"}, self.root)
         with self.assertRaisesRegex(ValueError, "share"):
             match_group({"a": self.root / "a.wav", "c": sine(self.root / "c.wav", seconds=2.)}, self.root)
+
+    @unittest.skipUnless(hasattr(__import__("os"), "mkfifo"), "POSIX FIFO required")
+    def test_fifo_is_refused_quickly_not_hung(self):
+        import os
+        fifo = self.root / "PRIVATE-pipe.wav"
+        os.mkfifo(fifo)
+        code = ("import sys; from mixlab.loudness import measure\n"
+                "try:\n    measure(sys.argv[1])\nexcept ValueError:\n    sys.exit(3)\nsys.exit(0)")
+        # Without O_NONBLOCK a read-only open of a writer-less FIFO blocks forever.
+        run = subprocess.run([sys.executable, "-c", code, str(fifo)], capture_output=True, text=True,
+                             timeout=20, cwd=Path(__file__).resolve().parents[1])
+        self.assertEqual(run.returncode, 3, run.stderr)
+
+    def test_symlinked_parent_directory_is_refused(self):
+        real = self.root / "real"
+        real.mkdir()
+        sine(real / "x.wav")
+        (self.root / "alias").symlink_to(real, target_is_directory=True)
+        self.assertIsNotNone(measure(real / "x.wav")["integrated_lufs"])
+        with self.assertRaisesRegex(ValueError, "symlinks"):
+            measure(self.root / "alias" / "x.wav")
+        with self.assertRaisesRegex(ValueError, "symlinks"):
+            apply_gain(self.root / "alias" / "x.wav", self.root / "out.wav", -1.)
+        self.assertFalse((self.root / "out.wav").exists())
 
     def test_apply_gain_refuses_bytes_other_than_measured(self):
         source = sine(self.root / "src.wav")

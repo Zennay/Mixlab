@@ -21,6 +21,8 @@ import sys
 import tempfile
 import wave
 
+from ..quality.repeatability import _open_no_symlink_components
+
 MAX_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_FRAMES = 2_000_000
 ABSOLUTE_GATE_LUFS = -70.0
@@ -73,18 +75,23 @@ class _HashingReader:
 
 def _open(path):
     """Open one regular file once; returns (wave reader, hashing reader, params)."""
+    # Shared admission primitive: no symlink in ANY path component, and
+    # O_NONBLOCK so a FIFO without a writer is refused instead of hanging.
+    # The opened descriptor (not the path) is validated below.
     try:
-        # Validate the opened descriptor, not the path, so a swap cannot slip in between.
-        fd = os.open(Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    except OSError as exc:
-        if Path(path).is_symlink():
-            raise ValueError("Loudness input must be a regular file") from None
-        raise exc
+        fd = _open_no_symlink_components(Path(path))
+    except OSError:
+        raise ValueError("Loudness input must be an existing regular file without symlinks") from None
+    try:
+        os.set_blocking(fd, True)  # regular-file reads; only the open itself needed O_NONBLOCK
+    except OSError:
+        os.close(fd)
+        raise ValueError("Loudness input must be an existing regular file without symlinks") from None
     stream = os.fdopen(fd, "rb")
     try:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):
-            raise ValueError("Loudness input must be a regular file")
+            raise ValueError("Loudness input must be an existing regular file without symlinks")
         if info.st_size > MAX_SOURCE_BYTES:
             raise ValueError("WAV exceeds the 32 MiB loudness limit")
         reader = _HashingReader(stream)
@@ -133,28 +140,30 @@ def measure(path: str | Path) -> dict:
     # Direct form II transposed state per channel and stage.
     state = [[0.0, 0.0, 0.0, 0.0] for _ in range(channels)]
     step = rate // 10  # 100 ms sub-blocks; four make one 400 ms gating block.
-    subblocks, acc, filled, peak = [], 0.0, 0, 0
+    subblocks, peak, scale = [], 0, 1 / 32768.0
     try:
         with source:
-            for values in _blocks(source, channels, count):
-                for i in range(0, len(values), channels):
-                    for c in range(channels):
-                        x = values[i + c]
-                        if x > peak or -x > peak:
-                            peak = abs(x)
-                        x /= 32768.0
-                        st = state[c]
-                        y = s0 * x + st[0]
-                        st[0] = s1 * x - sa1 * y + st[1]
-                        st[1] = s2 * x - sa2 * y
-                        z = h0 * y + st[2]
-                        st[2] = h1 * y - ha1 * z + st[3]
-                        st[3] = h2 * y - ha2 * z
-                        acc += z * z
-                    filled += 1
-                    if filled == step:
-                        subblocks.append(acc)
-                        acc, filled = 0.0, 0
+            # Each read is exactly one sub-block; a trailing partial one is
+            # discarded, as no complete 400 ms gating block could use it.
+            for values in _blocks(source, channels, count, block_frames=step):
+                if len(values) != step * channels:
+                    break
+                peak = max(peak, max(values), -min(values))
+                energy = 0.0
+                for c in range(channels):
+                    st = state[c]
+                    a, b, d, e = st
+                    for x in values[c::channels]:
+                        x *= scale
+                        y = s0 * x + a
+                        a = s1 * x - sa1 * y + b
+                        b = s2 * x - sa2 * y
+                        z = h0 * y + d
+                        d = h1 * y - ha1 * z + e
+                        e = h2 * y - ha2 * z
+                        energy += z * z
+                    st[:] = (a, b, d, e)
+                subblocks.append(energy)
         sha256 = reader.finish()
     except (wave.Error, EOFError) as exc:
         raise ValueError(f"Invalid PCM16 WAV: {exc}") from exc
