@@ -1,6 +1,9 @@
 """Synthetic security/immutability tests for the isolated ML-07 FD guard."""
 import json
 import os
+import subprocess
+import sys
+from unittest.mock import patch
 from pathlib import Path
 import stat
 import struct
@@ -8,7 +11,7 @@ import tempfile
 import unittest
 import wave
 
-from mixlab.quality.fd_guard import MAX_BYTES, admitted_pcm16
+from mixlab.quality.fd_guard import MAX_BYTES, admitted_pcm16, validate_private_pcm16
 
 
 def make_wav(path, *, frames=200, channels=1, rate=8000, width=2):
@@ -188,6 +191,61 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.assert_rejected(self.source)
         self.source.write_bytes(b"RIFF")
         self.assert_rejected(self.source)
+
+    def test_standalone_pcm_validator_consumes_all_declared_frames(self):
+        original = self.source.read_bytes()
+        with patch("mixlab.quality.fd_guard.os.open", wraps=os.open) as opened:
+            report = validate_private_pcm16(self.source, block_frames=73)
+        self.assertEqual(1, opened.call_count)
+        self.assertEqual({"screen": "ml07-single-fd-pcm16-integrity-v1",
+                          "sample_rate": 8000, "channels": 1, "frames": 200,
+                          "pcm16_payload_complete": True,
+                          "human_listening_required": True}, report)
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("PRIVATE", json.dumps(report))
+        self.assertEqual(original, self.source.read_bytes())
+
+    def test_standalone_pcm_validator_stereo_and_block_boundaries(self):
+        make_wav(self.source, frames=8193, channels=2)
+        report = validate_private_pcm16(self.source)
+        self.assertEqual(2, report["channels"])
+        self.assertEqual(8193, report["frames"])
+        self.assertTrue(report["pcm16_payload_complete"])
+
+    def test_standalone_validator_rejects_bad_block_admission(self):
+        for requested in (True, 0, -1, 4097, 10.5, None, "10"):
+            with self.subTest(block_frames=requested):
+                with self.assertRaisesRegex(ValueError, "details withheld"):
+                    validate_private_pcm16(self.source, block_frames=requested)
+
+    def test_standalone_cli_redacts_path_and_is_deterministic(self):
+        cmd = [sys.executable, "-m", "mixlab.quality.fd_guard", str(self.source)]
+        first = subprocess.run(cmd, capture_output=True, text=True)
+        second = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+        report = json.loads(first.stdout)
+        self.assertEqual(200, report["frames"])
+        self.assertTrue(report["pcm16_payload_complete"])
+        self.assertNotIn(str(self.root), first.stdout + first.stderr)
+
+    def test_standalone_cli_redacts_missing_path_and_arguments(self):
+        marker = "VERY_SECRET_LOCAL_MUSIC_FILENAME"
+        for arguments, expected_status in (
+            ([str(self.root / marker)], 3),
+            ([str(self.source), "--unknown=" + marker], 2),
+            ([str(self.source), marker], 2),
+            ([], 2),
+        ):
+            with self.subTest(arguments=arguments):
+                proc = subprocess.run(
+                    [sys.executable, "-m", "mixlab.quality.fd_guard", *arguments],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(expected_status, proc.returncode)
+                self.assertFalse(proc.stdout)
+                self.assertNotIn(marker, proc.stderr)
+                self.assertNotIn(str(self.root), proc.stderr)
 
     def test_outputs_no_private_path_or_audio_and_no_writes(self):
         original = self.source.read_bytes()
