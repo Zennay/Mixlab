@@ -312,6 +312,37 @@ def _validate_cached_analysis(document, identity, source_hash, provider, info):
             raise ValueError("Invalid cached analysis energy")
         number(amplitude, "cached energy", 0, 1)
         previous = position
+    # Public checksums detect corruption, not authorization: a rewritten
+    # receipt can be rehashed locally. Reject impossible claims that turn a
+    # manual observation into a measured provider (or invented key/phrase).
+    # Limit this contract to the exact built-in provider implementations;
+    # third-party provider schemas remain independently versioned.
+    if type(provider) is ManualProvider:
+        config = provider.config
+        period = 60 / config["bpm"]
+        start = config["first_beat"]
+        expected_grid = tuple(round(start + n * period, 6) for n in
+                              range(math.ceil((duration - start) / period)))
+        if (analysis["provider"] != "manual" or
+                analysis["timing_source"] != "manual" or
+                analysis["tempo_confidence"] != 0 or
+                analysis["bpm"] != config["bpm"] or
+                analysis["key"] != config["key"] or
+                analysis["key_source"] != ("manual" if config["key"] else "unavailable") or
+                tuple(analysis["beats_seconds"]) != expected_grid or
+                tuple(analysis["downbeats_seconds"]) != config["downbeats"] or
+                tuple(analysis["phrase_starts_seconds"]) != config["phrases"] or
+                analysis["energy"] or
+                tuple(analysis["warnings"]) != ("human annotation; not automatically measured",)):
+            raise ValueError("Manual analysis cache provenance/config mismatch")
+    elif type(provider) is EnergyOnsetProvider:
+        if (analysis["provider"] != "energy-onset" or
+                analysis["timing_source"] != "measured-heuristic" or
+                analysis["key"] is not None or
+                analysis["key_source"] != "unavailable" or
+                analysis["downbeats_seconds"] or
+                analysis["phrase_starts_seconds"]):
+            raise ValueError("Measured analysis cache provenance mismatch")
     return analysis
 
 
