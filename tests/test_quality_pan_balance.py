@@ -568,6 +568,43 @@ class PanBalanceTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), expected)
 
+    def test_real_m1_renderer_preserves_consistent_off_center_stereo(self):
+        # Real DSP outputs may be artistically panned away from center.
+        # If BOTH private sources carry the same L:R ratio, a balanced
+        # transition-family comparison must not invent a *relative* pan drift.
+        import math
+        from mixlab.engine import render, write_wav
+        from mixlab.models import FAMILY_NAMES, Recipe
+
+        rate = 8000
+        a = self.root / "off-center source A.wav"
+        b = self.root / "off-center source B.wav"
+        write_wav(a, rate, [
+            (s, 0.5 * s)
+            for s in (0.09 * math.sin(2 * math.pi * 180 * i / rate)
+                      for i in range(12000))
+        ])
+        write_wav(b, rate, [
+            (s, 0.5 * s)
+            for s in (0.08 * math.sin(2 * math.pi * 320 * i / rate)
+                      for i in range(12000))
+        ])
+        rendered = {}
+        for family in FAMILY_NAMES:
+            path = self.root / f"panned-render-{family}.wav"
+            render(a, b, path, Recipe(family=family, bpm=60, beats=1))
+            rendered[family] = path
+        others = [rendered[name] for name in FAMILY_NAMES if name != "baseline"]
+        report = pan_balance.inspect_batch(rendered["baseline"], others)
+        self.assertEqual(report["candidate_count"], len(others))
+        for item in report["candidates"]:
+            metrics = item["metrics"]
+            self.assertEqual(metrics["evidence_status"],
+                             "no_sustained_pan_bias_detected")
+            self.assertFalse(metrics["stereo_pan_confound_review"])
+            self.assertLess(metrics["max_pan_balance_delta_db"], 0.5)
+        self.assertNotIn(str(self.root), json.dumps(report))
+
     def test_m1_renderer_signal_pan_mutation_is_rejected_by_preflight(self):
         # Generate actual renderer output and introduce a *controlled* PCM
         # corruption of channel gain to establish end-to-end detector value.
