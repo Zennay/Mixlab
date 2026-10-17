@@ -1312,6 +1312,62 @@ class QualityTests(unittest.TestCase):
         a.write_bytes(original)
         self.assertEqual(1, inspect_review_pack(review)["trial_count"])
 
+    def test_short_pcm_dropout_hidden_inside_non_silent_rms_window(self):
+        # 60 ms digital silence inside an otherwise audible 100-ms window
+        # leaves its RMS above the coarse -55dBFS silence threshold.
+        altered = self.samples.copy()
+        altered[4050:4530] = [0] * 480  # Straddles 4096-frame source read.
+        wav(self.candidate, altered)
+        report = compare_wavs(self.base, [self.candidate])
+        metrics = report["candidates"][0]["metrics"]
+        self.assertGreaterEqual(metrics["longest_interior_quiet_pcm_gap_ms"], 60)
+        self.assertTrue(metrics["short_interior_pcm_dropout_risk"])
+        self.assertFalse(metrics["interior_silent_gap_risk"])
+        self.assertEqual(0.0, metrics["longest_interior_silent_gap_ms"])
+        self.assertIn("short_interior_pcm_dropout_inspect",
+                      report["candidates"][0]["warnings"])
+        self.assertNotIn("short_interior_pcm_dropout_inspect",
+                         report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        self.assertNotIn("4050", json.dumps(report))
+
+    def test_short_pcm_dropout_respects_threshold_stereo_and_edges(self):
+        altered = self.samples.copy()
+        altered[4050:4370] = [0] * 320  # 40ms <50ms threshold.
+        wav(self.candidate, altered)
+        self.assertFalse(scan_wav(self.candidate)["short_interior_pcm_dropout_risk"])
+        altered = self.samples.copy()
+        altered[4050:4450] = [0] * 400  # Exactly 50ms (or slightly longer).
+        wav(self.candidate, altered)
+        self.assertTrue(scan_wav(self.candidate)["short_interior_pcm_dropout_risk"])
+        for placement in ("leading", "trailing", "fully_silent"):
+            data = self.samples.copy()
+            if placement == "leading":
+                data[:1600] = [0] * 1600
+            elif placement == "trailing":
+                data[-1600:] = [0] * 1600
+            else:
+                data[:] = [0] * len(data)
+            wav(self.candidate, data)
+            with self.subTest(placement=placement):
+                self.assertFalse(scan_wav(self.candidate)["short_interior_pcm_dropout_risk"])
+        stereo = self.root / "short-dropout-stereo.wav"
+        only_left = [v for i, x in enumerate(self.samples)
+                     for v in (0 if 4050 <= i < 4530 else x, x)]
+        wav(stereo, only_left, channels=2)
+        self.assertFalse(scan_wav(stereo)["short_interior_pcm_dropout_risk"])
+        both_channels = [v for i, x in enumerate(self.samples)
+                         for v in ((0, 0) if 4050 <= i < 4530 else (x, x))]
+        wav(stereo, both_channels, channels=2)
+        self.assertTrue(scan_wav(stereo)["short_interior_pcm_dropout_risk"])
+        wav(self.base, self.samples[:4050] + [0] * 480 + self.samples[4530:])
+        wav(self.candidate, self.samples)
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("short_interior_pcm_dropout_inspect",
+                      report["baseline_warnings"])
+        self.assertNotIn("short_interior_pcm_dropout_inspect",
+                         report["candidates"][0]["warnings"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
