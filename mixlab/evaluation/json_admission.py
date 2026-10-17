@@ -123,8 +123,26 @@ def load_bounded_json(path):
         return value
 
     try:
-        return json.loads(decoded, object_pairs_hook=unique_pairs,
-                          parse_constant=refuse_nonfinite,
-                          parse_float=finite_float)
+        result = json.loads(decoded, object_pairs_hook=unique_pairs,
+                            parse_constant=refuse_nonfinite,
+                            parse_float=finite_float)
     except RecursionError:
         raise ValueError("Evaluation JSON nesting limit exceeded") from None
+
+    # JSON escapes can decode to unpaired UTF-16 surrogates even when the
+    # source bytes were valid UTF-8. Such strings cannot be safely emitted
+    # as UTF-8 in the operator/reviewer handoff. Check keys AND values.
+    # Iterative traversal stays bounded by our 4 MiB / depth-64 admission.
+    pending = [result]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if any(0xD800 <= ord(character) <= 0xDFFF for character in item):
+                raise ValueError("Invalid evaluation JSON Unicode scalar")
+        elif isinstance(item, dict):
+            for key, value in item.items():
+                pending.append(key)
+                pending.append(value)
+        elif isinstance(item, list):
+            pending.extend(item)
+    return result
