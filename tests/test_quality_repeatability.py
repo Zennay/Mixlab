@@ -764,6 +764,31 @@ class RepeatabilityTests(unittest.TestCase):
             "repeatable_pcm"
         ])
 
+    def test_real_relative_dotdot_paths_remain_admissible(self):
+        # Directory descriptors must preserve real '..' traversal while
+        # refusing symlinked components preceding '..'.
+        relative_a = Path(os.path.relpath(self.a, Path.cwd()))
+        relative_b = Path(os.path.relpath(self.b, Path.cwd()))
+        self.assertIn("..", relative_a.parts)
+        self.assertTrue(
+            verify_repeatability(relative_a, relative_b)["repeatable_pcm"]
+        )
+
+    def test_deep_paths_and_oversized_names_are_rejected_before_any_open(self):
+        # Adversarial paths cannot use hundreds of directory FDs or rely on
+        # uncontrolled kernel name/path limits for resource admission.
+        impossible_depth = Path("/") / Path(*([".."] * 80)) / "hidden.wav"
+        oversized_name = self.root / ("secret" * 800)
+        for bad in (impossible_depth, oversized_name):
+            with self.subTest(kind=len(os.fspath(bad))), patch(
+                "mixlab.quality.repeatability.os.open",
+                side_effect=AssertionError("opened file before path length guard"),
+            ):
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(bad, self.a)
+
     def test_no_fd_leaks_when_refusing_ancestor_symlinks(self):
         # Keep bounded admission cheap under repeated invalid paths.
         if not Path("/proc/self/fd").is_dir():
