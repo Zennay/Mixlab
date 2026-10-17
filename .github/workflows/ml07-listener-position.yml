@@ -1,0 +1,56 @@
+name: MixLab ML-07 private listener side position QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/listener_position.py"
+      - "tests/test_quality_listener_position.py"
+      - "docs/quality-listener-position.md"
+      - ".github/workflows/ml07-listener-position.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml07-vote-side-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  listener-position:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Blind A/B response pattern (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Immutable triggering SHA, no persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact source revision
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install pinned Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile and execute actual PCM + genuine aggregate regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/listener_position.py tests/test_quality_listener_position.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_listener_position.py' -v
