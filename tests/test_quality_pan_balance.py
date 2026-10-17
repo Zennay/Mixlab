@@ -476,6 +476,30 @@ class PanBalanceTests(unittest.TestCase):
             self.assertNotIn(str(self.root), str(error.exception))
             self.assertNotIn(filename.name, str(error.exception))
 
+    def test_full_eight_million_frame_group_budget_is_actually_scanned(self):
+        # Four real PCM16 stereo files x 2M frames = the exact aggregate
+        # 8M-source-frame limit. Exercise the scanner rather than mock its
+        # shape metadata; the 192 MiB CI address-space cap remains enforced.
+        frames, rate = 2_000_000, 48000
+        wav(self.a, frames=frames, rate=rate)
+        paths = []
+        for index in range(3):
+            candidate = self.root / f"full-budget-candidate-{index + 1}.wav"
+            wav(candidate, frames=frames, rate=rate,
+                left=8000 if index == 0 else 4000,
+                right=2000 if index == 0 else 4000)
+            paths.append(candidate)
+        report = pan_balance.inspect_batch(self.a, paths)
+        self.assertEqual(report["candidate_count"], 3)
+        self.assertEqual(report["total_source_frames"], 8_000_000)
+        self.assertEqual(report["format"], {
+            "sample_rate": rate, "frames": frames, "channels": 2,
+        })
+        self.assertTrue(report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+        for entry in report["candidates"][1:]:
+            self.assertFalse(entry["metrics"]["stereo_pan_confound_review"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
