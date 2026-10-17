@@ -790,6 +790,44 @@ class PrivateFdGuardTests(unittest.TestCase):
         self.assertNotIn(str(self.root), proc.stderr)
         self.assertNotIn("SECRET", proc.stderr)
 
+    def test_descriptor_cleanup_under_repeated_rejected_and_successful_groups(self):
+        # A long-running local QA worker cannot afford leaked descriptors
+        # when private candidates are corrupt, missing or fail admission.
+        if not Path("/proc/self/fd").is_dir():
+            self.skipTest("Linux /proc/self/fd required for FD leak contract")
+        candidate = self.root / "candidate.wav"
+        make_wav(candidate)
+        corrupt = self.root / "secret-invalid.wav"
+        corrupt.write_bytes(b"this is not a WAV" * 4)
+        start = len(os.listdir("/proc/self/fd"))
+        for _ in range(48):
+            self.assertTrue(validate_private_ab_group(
+                [self.source, candidate]
+            )["pcm16_payloads_complete"])
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                validate_private_ab_group([self.source, corrupt])
+            with self.assertRaisesRegex(ValueError, "details withheld"):
+                validate_private_ab_group([self.source, self.source])
+        self.assertEqual(start, len(os.listdir("/proc/self/fd")))
+
+    def test_mutated_riff_header_does_not_escape_redacted_contract(self):
+        # Deterministic, low-cost malformed-container corpus. Benign header
+        # changes may remain admissible; every rejection must sanitize paths.
+        original = self.source.read_bytes()
+        for offset in range(44):
+            with self.subTest(byte_offset=offset):
+                altered = bytearray(original)
+                altered[offset] ^= 0xff
+                self.source.write_bytes(altered)
+                try:
+                    validate_private_pcm16(self.source)
+                except ValueError as error:
+                    self.assertEqual(
+                        "Private WAV admission rejected (details withheld)", str(error)
+                    )
+        self.source.write_bytes(original)
+        self.assertTrue(validate_private_pcm16(self.source)["pcm16_payload_complete"])
+
     def test_outputs_no_private_path_or_audio_and_no_writes(self):
         original = self.source.read_bytes()
         with admitted_pcm16(self.source) as reader:
