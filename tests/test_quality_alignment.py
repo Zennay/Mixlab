@@ -384,6 +384,60 @@ class EnvelopeAlignmentTests(unittest.TestCase):
                 with patch("mixlab.quality.alignment.READ_BLOCK_FRAMES", chunk):
                     self.assertEqual(ref, compare_envelopes(self.base, [self.other]))
 
+    def test_single_stereo_channel_80ms_offset_detected(self):
+        # Pooled RMS contains both on-time and delayed transients, but the
+        # isolated private channel envelopes identify the asymmetric shift.
+        mono = pattern()
+        displaced = mono[-640:] + mono[:-640]
+        make_wav(self.base, [v for x in mono for v in (x, x)], channels=2)
+        make_wav(self.other, [v for x, y in zip(displaced, mono)
+                              for v in (x, y)], channels=2)
+        row = self.row()
+        self.assertIs(row["stereo_differential_timing_shift_risk"], True)
+        self.assertIn("stereo_differential_microtiming_shift_inspect",
+                      row["warnings"])
+        result = json.dumps(compare_envelopes(self.base, [self.other]))
+        self.assertNotIn(str(self.folder.name), result)
+        self.assertNotIn("left", result.lower())
+        self.assertNotIn("right", result.lower())
+
+    def test_single_channel_shift_symmetric_right_vs_left(self):
+        mono = pattern()
+        displaced = mono[-640:] + mono[:-640]
+        make_wav(self.base, [v for x in mono for v in (x, x)], channels=2)
+        make_wav(self.other, [v for x, y in zip(mono, displaced)
+                              for v in (x, y)], channels=2)
+        self.assertIs(self.row()["stereo_differential_timing_shift_risk"], True)
+        make_wav(self.base, [v for x, y in zip(mono, displaced)
+                             for v in (x, y)], channels=2)
+        make_wav(self.other, [v for x in mono for v in (x, x)], channels=2)
+        self.assertIs(self.row()["stereo_differential_timing_shift_risk"], True)
+
+    def test_stereo_both_channels_on_time_is_confidently_clean(self):
+        mono = pattern()
+        make_wav(self.base, [v for x in mono for v in (x, x)], channels=2)
+        make_wav(self.other, [v for x in mono
+                              for v in (round(x * .8), round(x * .7))], channels=2)
+        row = self.row()
+        self.assertIs(row["stereo_differential_timing_shift_risk"], False)
+        self.assertNotIn("stereo_differential_microtiming_shift_inspect",
+                         row["warnings"])
+
+    def test_whole_stereo_pair_shift_not_falsely_asymmetric(self):
+        mono = pattern()
+        displaced = mono[-640:] + mono[:-640]
+        make_wav(self.base, [v for x in mono for v in (x, x)], channels=2)
+        make_wav(self.other, [v for x in displaced for v in (x, x)], channels=2)
+        row = self.row()
+        self.assertIs(row["temporal_envelope_shift_risk"], True)
+        self.assertIsNot(row["stereo_differential_timing_shift_risk"], True)
+
+    def test_mono_has_no_stereo_channel_timing_claim(self):
+        row = self.row()
+        self.assertIsNone(row["stereo_differential_timing_shift_risk"])
+        self.assertNotIn("stereo_differential_microtiming_shift_inspect",
+                         row["warnings"])
+
     def test_stereo_region_drift_detected_after_a_clean_opening(self):
         samples = regional_pattern()
         stereo = [sample for x in samples for sample in (x, round(x * 0.5))]
