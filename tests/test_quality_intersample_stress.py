@@ -67,5 +67,36 @@ class IntersampleResourceTests(unittest.TestCase):
             self.assertLess(rss, 192 * 1024)
             print(f"ML07 worst-case 8x adaptive stereo: elapsed={elapsed:.2f}s, RSS_KiB={rss}")
 
+    def test_four_member_max_group_is_memory_bounded_and_complete(self):
+        # Fully exercise the published maximum group budget (8M source
+        # frames), not only the existing 4M-frame A/B pair proof.
+        with tempfile.TemporaryDirectory() as private_dir:
+            paths = [Path(private_dir) / ("private-variant-%d.wav" % n) for n in range(4)]
+            raw = b"\0" * (4096 * 2 * 2)
+            for path in paths:
+                with wave.open(str(path), "wb") as wav:
+                    wav.setnchannels(2)
+                    wav.setsampwidth(2)
+                    wav.setframerate(48000)
+                    for _ in range(MAX_FRAMES_PER_SOURCE // 4096):
+                        wav.writeframesraw(raw)
+                    wav.writeframesraw(raw[:(MAX_FRAMES_PER_SOURCE % 4096) * 4])
+            sizes_before = [path.stat().st_size for path in paths]
+            started = time.monotonic()
+            report = compare_intersample(paths[0], paths[1:])
+            elapsed = time.monotonic() - started
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            self.assertEqual(2_000_000, report["frames_per_source"])
+            self.assertEqual(3, len(report["candidates"]))
+            self.assertEqual(
+                ["candidate-1", "candidate-2", "candidate-3"],
+                [row["candidate_id"] for row in report["candidates"]],
+            )
+            self.assertFalse(report["baseline"]["technical_review_required"])
+            self.assertTrue(all(not row["technical_review_required"] for row in report["candidates"]))
+            self.assertEqual(sizes_before, [path.stat().st_size for path in paths])
+            self.assertLess(rss, 192 * 1024, "RSS budget 192 MiB")
+            print(f"ML07 full 8M-frame four-source group: elapsed={elapsed:.2f}s, RSS_KiB={rss}")
+
 if __name__ == "__main__":
     unittest.main()
