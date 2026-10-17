@@ -22,18 +22,22 @@ HIGH_PASS_HZ = 2500
 DEFAULT_THRESHOLD_DB = 6.0
 MIN_RESOLVABLE_RATIO = 1e-4
 READ_FRAMES = 4096
+MAX_CANDIDATES = 8
+MAX_AGGREGATE_FRAMES = 8_000_000
 
 
 def _source_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def scan_spectral_proxy(path: str | Path) -> dict:
+def scan_spectral_proxy(path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES) -> dict:
     """Stream a bounded regular PCM16 WAV over one file descriptor.
 
     First-order filters are intentionally cheap, deterministic proxies.
     Their energy ratios overlap; do not interpret them as isolated EQ bands.
     """
+    if not isinstance(max_frames, int) or isinstance(max_frames, bool) or not 1 <= max_frames <= MAX_SOURCE_FRAMES:
+        raise ValueError("max_frames must be within the configured source budget")
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(os.fspath(path), flags)
     try:
@@ -45,7 +49,7 @@ def scan_spectral_proxy(path: str | Path) -> dict:
                 channels, width, rate, frames, compression, _ = source.getparams()
                 if compression != "NONE" or width != 2 or channels not in (1, 2):
                     raise ValueError("Only uncompressed PCM16 mono/stereo WAV is supported")
-                if not 8000 <= rate <= 96000 or not 1 <= frames <= MAX_SOURCE_FRAMES:
+                if not 8000 <= rate <= 96000 or not 1 <= frames <= max_frames:
                     raise ValueError("Unsupported WAV rate or frame count")
                 low_alpha = -math.expm1(-2 * math.pi * LOW_PASS_HZ / rate)
                 high_alpha = -math.expm1(-2 * math.pi * HIGH_PASS_HZ / rate)
@@ -102,13 +106,18 @@ def compare_spectral_balance(
         not math.isfinite(threshold_db) or not 0 < threshold_db <= 24
     ):
         raise ValueError("threshold_db must be finite and in (0,24]")
-    if not candidates or len(candidates) > 60:
-        raise ValueError("Expected 1..60 candidates")
+    if not candidates or len(candidates) > MAX_CANDIDATES:
+        raise ValueError("Expected 1..8 candidates")
 
     reference = scan_spectral_proxy(baseline)
     rows = []
+    scanned_frames = reference["frames"]
     for index, candidate in enumerate(candidates, 1):
-        current = scan_spectral_proxy(candidate)
+        remaining_budget = MAX_AGGREGATE_FRAMES - scanned_frames
+        if remaining_budget <= 0:
+            raise ValueError("Aggregate frame budget exceeded")
+        current = scan_spectral_proxy(candidate, max_frames=min(MAX_SOURCE_FRAMES, remaining_budget))
+        scanned_frames += current["frames"]
         if any(current[key] != reference[key] for key in ("sample_rate", "channels", "frames")):
             raise ValueError("A/B sample rate, channel count or frame count differs")
         warnings = []
