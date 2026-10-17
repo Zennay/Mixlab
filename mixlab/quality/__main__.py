@@ -2,6 +2,8 @@
 
 import argparse
 import json
+from pathlib import Path
+import stat
 from . import compare_wavs
 
 
@@ -17,6 +19,19 @@ class _PrivateArgumentParser(argparse.ArgumentParser):
         self.exit(2, "quality preflight: invalid command-line arguments (details withheld)\n")
 
 
+def _reject_nonregular_inputs(paths):
+    """Fail closed on pipes/devices/directories and already-linked paths.
+
+    wave.open() can block forever on a FIFO: its st_size often reads as zero,
+    so the normal 32 MiB file-size preflight does not prevent a hang. This
+    early lstat check protects cooperative CLI use, not adversarial path-swap
+    races (the library's independent bounded-read contract remains separate).
+    """
+    for path in paths:
+        if not stat.S_ISREG(Path(path).lstat().st_mode):
+            raise ValueError("Only regular local WAV input files are supported")
+
+
 def main():
     parser = _PrivateArgumentParser(description="Offline technical preflight; NOT a musical-quality ranking")
     parser.add_argument("baseline", help="Local PCM16 WAV baseline")
@@ -29,6 +44,7 @@ def main():
     )
     args = parser.parse_args()
     try:
+        _reject_nonregular_inputs((args.baseline, *args.candidates))
         report = compare_wavs(args.baseline, args.candidates,
                               window_ms=args.window_ms,
                               loudness_tolerance_db=args.loudness_tolerance_db)
