@@ -332,6 +332,49 @@ class RepeatabilityTests(unittest.TestCase):
                     verify_repeatability(one, two, receipts=pair)
         self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
 
+    def test_legacy_and_streaming_dsp_pcm_parity_for_shared_m1_recipes(self):
+        # Migration guard: current bounded streaming DSP should preserve the
+        # old in-memory renderer's PCM on the mutually supported PCM16 cases.
+        # Each renderer's engine_version differs, so this checks *PCM only*:
+        # the optional private receipt mode correctly refuses version drift.
+        import math
+        from mixlab.engine import render as legacy_render
+        from mixlab.dsp import render as streaming_render
+        from mixlab.models import FAMILY_NAMES, Recipe
+
+        for rate in (8000, 16000):
+            with self.subTest(rate=rate):
+                size = rate
+                signal_a = self.root / f"parity-a-{rate}.wav"
+                signal_b = self.root / f"parity-b-{rate}.wav"
+                make_wav(signal_a, [
+                    value for i in range(size)
+                    for value in (int(2300 * math.sin(i * .093)),
+                                  int(3100 * math.cos(i * .071)))
+                ], channels=2, rate=rate)
+                make_wav(signal_b, [
+                    value for i in range(size)
+                    for value in (int(2200 * math.cos(i * .081)),
+                                  int(2600 * math.sin(i * .119)))
+                ], channels=2, rate=rate)
+                for family in FAMILY_NAMES:
+                    with self.subTest(family=family):
+                        recipe = Recipe(family=family, beats=1, gain_db=-3,
+                                        a_start=0.05, b_start=0.10)
+                        first = self.root / f"legacy-{rate}-{family}.wav"
+                        second = self.root / f"stream-{rate}-{family}.wav"
+                        legacy = legacy_render(signal_a, signal_b, first, recipe)
+                        streamed = streaming_render(signal_a, signal_b, second,
+                                                    recipe, block_frames=31)
+                        self.assertEqual(legacy["frames"], streamed["frames"])
+                        self.assertEqual(legacy["output_sha256"],
+                                         streamed["output_sha256"])
+                        self.assertTrue(verify_repeatability(first, second)["repeatable_pcm"])
+                        with self.assertRaises(RepeatabilityError):
+                            verify_repeatability(
+                                first, second, receipts=(legacy, streamed)
+                            )  # Different engine versions are not one receipt contract.
+
     def test_full_two_million_frame_stereo_capacity_and_last_frame_integrity(self):
         # Exercise the actual 2M-frame/source ceiling, not only 8k-frame
         # fixtures. Generate two separate regular WAVs with bounded writes.
