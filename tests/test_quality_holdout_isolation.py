@@ -174,6 +174,49 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
         self.dev["pairs"][0]["a"] = "eva-00"
         self.rejected()
 
+
+    def _replace_wav_with_embedded(self, destination, source):
+        """Create a distinct longer WAV containing a copied 0.5s PCM crop."""
+        with wave.open(str(source), "rb") as reader:
+            shared = reader.readframes(reader.getnframes())
+        with wave.open(str(destination), "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(8000)
+            writer.writeframes(b"\\x00" * 8000 + shared + b"\\x00" * 8000)
+
+    def test_full_hashes_and_recording_ids_miss_embedded_same_recording_crop(self):
+        # Both ordinary file and decoded-whole-file digests differ; no shared
+        # recording_id is claimed. The new streaming anchor screen must catch
+        # the exact audible section embedded after a long silent prefix.
+        original = self.eva_dir / "clip-00.wav"
+        target = self.dev_dir / "clip-00.wav"
+        self._replace_wav_with_embedded(target, original)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.assertNotEqual(self.dev["tracks"][0]["sha256"],
+                            self.eva["tracks"][0]["sha256"])
+        self.assertNotEqual(self.dev["tracks"][0]["recording_id"],
+                            self.eva["tracks"][0]["recording_id"])
+        self.rejected()
+
+    def test_frozen_evaluation_cannot_use_an_embedded_copy_as_new_track(self):
+        target = self.eva_dir / "clip-01.wav"
+        self._replace_wav_with_embedded(target, self.eva_dir / "clip-00.wav")
+        self.eva["tracks"][1]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.study["pairs"][0]["b_sha256"] = self.eva["tracks"][1]["sha256"]
+        self.freeze()
+        self.rejected()
+
+    def test_shared_silence_alone_does_not_trigger_a_musical_leak(self):
+        target = self.dev_dir / "clip-00.wav"
+        with wave.open(str(target), "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(8000)
+            output.writeframes(b"\\x00" * 16000)
+        self.dev["tracks"][0]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+        self.assertTrue(self.audit()["development_evaluation_source_identity_separate"])
+
     def test_reused_recording_inside_evaluation_is_not_independent(self):
         self.eva["tracks"][1]["recording_id"] = self.eva["tracks"][0]["recording_id"]
         self.rejected()
