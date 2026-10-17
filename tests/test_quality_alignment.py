@@ -156,5 +156,45 @@ class EnvelopeAlignmentTests(unittest.TestCase):
         self.assertNotIn(secret, proc.stdout + proc.stderr)
 
 
+
+    def test_stereo_opposite_direction_shift_detected(self):
+        stereo = [sample for x in self.samples for sample in (x, round(x * 0.7))]
+        offset = 80 * 8 * 2  # 80 ms * 8 kHz, interleaved stereo samples
+        make_wav(self.base, stereo, channels=2)
+        make_wav(self.other, stereo[offset:] + stereo[:offset], channels=2)
+        self.assertIs(self.row()["temporal_envelope_shift_risk"], True)
+
+    def test_multiple_candidates_do_not_share_alignment_state(self):
+        shift = 640
+        make_wav(self.other, self.samples[-shift:] + self.samples[:-shift])
+        rows = compare_envelopes(self.base, [self.other, self.base])["candidates"]
+        self.assertEqual(["candidate-01", "candidate-02"], [r["id"] for r in rows])
+        self.assertIs(rows[0]["temporal_envelope_shift_risk"], True)
+        self.assertIs(rows[1]["temporal_envelope_shift_risk"], False)
+
+    def test_rate_mismatch_rejected_before_comparison(self):
+        make_wav(self.other, self.samples, rate=16000)
+        with self.assertRaises(ValueError):
+            self.row()
+
+    def test_truncated_riff_audio_does_not_silently_pass(self):
+        data = self.other.read_bytes()
+        self.other.write_bytes(data[:-32])
+        with self.assertRaises(ValueError):
+            self.row()
+
+    def test_aggregate_budget_rejects_a_later_candidate(self):
+        from unittest.mock import patch
+        # Simulate a smaller global limit without creating large media.
+        with patch("mixlab.quality.alignment.MAX_TOTAL_FRAMES", 2 * len(self.samples)):
+            with self.assertRaises(ValueError):
+                compare_envelopes(self.base, [self.other, self.other])
+
+    def test_invalid_baseline_symlink_rejected(self):
+        alias = Path(self.folder.name) / "alias.wav"
+        alias.symlink_to(self.base)
+        with self.assertRaises(OSError):
+            compare_envelopes(alias, [self.other])
+
 if __name__ == "__main__":
     unittest.main()
