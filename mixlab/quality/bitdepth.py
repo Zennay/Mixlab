@@ -201,12 +201,13 @@ def inspect_ab(baseline, candidates):
         for index, candidate in enumerate(results[1:], start=1):
             per_channel = []
             for base, current in zip(results[0], candidate):
-                if not base["evidenced"] or not current["evidenced"]:
+                if (not base["evidenced"] or not current["evidenced"]
+                        or 20 * base["dominant_low_byte_samples"] > 7 * base["eligible_samples"]):
+                    # An already low-diversity baseline cannot establish
+                    # a clean candidate: no trustworthy reference exists.
                     per_channel.append(None)
                 else:
-                    per_channel.append(
-                        _coarse_loss(base, current)
-                    )
+                    per_channel.append(_coarse_loss(base, current))
             status = True if True in per_channel else (
                 False if all(v is False for v in per_channel) else None
             )
