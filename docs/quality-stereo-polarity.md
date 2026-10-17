@@ -209,3 +209,33 @@ final check or adversarial same-metadata rewrites remain outside scope.
 No shareable manifests, answer keys, source paths or fingerprints are added
 to result JSON. The added metadata checks read no PCM, leaving the
 4096-frame streaming input guarantee unchanged.
+
+## Whole-comparison workload admission (CPU-first, no media exposure)
+
+The original per-WAV hard caps of 32 MiB and 2,000,000 frames do not by
+themselves bound the cost of a call accepting up to **20** candidates:
+with a large baseline, up to 21 individual PCM scans could still monopolize
+a constrained worker. A cheap, path-private admission now runs **before the
+first PCM decode**, across baseline **plus every candidate**:
+
+- Total on-disk source size must be at most **128 MiB**, assessed from the
+  initial `lstat` identity snapshot; each individual 32-MiB ceiling stays.
+- Combined declared PCM frame count must be at most **8,000,000 frames**,
+  verified by bounded RIFF header parsing on the same safe regular-file
+  descriptor wrapper. This checks only WAV metadata, not audio PCM samples.
+- After all header probes the complete input identity set must still equal
+  its pre-admission snapshot; the existing per-file and end-of-comparison
+  identity checks remain active.
+- Repeated pathname operands still cost per occurrence: decoding twenty
+  copies requires twenty frame budgets, not one. Twenty *small* candidates
+  remain supported, while a batch of many maximum-length files must be
+  split into smaller requests. These limits gate **technical QA workload**,
+  not a claim that a musical transition is poor.
+- The new `tests/test_batch_budget.py` suite checks early byte/frame
+  rejection without PCM scanning, exact inclusive budget acceptance,
+  twenty small candidates, repeated inputs, changing inputs during the
+  header admission and path-redacted budget failure messages.
+
+This is best-effort filesystem admission, not a promise of precise CPU time,
+thread isolation, atomic snapshots or listener preference. No private source
+names, bytes, fingerprints or RIFF metadata are added to anonymous reports.
