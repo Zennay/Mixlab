@@ -158,6 +158,7 @@ class RepeatabilityTests(unittest.TestCase):
             with self.subTest(family=family):
                 reference = None
                 reference_digest = None
+                reference_receipt = None
                 for block in blocks:
                     destination = self.root / f"stream-{family}-{block}.wav"
                     receipt = streaming_render(source_a, source_b, destination,
@@ -169,11 +170,17 @@ class RepeatabilityTests(unittest.TestCase):
                     if reference is None:
                         reference = destination
                         reference_digest = receipt["output_sha256"]
+                        reference_receipt = receipt
                     else:
+                        verdict = verify_repeatability(
+                            reference, destination,
+                            receipts=(reference_receipt, receipt),
+                        )
                         self.assertTrue(
-                            verify_repeatability(reference, destination)["repeatable_pcm"],
+                            verdict["repeatable_pcm"],
                             f"Streaming renderer block-size regression: {family}/{block}",
                         )
+                        self.assertTrue(verdict["render_receipts_consistent"])
                         self.assertEqual(reference_digest, receipt["output_sha256"])
 
     def test_streaming_dsp_separate_process_same_recipe_is_identical(self):
