@@ -7,10 +7,11 @@ required. This checks identity collisions, not source rights or DJ quality.
 from __future__ import annotations
 
 import argparse
+from array import array
 import json
 from pathlib import Path
 
-from ..ingest import validate_library
+from ..ingest import pcm_blocks, validate_library
 from .study_binding import _verified_study
 
 _ERROR = "Invalid, inconsistent or overlapping private holdout sources"
@@ -55,6 +56,84 @@ def _snapshot(manifest, tracks):
             row["frame_count"],
         ) for tid, row in tracks.items())),
     )
+
+
+
+def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
+    """Bounded exact audible excerpt reuse screen, no fingerprints disclosed.
+
+    Four shared seconds are not required: a 200-ms sufficiently audible run
+    that is byte-for-byte reused is enough to hold for provenance review.
+    This catches clips cut from a longer source with different container and
+    full-file PCM digests, *provided their sample rate/channels still match*.
+
+    At most 3 anchored windows per source and at most 50 total sources;
+    all source reads are streamed through the validated single-FD PCM reader.
+    This is NOT a robust musical fingerprint or a remaster detector.
+    """
+    by_format = {}
+    groups = (("dev", development), ("eval", evaluation))
+    for group, tracks in groups:
+        for tid, track in tracks.items():
+            rate = track["sample_rate"]
+            channels = track["channels"]
+            frames = track["frame_count"]
+            width = min(4096, rate // 5, frames)
+            if width < 256:
+                _refuse()
+            starts = {0, (frames - width) // 2, frames - width}
+            for start in sorted(starts):
+                pcm = b"".join(samples.tobytes() for samples in pcm_blocks(
+                    track["resolved_path"], start=start, frames=width))
+                if len(pcm) != width * channels * 2:
+                    _refuse()
+                values = array("h")
+                values.frombytes(pcm)
+                # Ignore silent / near-silent reusable spacers, avoiding
+                # false leakage from common zeros, padding and quiet tails.
+                if sum(abs(sample) for sample in values) < 512 * len(values):
+                    continue
+                by_format.setdefault((rate, channels), []).append(
+                    (group, tid, pcm))
+
+    for group, tracks in groups:
+        for tid, track in tracks.items():
+            channels = track["channels"]
+            format_key = (track["sample_rate"], channels)
+            candidates = [
+                anchor for anchor_group, anchor_id, anchor
+                in by_format.get(format_key, ())
+                if not (group == anchor_group and tid == anchor_id)
+                and not (group == "dev" and anchor_group == "dev")
+            ]
+            if not candidates:
+                continue
+            frame_bytes = channels * 2
+            largest = max(map(len, candidates))
+            # Keep a frame-aligned overlap so any anchored substring
+            # spanning two streaming chunks remains searchable.
+            retained = ((largest - 1 + frame_bytes - 1)
+                        // frame_bytes) * frame_bytes
+            overlap = b""
+            collision = False
+            for samples in pcm_blocks(track["resolved_path"], block_frames=32768):
+                chunk = overlap + samples.tobytes()
+                if not collision:
+                    for anchor in candidates:
+                        offset = chunk.find(anchor)
+                        while offset >= 0:
+                            if offset % frame_bytes == 0:
+                                collision = True
+                                break
+                            offset = chunk.find(anchor, offset + 1)
+                        if collision:
+                            break
+                overlap = chunk[-retained:] if retained else b""
+            # Let pcm_blocks reach EOF, including its final no-mutation
+            # source-identity check, before treating a match as evidence.
+            if collision:
+                return True
+    return False
 
 
 def audit_holdout_isolation(development_manifest, evaluation_manifest,
@@ -118,7 +197,7 @@ def audit_holdout_isolation(development_manifest, evaluation_manifest,
         if len(set(eval_pcm)) != len(eval_pcm):
             _refuse()
 
-        # Observable mutations between the first PCM reads and final verdict
+        # Same-song subclips can evade both full-file hashes and an inaccurate\n        # recording_id. Require a bounded actual PCM substring preflight.\n        if _exact_pcm_excerpt_overlap(dev, eva):\n            _refuse()\n\n        # Observable mutations between the first PCM reads and final verdict
         # invalidate the result; the gate is not an immutable storage system.
         again_dev = validate_library(dev_path)
         again_eva = validate_library(eva_path)
