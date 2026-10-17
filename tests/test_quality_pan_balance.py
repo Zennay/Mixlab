@@ -222,6 +222,24 @@ class PanBalanceTests(unittest.TestCase):
                 self.assertIsNone(report["stereo_pan_confound_review"])
                 self.assertEqual(report["evidence_status"], "insufficient_active_audio")
 
+    def test_all_20_modulo_50ms_sample_rate_boundaries_stay_exact(self):
+        # A 50ms boundary can round to a different whole frame for every
+        # residue class of sample_rate modulo 20. Verify all 20 classes:
+        # a full 1s should pass, one sample short must always abstain.
+        for rate in range(8000, 8020):
+            with self.subTest(rate=rate, length="full"):
+                wav(self.a, frames=rate, rate=rate)
+                wav(self.b, frames=rate, rate=rate)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertEqual(report["longest_continuous_active_ms"], 1000)
+                self.assertFalse(report["stereo_pan_confound_review"])
+            with self.subTest(rate=rate, length="one-short"):
+                wav(self.a, frames=rate - 1, rate=rate)
+                wav(self.b, frames=rate - 1, rate=rate)
+                report = pan_balance.inspect(self.a, self.b)
+                self.assertEqual(report["evidence_status"], "insufficient_active_audio")
+                self.assertIsNone(report["stereo_pan_confound_review"])
+
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
             with self.subTest(key=key):
