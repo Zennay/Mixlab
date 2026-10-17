@@ -66,6 +66,33 @@ A channel is evidenced only when it has >=4096 eligible samples and **at least
 four consecutive full 100ms windows** with >=50% high-level frame occupancy.
 Sparse 20ms-in-100ms pulses and separated islands of three active windows
 must abstain even if global sample totals or global RMS look conclusive.
+
+## Shared-time A/B comparability — disjoint-audio RED→GREEN
+
+Per-file activity does not establish that the baseline and candidate contain
+**concurrent** audible information. Previously, a one-second recording at the
+start of a two-second WAV compared with an identical one-second recording only
+at the end returned **false (clean)**. A coarse candidate that played only
+after the baseline ended returned **true (damage)**; neither verdict had any
+shared audible evidence. [Dedicated reproduction #39039908264](https://github.com/Zennay/Mixlab/actions/runs/39039908264) confirmed the
+failure on both Python 3.13 and 3.14.
+
+The scanner now requires, separately for every mono/stereo channel, **four
+consecutive FULL 100ms intervals where both baseline and candidate have at
+least 50% active high-level frames**, and at least 4096 high-level samples
+from **each** source across that same contiguous interval. If this temporal
+intersection does not exist, the result is `null` (not `false` or `true`).
+The per-file PCM sample-rate/channel/total-frame admission still applies first.
+
+Any persistent region-specific degradation is evaluated on these **matched**
+windows. Whole-file residue statistics can only decide quality if baseline
+and candidate also have identical sets of sustained active windows: unmatched
+active tails may bias global histograms and so force abstention. The strict CLI
+exits 3 when even one later batch candidate or one stereo channel is
+inconclusive. Window indices and activity locations remain private in internal
+scan state and are **never** included in CLI/JSON output. This is a conservative
+comparison gate, not a general-purpose time-alignment estimator and not
+evidence of musical preference.
 At a checked precision (2, 4 or 8 lower bits), a candidate-specific warning
 requires baseline dominant-residue fraction <=0.35 and candidate dominant
 fraction >=0.995; exact integer counts, not display rounding, decide the
