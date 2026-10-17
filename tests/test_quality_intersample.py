@@ -103,6 +103,64 @@ class IntersampleTests(unittest.TestCase):
         self.assertEqual(0, proc.returncode)
         self.assertIn("baseline", json.loads(proc.stdout))
 
+    def test_cli_positive_risk_gate(self):
+        pcm = [0, 0, 0, 30000, 30000, 0, 0, 0] * 100
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        result = self.cli(str(self.a), str(self.b), "--fail-on-risk")
+        self.assertEqual(2, result.returncode)
+        self.assertTrue(json.loads(result.stdout)["candidates"][0]["intersample_over_risk"])
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+
+    def test_short_clip_explicitly_not_evaluable(self):
+        write_wav(self.a, [0] * 4)
+        write_wav(self.b, [0] * 4)
+        report = compare_intersample(self.a, [self.b])
+        self.assertFalse(report["baseline"]["screen_evaluable"])
+        self.assertFalse(report["candidates"][0]["screen_evaluable"])
+
+    def test_multicandidate_identity_and_count_bounds(self):
+        third = self.root / "secret_third.wav"
+        samples = [0] * 800
+        for item in (self.a, self.b, third):
+            write_wav(item, samples)
+        report = compare_intersample(self.a, [self.b, third])
+        self.assertEqual(["candidate-1", "candidate-2"],
+                         [c["candidate_id"] for c in report["candidates"]])
+        self.assertEqual(800, report["frames_per_source"])
+        self.assertNotIn("secret_third", json.dumps(report))
+        with self.assertRaises(AudioInputError):
+            compare_intersample(self.a, [])
+        with self.assertRaises(AudioInputError):
+            compare_intersample(self.a, [self.b] * 4)
+
+    def test_mismatched_rate_or_channels_rejected(self):
+        write_wav(self.a, [0] * 800)
+        write_wav(self.b, [0] * 800, rate=11025)
+        with self.assertRaises(AudioInputError):
+            compare_intersample(self.a, [self.b])
+        write_wav(self.b, [0] * 1600, channels=2)
+        with self.assertRaises(AudioInputError):
+            compare_intersample(self.a, [self.b])
+
+    def test_unsupported_sample_width_rejected(self):
+        write_wav(self.a, [0] * 800)
+        with wave.open(str(self.b), "wb") as dst:
+            dst.setnchannels(1)
+            dst.setsampwidth(1)
+            dst.setframerate(8000)
+            dst.writeframes(bytes([128]) * 800)
+        with self.assertRaises(AudioInputError):
+            compare_intersample(self.a, [self.b])
+
+    def test_streaming_interpolation_across_4096_boundary(self):
+        pcm = [0] * 4110
+        pcm[4092:4100] = [0, 0, 0, 30000, 30000, 0, 0, 0]
+        write_wav(self.a, [0] * len(pcm))
+        write_wav(self.b, pcm)
+        row = compare_intersample(self.a, [self.b])["candidates"][0]
+        self.assertTrue(row["intersample_over_risk"])
+
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "mixlab.quality.intersample", *args],
                               capture_output=True, text=True, timeout=20)
