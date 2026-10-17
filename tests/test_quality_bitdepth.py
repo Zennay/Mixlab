@@ -199,6 +199,40 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(6, result["baseline_channel_metrics"][0]["active_windows"])
         self.assertIsNone(result["candidates"][0]["coarse_resolution_review"])
 
+    def test_exact_full_hundred_ms_windows_at_fractional_rates(self):
+        # All rational boundaries remain exact without dropping a frame.
+        # One frame short of a full fourth window may NOT be conclusive.
+        for rate in (11025, 16001, 44101, 96000):
+            nframes = (4 * rate + 9) // 10
+            with self.subTest(rate=rate, mode="exact"):
+                full = samples(frames=nframes, channels=1)
+                wav(self.base, full, rate=rate, channels=1)
+                wav(self.good, full, rate=rate, channels=1)
+                report = bitdepth.inspect_ab(self.base, [self.good])
+                self.assertEqual(4, report["baseline_channel_metrics"][0]["longest_sustained_window_run"])
+                self.assertIs(report["candidates"][0]["coarse_resolution_review"], False)
+            with self.subTest(rate=rate, mode="one_frame_short"):
+                short = samples(frames=nframes - 1, channels=1)
+                wav(self.base, short, rate=rate, channels=1)
+                wav(self.good, short, rate=rate, channels=1)
+                report = bitdepth.inspect_ab(self.base, [self.good])
+                self.assertLess(report["baseline_channel_metrics"][0]["longest_sustained_window_run"], 4)
+                self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
+
+    def test_exact_half_occupancy_gate_vs_one_frame_less(self):
+        # At 96kHz a 100ms bucket contains exactly 9600 frames. Half may
+        # qualify technically; 4799/9600 must abstain in all four buckets.
+        for active in (4800, 4799):
+            with self.subTest(active=active):
+                segment = samples(frames=active, channels=1)
+                coarse_segment = samples(frames=active, collapse=True, channels=1)
+                quiet = b"\\x00\\x00" * (9600 - active)
+                wav(self.base, (segment + quiet) * 4, rate=96000, channels=1)
+                wav(self.bad, (coarse_segment + quiet) * 4, rate=96000, channels=1)
+                report = bitdepth.inspect_ab(self.base, [self.bad])
+                expected = True if active == 4800 else None
+                self.assertIs(report["candidates"][0]["coarse_resolution_review"], expected)
+
     def test_mismatched_duration_rate_channels_and_width_rejected(self):
         for kwargs in ({"rate": 8001}, {"channels": 1}, {"width": 1}):
             with self.subTest(kwargs=kwargs):
