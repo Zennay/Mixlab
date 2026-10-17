@@ -164,7 +164,7 @@ def build_studio(manifest_path, destination, pair_id=None):
                            "channels": result["channels"],
                            "peak": result["post_pcm_metrics"]["peak"],
                            "rms": result["post_pcm_metrics"]["rms"],
-                           "clipped_samples": result["post_pcm_metrics"]["clipped"]}
+                           "clipped_samples": result["post_pcm_metrics"]["clipping_samples"]}
                 # No full source paths or original track titles reach HTML/receipt.
                 entries.append(records)
                 all_records.append(records)
