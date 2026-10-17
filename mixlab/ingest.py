@@ -382,7 +382,7 @@ def validate_library(manifest_path):
             # Python releases differ in whether cyclic symlinks raise
             # RuntimeError or OSError. Neither may leak a private path or
             # escape this untrusted manifest admission boundary.
-            raise ValueError("Source path could not be resolved safely") from exc
+            raise ValueError("Source path could not be resolved safely") from None
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")
         sha = track.get("sha256")
