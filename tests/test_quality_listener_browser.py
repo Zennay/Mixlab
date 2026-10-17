@@ -320,7 +320,11 @@ class BrowserFormTests(unittest.TestCase):
 
         # Only the temporary test copy is instrumented. Real private proof,
         # renderer evidence, answer-key and the canonical page remain intact.
-        instrumented = review / "index-browser-smoke.html"
+        browser_copy = self.root / "temporary-browser-review-copy"
+        browser_copy.mkdir()
+        for source in review.glob("trial-*.wav"):
+            shutil.copyfile(source, browser_copy / source.name)
+        instrumented = browser_copy / "index.html"
         text = canonical_page.read_text(encoding="utf-8")
         instrumented.write_text(
             text.replace("</html>",
@@ -343,12 +347,12 @@ class BrowserFormTests(unittest.TestCase):
         except subprocess.TimeoutExpired:
             self.fail("bounded engine-to-browser smoke timed out")
         self.assertEqual(done.returncode, 0, "Chromium could not open offline render pack")
-        marker = re.search(r'<html\\b[^>]*data-mixlab-integrated-check="([^"]+)"',
+        marker = re.search(r'<html\b[^>]*data-mixlab-integrated-check="([^"]+)"',
                            done.stdout, flags=re.IGNORECASE)
         self.assertIsNotNone(marker, "browser synthetic pipeline marker missing")
         self.assertEqual(marker.group(1), "pass", "render/browser study pipeline failed")
         token = re.search(
-            r'<html\\b[^>]*data-mixlab-integrated-ratings="([^"]+)"',
+            r'<html\b[^>]*data-mixlab-integrated-ratings="([^"]+)"',
             done.stdout, flags=re.IGNORECASE
         )
         self.assertIsNotNone(token, "browser synthetic ratings receipt missing")
