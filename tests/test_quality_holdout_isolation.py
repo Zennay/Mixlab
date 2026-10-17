@@ -367,6 +367,39 @@ class PrivateHoldoutIsolationTests(unittest.TestCase):
             writer.setframerate(8000)
             writer.writeframes(b"\x00" * (prefix_frames * 2) + shared + b"\x00" * 8000)
 
+
+    def test_quarter_position_hidden_crop_is_detected_in_two_long_recordings(self):
+        # The reused 0.5s audible clip is not at start/middle/end of EITHER
+        # 5-second source. With only three anchors this passed incorrectly.
+        with wave.open(str(self.eva_dir / "clip-00.wav"), "rb") as reader:
+            shared = reader.readframes(reader.getnframes())
+        frames = 40000
+        for fraction in (0.25, 0.75):
+            with self.subTest(source_quartile=fraction):
+                beginning = round((frames - 1600) * fraction) - 100
+                for directory, records, slope in (
+                        (self.dev_dir, self.dev, 37),
+                        (self.eva_dir, self.eva, 83)):
+                    target = directory / "clip-00.wav"
+                    carrier = b"".join(struct.pack(
+                        "<h", ((frame * slope + (23 if records is self.dev else 71))
+                               % 16000) - 8000
+                    ) for frame in range(frames))
+                    body = (carrier[:beginning * 2] + shared
+                            + carrier[(beginning + 4000) * 2:])
+                    with wave.open(str(target), "wb") as output:
+                        output.setnchannels(1)
+                        output.setsampwidth(2)
+                        output.setframerate(8000)
+                        output.writeframes(body)
+                    records["tracks"][0]["sha256"] = hashlib.sha256(
+                        target.read_bytes()).hexdigest()
+                self.study["pairs"][0]["a_sha256"] = self.eva["tracks"][0]["sha256"]
+                self.freeze()
+                self.assertNotEqual(self.dev["tracks"][0]["sha256"],
+                                    self.eva["tracks"][0]["sha256"])
+                self.rejected()
+
     def test_full_hashes_and_recording_ids_miss_embedded_same_recording_crop(self):
         # Both ordinary file and decoded-whole-file digests differ; no shared
         # recording_id is claimed. The new streaming anchor screen must catch
