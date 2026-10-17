@@ -95,6 +95,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                 raise ValueError("Frames must be between 1 and 2,000,000")
             window_frames = max(1, round(rate * window_ms / 1000))
             pcm_digest = hashlib.sha256()
+            # Stereo L/R exchange changes the interleaved PCM digest even
+            # when the audible material is otherwise an exact reuse.
+            swapped_stereo_digest = hashlib.sha256() if channels == 2 else None
             peak_sample = 0
             near_full_scale = 0
             total_samples = 0
@@ -186,6 +189,14 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
                 values.frombytes(raw)
                 if sys.byteorder != "little":
                     values.byteswap()
+                if swapped_stereo_digest is not None:
+                    # One extra bounded per-read buffer, not a whole WAV copy.
+                    swapped = array("h", values)
+                    swapped[::2] = values[1::2]
+                    swapped[1::2] = values[::2]
+                    if sys.byteorder != "little":
+                        swapped.byteswap()
+                    swapped_stereo_digest.update(swapped.tobytes())
                 for i in range(0, len(values), channels):
                     frame = values[i:i + channels]
                     if first_frame is None:
@@ -339,7 +350,9 @@ def _scan_wav_with_digest(path: str | Path, *, window_ms: int = 100) -> tuple[di
         "mono_fold_down_risky_window_fraction": risky_window_fraction,
         "mono_fold_down_cancellation_risk": phase_risk_windows > 0,
     }
-    return metrics, pcm_digest.digest(), window_peaks
+    return metrics, pcm_digest.digest(), window_peaks, (
+        swapped_stereo_digest.digest() if swapped_stereo_digest is not None else None
+    )
 
 
 def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
@@ -348,7 +361,7 @@ def scan_wav(path: str | Path, *, window_ms: int = 100) -> dict:
     Returned diagnostics exclude fingerprints, music samples and private paths.
     Window RMS and silence are signal diagnostics, not a LUFS or DJ score.
     """
-    metrics, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
+    metrics, _, _, _ = _scan_wav_with_digest(path, window_ms=window_ms)
     return metrics
 
 
@@ -418,14 +431,16 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         not math.isfinite(loudness_tolerance_db) or not 0.1 <= loudness_tolerance_db <= 12
     ):
         raise ValueError("loudness_tolerance_db must be finite between 0.1 and 12")
-    base, base_digest, base_windows = _scan_wav_with_digest(baseline, window_ms=window_ms)
+    base, base_digest, base_windows, _ = _scan_wav_with_digest(baseline, window_ms=window_ms)
     baseline_warnings = _signal_warnings(base)
     # Digests stay in memory, never in output. PCM-only means a changed WAV
     # container header cannot conceal an identical listening waveform.
     seen_candidate_digests = {}
     results = []
     for index, candidate in enumerate(candidates, start=1):
-        metrics, candidate_digest, candidate_windows = _scan_wav_with_digest(candidate, window_ms=window_ms)
+        metrics, candidate_digest, candidate_windows, swapped_digest = _scan_wav_with_digest(
+            candidate, window_ms=window_ms
+        )
         for field in ("sample_rate", "channels", "frames"):
             if metrics[field] != base[field]:
                 raise ValueError(f"Candidate {index} {field} differs from baseline")
@@ -460,6 +475,16 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         )
         if prominent_onset_mismatch_risk:
             warnings.append("ab_prominent_audio_onset_mismatch_inspect")
+        stereo_swapped_pcm_of = None
+        # Only distinguish *different* stereo PCM. Mono and dual-mono
+        # equality already have a separate exact duplicate warning.
+        if swapped_digest is not None and candidate_digest != base_digest:
+            if swapped_digest == base_digest:
+                stereo_swapped_pcm_of = "baseline"
+            elif swapped_digest in seen_candidate_digests:
+                stereo_swapped_pcm_of = seen_candidate_digests[swapped_digest]
+            if stereo_swapped_pcm_of is not None:
+                warnings.append("stereo_channel_swapped_pcm_inspect_for_reused_audio")
         duplicate_pcm_of = None
         if candidate_digest == base_digest:
             duplicate_pcm_of = "baseline"
@@ -484,6 +509,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "prominent_onset_mismatch_risk": prominent_onset_mismatch_risk,
             "warnings": warnings,
             "duplicate_pcm_of": duplicate_pcm_of,
+            "stereo_swapped_pcm_of": stereo_swapped_pcm_of,
             "requires_human_review": True,
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
         })

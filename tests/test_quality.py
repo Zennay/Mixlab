@@ -1415,6 +1415,61 @@ class QualityTests(unittest.TestCase):
         self.assertTrue(row["prominent_onset_mismatch_risk"])
         self.assertIn("ab_prominent_audio_onset_mismatch_inspect", row["warnings"])
 
+    def test_exact_stereo_channel_swap_flags_reused_blind_ab_audio(self):
+        # Left/right interchange does not preserve interleaved PCM hashes,
+        # but it is still exactly the same source content with altered pan.
+        base = self.root / "stereo-reference.wav"
+        reversed_audio = self.root / "stereo-swapped.wav"
+        stereo = [sample for i in range(8000)
+                  for sample in (int(5000 * math.sin(i * .13)),
+                                 int(4500 * math.sin(i * .19)))]
+        swapped = [sample for i in range(0, len(stereo), 2)
+                   for sample in (stereo[i + 1], stereo[i])]
+        wav(base, stereo, channels=2)
+        wav(reversed_audio, swapped, channels=2)
+        original = [p.read_bytes() for p in (base, reversed_audio)]
+        row = compare_wavs(base, [reversed_audio])["candidates"][0]
+        self.assertIsNone(row["duplicate_pcm_of"])
+        self.assertEqual("baseline", row["stereo_swapped_pcm_of"])
+        self.assertIn("stereo_channel_swapped_pcm_inspect_for_reused_audio",
+                      row["warnings"])
+        self.assertNotIn(str(self.root), json.dumps(row))
+        self.assertNotIn("sha256", json.dumps(row))
+        self.assertEqual(original, [p.read_bytes() for p in (base, reversed_audio)])
+        # Ordinary audio must not be flagged as an exact swapped copy.
+        wav(reversed_audio, [int(x * .8) for x in swapped], channels=2)
+        row = compare_wavs(base, [reversed_audio])["candidates"][0]
+        self.assertIsNone(row["stereo_swapped_pcm_of"])
+        self.assertNotIn("stereo_channel_swapped_pcm_inspect_for_reused_audio",
+                         row["warnings"])
+
+    def test_stereo_swapped_duplicate_candidates_and_mono_guards(self):
+        # Distinct candidate 1 vs baseline; candidate 2 swaps only L and R
+        # from candidate 1, across the 4096-frame input read boundary.
+        base = self.root / "base-stereo.wav"
+        first = self.root / "first-stereo.wav"
+        second = self.root / "second-stereo.wav"
+        wav(base, [v for x in self.samples for v in (x, x)], channels=2)
+        stereo = [v for i in range(8000)
+                  for v in (int(4400 * math.sin(i * .08)),
+                            int(6300 * math.cos(i * .17)))]
+        swapped = [v for i in range(0, len(stereo), 2)
+                   for v in (stereo[i + 1], stereo[i])]
+        wav(first, stereo, channels=2)
+        wav(second, swapped, channels=2)
+        rows = compare_wavs(base, [first, second])["candidates"]
+        self.assertIsNone(rows[0]["stereo_swapped_pcm_of"])
+        self.assertEqual("candidate-01", rows[1]["stereo_swapped_pcm_of"])
+        self.assertIsNone(rows[1]["duplicate_pcm_of"])
+        # Two identical dual-mono channels are already exact PCM repeats.
+        wav(first, [v for x in self.samples for v in (x, x)], channels=2)
+        row = compare_wavs(base, [first])["candidates"][0]
+        self.assertEqual("baseline", row["duplicate_pcm_of"])
+        self.assertIsNone(row["stereo_swapped_pcm_of"])
+        # Mono has no meaningful channel-swap operation.
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertIsNone(row["stereo_swapped_pcm_of"])
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
