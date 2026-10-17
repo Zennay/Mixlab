@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "mixlab/evaluation/study.py"
+      - "mixlab/evaluation/study_pack.py"
       - "tests/test_evaluation_study.py"
+      - "tests/test_evaluation_study_pack.py"
       - ".github/workflows/ml05-frozen-study.yml"
   workflow_dispatch:
 
@@ -41,4 +43,4 @@ jobs:
       - name: Compile study module
         run: python3 -m compileall -q mixlab/evaluation tests/test_evaluation_study.py
       - name: Frozen study regressions
-        run: python3 -m unittest -v tests.test_evaluation_study tests.test_evaluation tests.test_evaluation_json_admission
+        run: python3 -m unittest -v tests.test_evaluation_study tests.test_evaluation_study_pack tests.test_evaluation tests.test_evaluation_json_admission
