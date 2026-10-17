@@ -229,6 +229,24 @@ re-renders can evade this *fast* duplicate check. The study remains
 source-rights- and human-independence-UNVERIFIED; a clear technical screen
 is not a statistically or musically validated result.
 
+## CI queue cost and newest-source evidence
+
+The maximum-frame end-to-end regression uses real 96-kHz stereo WAVs and is
+intentionally CPU-intensive. Concurrent changes to *this same PR* can
+otherwise leave obsolete exact-SHA runs consuming GitHub hosted CI while the
+latest commit waits. The workflow concurrency key is scoped to the PR number
+(or to the reference for direct workflow dispatch/push), and superseded
+in-progress runs may be cancelled in favor of the **newest** source revision.
+This does not cancel another MixLab PR's own job group.
+
+All imported-validator, component-test, admission and workflow changes still
+trigger the integrated seven-suite Python 3.13/3.14 quality matrix on PRs and
+on relevant pushes to main. Documentation-only commits do not need to rerun
+the heavyweight audio scanner; the workflow supports a manual dispatch when
+an independent documentation verification is desired. Only the latest
+**completed, successful exact-code-SHA** run is acceptance evidence; a
+cancelled or queued run is not a success or a quality milestone.
+
 ## Gate and ownership
 
 Owns only this newly added module, test suite, workflow and document.
