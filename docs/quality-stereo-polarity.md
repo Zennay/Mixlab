@@ -125,3 +125,23 @@ These are *exact transformed-PCM equality* warnings for possible A/B
 recognition confounds, not proof of perceptual identity or bad mixing;
 intentional phase and stereo manipulations may sound different.
 M1 still needs rights-approved real audio and blind listener evidence.
+
+## Full RIFF traversal after the first audio chunk
+
+The original new private WAV validator initially returned after verifying the
+first `data` chunk. As a result, a file could append another `data` chunk,
+a duplicate `fmt` section or truncated RIFF bytes *inside* the declared RIFF
+without a fail-closed format verdict. Different WAV players may disagree about
+which samples those ambiguous containers represent.
+
+The validator now traverses **every** chunk header through the declared RIFF
+boundary, under the existing 4096-chunk limit; rejects duplicate/misordered
+audio/format chunks, oversized chunk claims and incomplete RIFF trailers;
+and still accepts correctly padded local metadata after playable PCM. Source
+media is never modified and the existing direct CLI error suppression remains.
+
+Two new deterministic regression methods check duplicate `data` and
+`fmt` after audio, malformed 2-byte/truncated RIFF trailers, a corrupted
+post-data chunk-size declaration and a valid odd-length `LIST` payload with
+padding. This has **no effect** on the stricter listener-public WAV policy:
+published packs still cannot contain any RIFF metadata chunks.
