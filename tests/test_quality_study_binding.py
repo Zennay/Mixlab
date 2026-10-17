@@ -71,7 +71,8 @@ class FrozenStudyBindingTests(unittest.TestCase):
                 renders.append({"pair": pair, "study_pair": f"pair-{number}",
                                 "family": f,
                                 "source_hashes": [left, right],
-                                "recipe": {"family": f, "a_bpm": 120.0, "b_bpm": 120.0},
+                                "recipe": {"family": f, "bpm": 120.0, "beats": 4,
+                                           "a_bpm": 120.0, "b_bpm": 120.0},
                                 "output_sha256": hashlib.sha256(wav.read_bytes()).hexdigest()})
 
         document = {"schema_version": 1, "kind": "mixlab-frozen-pair-study",
@@ -135,6 +136,26 @@ class FrozenStudyBindingTests(unittest.TestCase):
         self.assertEqual(len(verify_pack(self.pack)[2]), 5)
         with self.assertRaisesRegex(ValueError, "do not match"):
             self.check()
+
+    def test_forged_effective_render_tempo_mismatch_detected(self):
+        self.edit("private/evidence.json", lambda doc:
+                  doc["renders"][0]["recipe"].__setitem__("bpm", 91.0))
+        # The old pack id covers WAV bytes and answers, but NOT this recipe
+        # claim, so a genuine populated pack can remain internally valid.
+        self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+        with self.assertRaisesRegex(ValueError, "do not match"):
+            self.check()
+
+    def test_forged_render_beats_types_and_range_detected(self):
+        original = (self.private / "evidence.json").read_bytes()
+        for beats in (True, 0, 4.0, 65, "4", None):
+            with self.subTest(beats=beats):
+                (self.private / "evidence.json").write_bytes(original)
+                self.edit("private/evidence.json", lambda doc:
+                          doc["renders"][0]["recipe"].__setitem__("beats", beats))
+                self.assertEqual(len(verify_pack(self.pack)[2]), 5)
+                with self.assertRaisesRegex(ValueError, "do not match"):
+                    self.check()
 
     def test_render_recipe_bpm_forgery_outside_pack_id_is_detected(self):
         self.edit("private/evidence.json",
