@@ -19,6 +19,7 @@ from .project_wizard import (
 )
 from .session import _private_project_dir, make_session
 from .set_composer import create_composer
+from .idea_board import prepare_board
 
 MAX_PLAYLIST_TRACKS = 11
 MAX_SPEC_BYTES = 1024 * 1024
@@ -140,10 +141,12 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
 def build_playlist_studio(music_directory, output_manifest, new_session,
                           *, read=input, write=print, beats=16,
                           timeout_seconds=600, partition="development",
-                          resume=False, manifest_only=False):
+                          resume=False, manifest_only=False, ideas=False):
     """Run the complete local product workflow after explicit human annotation."""
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
+    if manifest_only and ideas:
+        raise ValueError("--ideas needs imported private audio; it cannot run with --manifest-only")
     source, manifest, destination = _check_paths(
         music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
@@ -153,6 +156,12 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
                                  beats=beats, partition=partition)
+    if ideas:
+        with manifest.open("r", encoding="utf-8") as reader:
+            manual_sources = json.load(reader)
+        if not all(isinstance(x, dict) and "first_downbeat_seconds" in x
+                   for x in manual_sources.get("tracks", [])):
+            raise ValueError("--ideas requires a verified first downbeat on every chosen track")
     if manifest_only:
         write("Manifest saved. Render later with the same command and --resume.")
         return {"ready": True, "stage": "manual-playlist-manifest",
@@ -161,11 +170,13 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 "music_preference_proven": False}
     # Existing session admission and hash policies remain authoritative. It
     # also cleans up its own fresh output folder on decoding/render errors.
-    studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
+    studio = make_session(manifest, destination, suggestions=ideas,
+                          timeout_seconds=timeout_seconds)
     normalized = destination / "sources" / "source_manifest.json"
     warnings = []
     editor = None
     composer = None
+    idea_page = None
     # The already rendered private Studio is a complete usable result even
     # if optional HTML entry points cannot be written (e.g. too many samples
     # for the visual waveform page). Never delete that expensive session.
@@ -177,12 +188,20 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         composer = create_composer(destination)
     except (ValueError, OSError, TypeError, KeyError) as exc:
         warnings.append("Optional Set Composer unavailable: " + str(exc))
+    if ideas:
+        try:
+            idea_page = prepare_board(
+                normalized, destination / "cue-suggestions.private.json",
+                destination / "sources" / "transition-ideas.html")
+        except (ValueError, OSError, TypeError, KeyError) as exc:
+            warnings.append("Optional cue idea board unavailable: " + str(exc))
     with manifest.open("r", encoding="utf-8") as reader:
         summary = json.load(reader)
     payload = {"ready": True, "private_source_manifest": str(manifest),
                "session_directory": str(destination), "studio": str(studio),
                "visual_cue_editor": str(editor) if editor else None,
                "set_composer": str(composer) if composer else None,
+               "transition_idea_board": str(idea_page) if idea_page else None,
                "tracks": len(summary["tracks"]), "transition_pairs": len(summary["pairs"]),
                "warnings": warnings, "offline": True,
                "automatic_tempo_matching": False, "music_preference_proven": False}
@@ -205,13 +224,16 @@ def main():
                         help="Record the verified ordered playlist without decoding or rendering")
     parser.add_argument("--resume", action="store_true",
                         help="Render a new private session from an existing unchanged source manifest")
+    parser.add_argument("--ideas", action="store_true",
+                        help="Suggest RMS-based manual-grid cue options and prepare an offline review board")
     args = parser.parse_args()
     try:
         result = build_playlist_studio(
             args.private_music_directory, args.new_source_manifest,
             args.new_session_directory, beats=args.beats, partition=args.partition,
             timeout_seconds=args.timeout_seconds,
-            resume=args.resume, manifest_only=args.manifest_only)
+            resume=args.resume, manifest_only=args.manifest_only,
+            ideas=args.ideas)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
