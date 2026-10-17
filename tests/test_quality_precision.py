@@ -15,14 +15,14 @@ from mixlab.quality.precision import compare_precision, _scan, MAX_BYTES
 
 
 def wav(path: Path, *, channels=1, frames=12000, coarse=(), silence=False,
-        seed=1, rate=48000):
+        seed=1, rate=48000, quiet_channels=()):
     state = seed
     samples = array("h")
     for _ in range(frames):
         for channel in range(channels):
             state = (1103515245 * state + 12345) & 0x7fffffff
             value = ((state >> 8) & 0xffff) - 32768
-            if silence:
+            if silence or channel in quiet_channels:
                 value = 0
             elif channel in coarse:
                 value = (value // 256) * 256
@@ -86,8 +86,20 @@ class PrecisionTest(unittest.TestCase):
 
     def test_one_uninformative_stereo_channel_never_gives_false_clean(self):
         wav(self.a, channels=2)
-        wav(self.b, channels=2, coarse=(0,), silence=True)
+        wav(self.b, channels=2, quiet_channels=(1,))
         self.assertIsNone(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_clear_precision_loss_is_not_hidden_by_uninformative_stereo_channel(self):
+        wav(self.a, channels=2)
+        wav(self.b, channels=2, coarse=(0,), quiet_channels=(1,))
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
+
+    def test_synthetic_full_length_stereo_admission_at_frame_cap(self):
+        # Maximum frame count remains bounded and supported; fixtures are
+        # generated without any third-party copyrighted source material.
+        wav(self.a, channels=2, frames=2_000_000)
+        wav(self.b, channels=2, frames=2_000_000, coarse=(1,))
+        self.assertTrue(compare_precision(self.a, self.b)["candidate_precision_loss_inspect"])
 
     def test_read_chunk_size_does_not_change_detection(self):
         wav(self.a, channels=2)
