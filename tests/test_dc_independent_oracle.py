@@ -16,14 +16,14 @@ import wave
 from mixlab.quality import compare_wavs
 
 
-def store(path, frames):
+def store(path, frames, *, rate=8000):
     data = array("h", (v for frame in frames for v in frame))
     if sys.byteorder != "little":
         data.byteswap()
     with wave.open(str(path), "wb") as dst:
         dst.setnchannels(len(frames[0]))
         dst.setsampwidth(2)
-        dst.setframerate(8000)
+        dst.setframerate(rate)
         dst.writeframes(data.tobytes())
 
 
@@ -98,6 +98,37 @@ class DcWindowIndependentOracleTests(unittest.TestCase):
                         self.assertNotIn(str(self.root), serialized)
                         self.assertNotIn("SECRET_", serialized)
                         self.assertNotIn("dc_window_means", serialized)
+
+    def test_realistic_sample_rates_and_partial_windows(self):
+        # The scanner derives window frame boundaries from the WAV's true
+        # sample rate (not the fixed 8kHz used by other fixtures).
+        for rate, window_ms in ((44100, 20), (44100, 50),
+                                (96000, 20), (96000, 50)):
+            for channels in (1, 2):
+                with self.subTest(rate=rate, ms=window_ms, channels=channels):
+                    length = 9003
+                    window_frames = round(rate * window_ms / 1000)
+                    frames = [tuple((4300 if i % 2 else -4300)
+                                    for _ in range(channels))
+                              for i in range(length)]
+                    changed = [tuple(v + (1080 if i < 3 * window_frames
+                                          and side == channels - 1 else 0)
+                                     for side, v in enumerate(frame))
+                               for i, frame in enumerate(frames)]
+                    store(self.base, frames, rate=rate)
+                    store(self.other, changed, rate=rate)
+                    row = compare_wavs(
+                        self.base, [self.other], window_ms=window_ms
+                    )["candidates"][0]
+                    fraction, risk = dc_oracle(
+                        frames, changed, window_frames=window_frames,
+                        channels=channels
+                    )
+                    self.assertEqual(fraction, row["ab_dc_window_mismatch_fraction"])
+                    self.assertEqual(risk, row["ab_dc_window_mismatch_risk"])
+                    self.assertFalse(row["ab_dc_offset_mismatch_risk"])
+                    self.assertEqual((length + window_frames - 1) // window_frames,
+                                     row["metrics"]["window_count"])
 
     def test_global_dc_oracle_with_opposing_stereo_channel_offsets(self):
         frames = [(4500 if i % 2 else -4500, 4000 if i % 2 else -4000)
