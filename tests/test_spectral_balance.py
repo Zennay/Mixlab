@@ -98,6 +98,23 @@ def make_stereo_polarity_segments(path, signs, *, gain=8000, rate=48000):
         out.writeframes(samples.tobytes())
 
 
+def make_stereo_window_dropout_wav(path, masks, *, gain=8000, match_rms=False):
+    """0: both channels, 1: left absent, 2: right absent; eight aligned spans."""
+    samples = array("h")
+    for span, mask in enumerate(masks):
+        magnitude = gain * (math.sqrt(2) if match_rms and mask else 1)
+        for offset in range(6000):
+            sample = int(magnitude * math.sin(2 * math.pi * 600 * (span * 6000 + offset) / 48000))
+            samples.extend((0 if mask == 1 else sample, 0 if mask == 2 else sample))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(48000)
+        output.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -465,6 +482,60 @@ class SpectralBalanceTests(unittest.TestCase):
         row = self.report()["candidates"][0]
         self.assertNotIn("stereo_mono_fold_ratio_delta_db", row)
         self.assertFalse(any("mono_fold" in w for w in row["warnings"]))
+
+    def test_alternating_stereo_dropout_evades_global_rms_and_mono_fold(self):
+        make_stereo_window_dropout_wav(self.base, [0] * 8)
+        make_stereo_window_dropout_wav(self.other, [1, 1, 1, 1, 2, 2, 2, 2], match_rms=True)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(0.0, row["rms_delta_db_vs_baseline"], delta=0.01)
+        self.assertNotIn("rms_level_mismatch_inspect_not_lufs", row["warnings"])
+        self.assertNotIn("stereo_channel_near_silence_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        for name in ("low", "mid", "high"):
+            self.assertAlmostEqual(0, row[name + "_proxy_delta_db"], delta=0.1)
+        self.assertTrue(row["stereo_temporal_channel_dropout_risk"])
+        self.assertIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+        public = json.dumps(self.report())
+        self.assertNotIn("_channel_spans", public)
+        self.assertNotIn(str(self.dir), public)
+
+    def test_one_short_stereo_channel_dropout_is_not_claimed_persistent(self):
+        make_stereo_window_dropout_wav(self.base, [0] * 8)
+        make_stereo_window_dropout_wav(self.other, [1] + [0] * 7)
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_channel_dropout_risk"])
+        self.assertNotIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+
+    def test_two_stereo_channel_dropouts_are_flagged_even_in_baseline(self):
+        make_stereo_window_dropout_wav(self.base, [2, 2] + [0] * 6)
+        make_stereo_window_dropout_wav(self.other, [0] * 8)
+        row = self.report()["candidates"][0]
+        self.assertTrue(row["stereo_temporal_channel_dropout_risk"])
+        self.assertIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+        reverse = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        self.assertTrue(reverse["stereo_temporal_channel_dropout_risk"])
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_shared_stereo_channel_dropouts_still_warn(self):
+        make_stereo_window_dropout_wav(self.base, [1, 1] + [0] * 6)
+        make_stereo_window_dropout_wav(self.other, [1, 1] + [0] * 6)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.0, row["rms_delta_db_vs_baseline"])
+        self.assertIn("stereo_temporal_channel_dropout_inspect", row["warnings"])
+
+    def test_private_stereo_dropout_is_independent_of_read_chunk_size(self):
+        make_stereo_window_dropout_wav(self.base, [0] * 8)
+        make_stereo_window_dropout_wav(self.other, [1, 2, 1, 2, 0, 0, 0, 0])
+        reference = self.report()
+        for block in (1, 257, 4096, 8191):
+            with self.subTest(block=block), patch.object(spectral, "READ_FRAMES", block):
+                self.assertEqual(reference, self.report())
+
+    def test_mono_files_never_claim_stereo_dropout_evidence(self):
+        self.assertNotIn("stereo_temporal_channel_dropout_risk", self.report()["candidates"][0])
 
     def test_channel_swapped_stereo_can_hide_all_global_spectral_changes(self):
         make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
