@@ -31,6 +31,17 @@ delayed or heavily edited/uninformative material may return `null`; a boolean
 The output **never** includes regional positions, lag directions or
 correlation statistics, and an inspect warning does not imply tempo drift.
 
+**Stereo timing asymmetry:** a new private envelope is also maintained for
+each left/right PCM16 channel. One strongly shifted channel with the other
+confidently zero-lag aligned triggers
+`stereo_differential_timing_shift_risk: true` and a generic inspection warning.
+Both confidently zero-lag channels yield `false`; a simultaneous shift of
+both channels, mono input, missing channel evidence or otherwise ambiguous
+result is `null`, not a claim of stereo correctness. Channel names, waveform
+samples, exact timing, positions and correlations remain internal. This
+supplements (not replaces) stereo spectral/polarity review and is not calibrated
+interchannel phase delay measurement.
+
 This is deliberately NOT beat, downbeat, phrase, transient, pitch, LUFS or
 DJ-quality analysis. Tempo mismatch and creative edits are not resolved by
 the checker; inspect/measure them with authorized music and blinded humans.
@@ -46,7 +57,7 @@ the checker; inspect/measure them with authorized music and blinded humans.
   Compare source descriptor metadata before/after and final pathname identity;
   file replacement checks are best effort, not a general adversarial FS guarantee.
 - Read up to 4,096 PCM frames per step. No PCM or paths are written, uploaded,
-  logged, hashed into public output or returned; only bounded private envelopes
+  logged, hashed into public output or returned; only bounded private whole-clip and stereo-channel envelopes
   remain in process memory. Output is opaque sequential candidate ids,
   a `true` / `false` / `null` risk signal, generic warnings and
   `human_listening_required: true`.
