@@ -179,15 +179,57 @@ def main(argv=None):
             self.exit(2, "MixLab M1 gate: invalid arguments\n")
 
     parser = Parser(description="Private M1 technical gate bundle; never music approval")
-    parser.add_argument("study")
-    parser.add_argument("pack")
-    parser.add_argument("ratings", nargs="+")
-    parser.add_argument("--expected-study-id", required=True)
+    parser.add_argument("study", nargs="?")
+    parser.add_argument("pack", nargs="?")
+    parser.add_argument("ratings", nargs="*")
+    parser.add_argument("--expected-study-id")
+    parser.add_argument("--private-input-stdin", action="store_true",
+                        help="Read the private request from stdin instead of process arguments")
     args = parser.parse_args(argv)
     try:
-        report = inspect_real_m1_gate_bundle(
-            args.study, args.pack, args.expected_study_id, args.ratings)
-    except (OSError, ValueError, TypeError, RecursionError):
+        if args.private_input_stdin:
+            # No mixed invocation. Paths and reviewer IDs may be sensitive:
+            # do not expose them through argv/process listings.
+            if (args.study is not None or args.pack is not None or args.ratings
+                    or args.expected_study_id is not None):
+                _fail()
+            import sys
+            raw = sys.stdin.buffer.read(32769)
+            if not 1 <= len(raw) <= 32768:
+                _fail()
+
+            def unique_pairs(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        _fail()
+                    result[key] = value
+                return result
+
+            request = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=unique_pairs,
+                parse_constant=lambda _: _fail(),
+            )
+            if (type(request) is not dict
+                    or set(request) != {"study", "pack", "ratings", "expected_study_id"}
+                    or type(request["study"]) is not str
+                    or type(request["pack"]) is not str
+                    or type(request["expected_study_id"]) is not str
+                    or type(request["ratings"]) is not list
+                    or not 3 <= len(request["ratings"]) <= 5
+                    or any(type(item) is not str for item in request["ratings"])):
+                _fail()
+            study, pack = request["study"], request["pack"]
+            ratings, pinned = request["ratings"], request["expected_study_id"]
+        else:
+            if (args.study is None or args.pack is None
+                    or args.expected_study_id is None or not args.ratings):
+                _fail()
+            study, pack = args.study, args.pack
+            ratings, pinned = args.ratings, args.expected_study_id
+        report = inspect_real_m1_gate_bundle(study, pack, pinned, ratings)
+    except (OSError, ValueError, TypeError, RecursionError, UnicodeError):
         parser.exit(2, "MixLab M1 gate: invalid or changed private inputs\n")
     print(json.dumps(report, sort_keys=True, allow_nan=False))
     return 3 if report["technical_screen"] == "REVIEW_REQUIRED" else 0
