@@ -51,6 +51,20 @@ class PureM1ReportContract(unittest.TestCase):
         self.assertFalse(report["independent_human_listeners_authenticated"])
         self.assertNotIn("candidate_preference_fraction", report)
 
+    def test_cross_pair_duplicate_output_flag_requires_methodological_hold(self):
+        clean = compose(*reports())
+        self.assertFalse(clean["cross_pair_duplicate_render_review"])
+        risk = compose_m1_gate_reports(
+            *reports(), rating_count=3, cross_pair_duplicate_render=True)
+        self.assertEqual(risk["technical_screen"], "REVIEW_REQUIRED")
+        self.assertTrue(risk["cross_pair_duplicate_render_review"])
+        self.assertIn("identical-render-across-frozen-pairs", risk["review_reasons"])
+        self.assertIs(risk["milestone_pass"], False)
+        for forged in (None, 1, 0, "false", [], {}):
+            with self.subTest(forged=repr(forged)), self.assertRaises(M1GateBundleError):
+                compose_m1_gate_reports(
+                    *reports(), rating_count=3, cross_pair_duplicate_render=forged)
+
     def test_each_component_hold_forces_aggregate_review(self):
         choices = ((1, "side_assignment_review_required"),
                    (2, "aggregate_position_dominance_review"),
@@ -583,6 +597,75 @@ class RealPCMEndToEndTests(unittest.TestCase):
                 self.bundle()
         self.assertNotIn(str(self.fixture.root), str(error.exception))
         self.assertNotIn("canary", str(error.exception))
+
+    def _duplicate_real_wavs_across_frozen_pairs(self, *, same_pair_only=False):
+        """Resign a genuine checksum-consistent pack containing reused audio.
+
+        No source hash, renderer code, or independent validator is mocked.
+        Underlying official verify_pack and study binding still accept this,
+        so only the bundle's independent cross-pair gate can flag it.
+        """
+        import hashlib
+        from mixlab.evaluation import verify_pack
+        from mixlab.quality.study_binding import verify_study_pack_binding
+        from test_quality_study_binding import _write_json
+
+        receipt_path = self.fixture.pack / "receipt.json"
+        evidence_path = self.fixture.pack / "private" / "evidence.json"
+        answers_path = self.fixture.pack / "private" / "answer-key.json"
+        answer_key = json.loads(answers_path.read_text())
+        evidence = json.loads(evidence_path.read_text())
+        receipt = json.loads(receipt_path.read_text())
+        src = answer_key[0]
+        dst = src if same_pair_only else answer_key[1]
+        # Duplicate only the baseline across independent pairs, while
+        # preserving a legal candidate vs baseline difference per trial.
+        src_label = "A" if src["A"] == "baseline" else "B"
+        dst_label = "A" if dst["A"] == "baseline" else "B"
+        source = self.fixture.pack / "review" / f"{src['trial']}-{src_label}.wav"
+        target = self.fixture.pack / "review" / f"{dst['trial']}-{dst_label}.wav"
+        if not same_pair_only:
+            target.write_bytes(source.read_bytes())
+            render = next(row for row in evidence["renders"]
+                          if row["pair"] == dst["pair"] and row["family"] == "baseline")
+            render["output_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+
+        identity = {
+            "manifest": evidence["manifest_sha256"], "answers": answer_key,
+            "outputs": [row["output_sha256"] for row in evidence["renders"]],
+        }
+        pack_id = hashlib.sha256(
+            json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
+        evidence["pack_id"] = receipt["pack_id"] = pack_id
+        _write_json(receipt_path, receipt)
+        _write_json(evidence_path, evidence)
+        self.fixture.receipt = receipt
+        self.assertEqual(len(verify_pack(self.fixture.pack)[2]), 5)
+        self.assertTrue(verify_study_pack_binding(
+            self.fixture.study, self.fixture.pack, self.fixture.pinned)[
+            "study_pack_metadata_consistent_with_pinned_id"])
+
+    def test_repeated_render_across_real_pairs_requires_review(self):
+        # The original checksummed pack validates: duplicated audio is not
+        # treated as corrupt WAV; its misleading independence requires HOLD.
+        self._duplicate_real_wavs_across_frozen_pairs()
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        report = self.bundle()
+        self.assertEqual(report["technical_screen"], "REVIEW_REQUIRED")
+        self.assertTrue(report["cross_pair_duplicate_render_review"])
+        self.assertIn("identical-render-across-frozen-pairs", report["review_reasons"])
+        self.assertEqual(report["frozen_pair_count"], 5)
+        self.assertIs(report["milestone_pass"], False)
+        self.assertNotIn(str(self.fixture.root), json.dumps(report))
+        self.assertNotIn(self.fixture.pinned, json.dumps(report))
+
+    def test_unchanged_distinct_real_wavs_do_not_invent_cross_pair_reuse(self):
+        self._duplicate_real_wavs_across_frozen_pairs(same_pair_only=True)
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        report = self.bundle()
+        self.assertFalse(report["cross_pair_duplicate_render_review"])
+        self.assertNotIn("identical-render-across-frozen-pairs",
+                         report["review_reasons"])
 
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
