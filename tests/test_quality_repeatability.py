@@ -343,6 +343,36 @@ class RepeatabilityTests(unittest.TestCase):
             one, two, receipts=(ra, rb)
         )["render_receipts_consistent"])
 
+    def test_two_matching_but_physically_inconsistent_receipts_fail_closed(self):
+        # Two separately stored files and two internally matching statements
+        # do not prove a valid render contract. Validate frame/tempo,
+        # duration, gain and cue offsets against the *actual* output shape.
+        import copy
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        updates = (
+            lambda r: r.__setitem__("duration_seconds", r["duration_seconds"] + 1),
+            lambda r: r.__setitem__("gain_linear", r["gain_linear"] * .8),
+            lambda r: r["start_frames"].__setitem__("a", 1),
+            lambda r: r["start_frames"].__setitem__("b", 1),
+            lambda r: r["recipe"].__setitem__("bpm", 130),
+            lambda r: r["recipe"].__setitem__("beats", 2),
+            lambda r: r["recipe"].__setitem__("gain_db", -12),
+            lambda r: r["recipe"].__setitem__("a_start", .15),
+            lambda r: r["recipe"].__setitem__("b_start", .25),
+        )
+        for index, mutate in enumerate(updates):
+            with self.subTest(case=index):
+                a, b = copy.deepcopy(ra), copy.deepcopy(rb)
+                mutate(a)
+                mutate(b)
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=(a, b))
+        self.assertTrue(verify_repeatability(one, two, receipts=(ra, rb))[
+            "render_receipts_consistent"
+        ])
+
     def test_receipt_malformed_and_oversized_metadata_is_rejected_privately(self):
         one, two, ra, rb = self._render_fixture_with_receipts()
         invalid = (
