@@ -51,6 +51,9 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
             elif mode == "onset-100ms-late":
                 # Timing confound under canonical 75ms prominent-onset limit.
                 left = right = (0 if i < rate // 10 else v)
+            elif mode == "tail-210ms-quiet":
+                # Canonical >=200ms A/B trailing-silence confound.
+                left = right = (0 if i >= frames - round(rate * .21) else v)
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -243,6 +246,32 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(screened["candidates"][0]["status"],
                          "ab_timing_or_dynamics_confound")
         self.assertFalse(screened["milestone_pass"])
+
+    def test_audible_trailing_edge_mismatch_is_not_clean_mono_ab(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="tail-210ms-quiet")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(canonical["edge_silence_mismatch_risk"])
+        self.assertFalse(canonical["prominent_onset_mismatch_risk"])
+        checked = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(checked["candidates"][0]["status"],
+                         "ab_timing_or_dynamics_confound")
+        self.assertNotIn(str(self.root), json.dumps(checked))
+
+    def test_blind_ab_batch_holds_only_confounded_candidate(self):
+        _wave(self.base, mode="normal")
+        healthy = self.root / "independent.wav"
+        confounded = self.root / "shifted.wav"
+        _wave(healthy, mode="alternate")
+        _wave(confounded, mode="window-level-shift")
+        result = inspect(str(self.base), [str(healthy), str(confounded)])
+        self.assertEqual([x["status"] for x in result["candidates"]], [
+            "no_new_sustained_mono_cancellation_detected",
+            "ab_timing_or_dynamics_confound",
+        ])
+        self.assertTrue(result["human_preference_test_required"])
+        self.assertFalse(result["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
