@@ -545,6 +545,45 @@ class RealPCMEndToEndTests(unittest.TestCase):
             self.bundle()
         self.assertNotIn(str(self.fixture.root), str(error.exception))
 
+    def test_pcm_mutated_after_five_gates_is_refused_by_final_binding(self):
+        from mixlab.quality import m1_gate_bundle as module
+        original = module.inspect_real_reviewer_influence
+        target = self.fixture.pack / "review" / "trial-001-A.wav"
+        before = target.read_bytes()
+
+        def tamper(*args):
+            report = original(*args)
+            altered = bytearray(before)
+            altered[-2] ^= 0x40
+            target.write_bytes(altered)
+            return report
+
+        with mock.patch.object(module, "inspect_real_reviewer_influence",
+                               side_effect=tamper):
+            with self.assertRaises(M1GateBundleError) as error:
+                self.bundle()
+        self.assertNotIn(str(self.fixture.root), str(error.exception))
+        self.assertNotEqual(target.read_bytes(), before)
+
+    def test_private_render_evidence_mutated_during_run_is_refused(self):
+        from mixlab.quality import m1_gate_bundle as module
+        original = module.inspect_real_reviewer_influence
+        target = self.fixture.pack / "private" / "evidence.json"
+
+        def tamper(*args):
+            report = original(*args)
+            evidence = json.loads(target.read_text())
+            evidence["private_invalid_canary"] = "changed after verification"
+            target.write_text(json.dumps(evidence))
+            return report
+
+        with mock.patch.object(module, "inspect_real_reviewer_influence",
+                               side_effect=tamper):
+            with self.assertRaises(M1GateBundleError) as error:
+                self.bundle()
+        self.assertNotIn(str(self.fixture.root), str(error.exception))
+        self.assertNotIn("canary", str(error.exception))
+
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
         original = module.inspect_real_pilot
