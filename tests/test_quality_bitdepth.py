@@ -116,6 +116,36 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(1, report["baseline_channel_metrics"][0]["active_windows"])
         self.assertIsNone(report["candidates"][0]["coarse_resolution_review"])
 
+    def test_many_sparse_pulses_cannot_fake_continuous_active_evidence(self):
+        # Each of 12 windows has 20ms of high-level audio followed by 80ms
+        # silence at 96kHz. More than 4096 samples across >=4 buckets must
+        # NOT produce a definitive false/true for either A/B variant.
+        active = 1920
+        frames_per_window = 9600
+        zero = b"\\x00\\x00" * (frames_per_window - active)
+        sparse = (samples(frames=active, channels=1) + zero) * 12
+        sparse_coarse = (samples(frames=active, channels=1, collapse=True) + zero) * 12
+        wav(self.base, sparse, rate=96000, channels=1)
+        wav(self.good, sparse, rate=96000, channels=1)
+        wav(self.bad, sparse_coarse, rate=96000, channels=1)
+        result = bitdepth.inspect_ab(self.base, [self.good, self.bad])
+        self.assertGreater(result["baseline_channel_metrics"][0]["eligible_samples"], 4096)
+        self.assertEqual([None, None], [
+            row["coarse_resolution_review"] for row in result["candidates"]
+        ])
+
+    def test_noncontiguous_dense_windows_cannot_claim_sustained_evidence(self):
+        # Two isolated three-window islands meet the previous global
+        # >=4-window requirement but never form four continuous windows.
+        active = samples(frames=9600, channels=1) * 3
+        gap = b"\\x00\\x00" * (9600 * 4)
+        excerpt = active + gap + active
+        wav(self.base, excerpt, rate=96000, channels=1)
+        wav(self.good, excerpt, rate=96000, channels=1)
+        result = bitdepth.inspect_ab(self.base, [self.good])
+        self.assertEqual(6, result["baseline_channel_metrics"][0]["active_windows"])
+        self.assertIsNone(result["candidates"][0]["coarse_resolution_review"])
+
     def test_mismatched_duration_rate_channels_and_width_rejected(self):
         for kwargs in ({"rate": 8001}, {"channels": 1}, {"width": 1}):
             with self.subTest(kwargs=kwargs):
