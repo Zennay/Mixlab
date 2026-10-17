@@ -98,6 +98,14 @@ M1 Recipe contract. These checks reject **two equally false receipts**,
 not merely mismatches between receipts. They do not infer source rights,
 beat accuracy or perceptual quality.
 
+**Canonical M1 120-second limit:** even when two WAV files really contain
+identical and well-formed 128-second audio, a 64-beat / 30 BPM receipt is
+**not** evidence of a valid current MixLab `Recipe`; the canonical model
+rejects recipes longer than 120 seconds. The receipt admission guard
+therefore rejects `beats * 60 / bpm > 120` **before PCM reads**. A
+rights-safe, sparse 128-second mono WAV pair forms the RED-then-GREEN
+regression without uploading music or scheduling a long render.
+
 **Bound before serializing:** an in-process caller can accidentally pass
 untrusted receipt metadata. The validator now walks only plain JSON-type
 containers, rejecting cyclic/shared containers, depths above 16, more
