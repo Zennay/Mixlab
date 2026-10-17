@@ -2,6 +2,7 @@
 
 Uses generated PCM silence only, without third-party music or model access.
 """
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -61,6 +62,21 @@ class ProviderProvenanceCacheTests(unittest.TestCase):
                 self._corrupt_with_valid_digest(pristine, entry, field, value)
                 with self.assertRaisesRegex(ValueError, "provenance/config"):
                     analyze_cached(self.source, directory, provider)
+
+    def test_versioned_third_party_provider_cache_remains_supported(self):
+        class ThirdPartyProvider:
+            version = "custom-v1"
+
+            def analyze(self, path):
+                manual = ManualProvider(120, annotator="synthetic")
+                return replace(manual.analyze(path), provider="external-custom",
+                               provider_version=self.version)
+
+        custom = ThirdPartyProvider()
+        directory, entry, expected, _ = self._warm(custom, "third-party")
+        self.assertEqual(expected["provider"], "external-custom")
+        self.assertEqual(expected, analyze_cached(self.source, directory, custom))
+        self.assertTrue(entry.exists())
 
     def test_measured_receipt_cannot_claim_manual_or_fabricated_features(self):
         provider = EnergyOnsetProvider()
