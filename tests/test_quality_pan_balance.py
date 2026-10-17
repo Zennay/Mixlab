@@ -88,6 +88,47 @@ class PanBalanceTests(unittest.TestCase):
         self.assertEqual(report["evidence_status"], "insufficient_active_audio")
         self.assertEqual(report["longest_continuous_active_ms"], 500)
 
+    def test_sparse_loud_pulses_are_not_one_second_of_active_stereo(self):
+        # Four full 250ms RMS windows could be biased by just 20ms of loud
+        # signal each, even though 92% of candidate PCM is total silence.
+        # This is not continuous audible stereo evidence, even if each
+        # *whole* 250ms RMS exceeds -45 dBFS in both channels.
+        wav(self.a)
+        pulse_frames = 160  # 20ms at 8kHz
+        burst = (struct.pack("<hh", 8000, 2000) * pulse_frames +
+                 struct.pack("<hh", 0, 0) * (2000 - pulse_frames))
+        with wave.open(str(self.b), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(burst * 4)
+        result = pan_balance.inspect(self.a, self.b)
+        self.assertIsNone(result["stereo_pan_confound_review"])
+        self.assertEqual(result["evidence_status"], "insufficient_active_audio")
+        self.assertLess(result["longest_continuous_active_ms"], 1000)
+        strict = subprocess.run([
+            sys.executable, "-m", "mixlab.quality.pan_balance",
+            str(self.a), str(self.b), "--fail-on-review",
+        ], capture_output=True, text=True)
+        self.assertEqual(strict.returncode, 3)
+        self.assertNotIn(str(self.root), strict.stdout + strict.stderr)
+
+    def test_sparse_baseline_pulses_do_not_approve_full_candidate_stereo(self):
+        wav(self.b)
+        pulse_frames = 160
+        burst = (struct.pack("<hh", 8000, 8000) * pulse_frames +
+                 struct.pack("<hh", 0, 0) * (2000 - pulse_frames))
+        with wave.open(str(self.a), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(burst * 4)
+        report = pan_balance.inspect_batch(self.a, [self.b])
+        self.assertEqual(report["candidates"][0]["metrics"]["evidence_status"],
+                         "insufficient_active_audio")
+        self.assertIsNone(
+            report["candidates"][0]["metrics"]["stereo_pan_confound_review"])
+
     def test_rate_frame_and_stereo_mismatch_rejected_before_pcm_read(self):
         for key in ("rate", "frames", "channels"):
             with self.subTest(key=key):
