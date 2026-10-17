@@ -136,6 +136,7 @@ def load_bounded_json(path):
             raise ValueError("Evaluation JSON integer exceeds 256 digits")
         return int(token)
 
+    malformed_syntax = False
     try:
         result = json.loads(decoded, object_pairs_hook=unique_pairs,
                             parse_constant=refuse_nonfinite,
@@ -143,10 +144,12 @@ def load_bounded_json(path):
     except RecursionError:
         raise ValueError("Evaluation JSON nesting limit exceeded") from None
     except json.JSONDecodeError:
-        # JSONDecodeError retains the raw document in its .doc attribute.
-        # Do not hand a private reviewer/answer-key payload to the CLI or
-        # logging boundary through a parser error or its rendered chain.
-        raise ValueError("Invalid evaluation JSON syntax") from None
+        # The original JSONDecodeError stores the *entire* private input in
+        # .doc. Raise outside this handler so even __context__ cannot retain
+        # that document after the parser exception has been discarded.
+        malformed_syntax = True
+    if malformed_syntax:
+        raise ValueError("Invalid evaluation JSON syntax")
 
     # JSON escapes can decode to unpaired UTF-16 surrogates even when the
     # source bytes were valid UTF-8. Such strings cannot be safely emitted
