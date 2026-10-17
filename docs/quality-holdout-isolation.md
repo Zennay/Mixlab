@@ -43,8 +43,10 @@ tool, pack and tuning pipeline.
    The `recording_id` metadata catches known same-song remasters/edits
    with changed PCM when the user supplies the correct lineage.
 3. A separate bounded CPU-only **exact audible excerpt reuse** screen
-   samples up to three non-silent PCM windows per source (at most 4,096
-   frames and 200 ms; at 96 kHz this is ~43 ms), and scans the other
+   samples up to five non-silent PCM windows per source (at most 4,096
+   frames and 200 ms; at 96 kHz this is ~43 ms). Windows are anchored
+   at 0%, 25%, 50%, 75%, and 100% of the valid start-frame interval;
+   the checker then scans the other
    sources through bounded, overlapping PCM read blocks. Stereo whole-frame
    excerpts and their exact L/R channel projections are checked separately,
    including against mono sources of the same sample rate. A byte-for-byte reused
@@ -89,7 +91,8 @@ stream-block-spanning reused PCM; actual source mutation after substring
 screening but before the final rescan; polarity inversion, exact doubled
 positive/negative gain, stereo-channel exchange, mono copies of stereo channels
 and one-channel copies between stereo files, integer overflow in PCM16
-transformations, a 1.5x nonmatching-gain control, the exact upper
+transformations, a 1.5x nonmatching-gain control, copied excerpts
+at 25% and 75% in two distinct longer recordings, the exact upper
 2,000,000-source-frame limit and rejection of 2,000,001 frames, and
 redaction in CLI subprocesses.
 
