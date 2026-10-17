@@ -179,6 +179,14 @@ def main(argv: list[str] | None = None) -> int:
         description="Private, bounded PCM16 A/B precision-loss screen")
     parser.add_argument("baseline", metavar="BASELINE.wav")
     parser.add_argument("candidate", metavar="CANDIDATE.wav")
+    parser.add_argument(
+        "--fail-on-warnings", action="store_true",
+        help="Exit 2 on an inspection warning (not a music-quality judgment)",
+    )
+    parser.add_argument(
+        "--require-conclusive", action="store_true",
+        help="Exit 2 if there is insufficient PCM evidence (null result)",
+    )
     args, unknown = parser.parse_known_args(argv)
     try:
         if unknown:
@@ -188,6 +196,13 @@ def main(argv: list[str] | None = None) -> int:
         print("MixLab precision: invalid or incomparable private WAVs", file=sys.stderr)
         return 3
     print(json.dumps(result, sort_keys=True, allow_nan=False))
+    # A strict preflight can distinguish an invalid input (exit 3), a
+    # technical inspection gate not met (exit 2), and a reportable check
+    # (exit 0). The default mode remains descriptive and backward compatible.
+    if ((args.fail_on_warnings and result["warnings"])
+            or (args.require_conclusive
+                and result["candidate_precision_loss_inspect"] is None)):
+        return 2
     return 0
 
 
