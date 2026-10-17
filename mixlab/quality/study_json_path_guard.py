@@ -69,7 +69,9 @@ def _capture_path(value):
         raw = os.fspath(value)
         if type(raw) is not str or chr(0) in raw:
             raise ValueError(_ERROR)
-        return Path(raw)
+        # Anchor relative paths against exactly one cwd observation. Path.absolute()
+        # deliberately retains lexical '..' and does not resolve symlinks.
+        return Path(raw).absolute()
     except Exception:
         raise ValueError(_ERROR) from None
 
