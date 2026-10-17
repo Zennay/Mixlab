@@ -84,8 +84,8 @@ def _locate_data_chunk(stream, size):
                     "<HHI", extension[:8]
                 )
                 pcm_subtype = (
-                    b"\\x01\\x00\\x00\\x00\\x00\\x00\\x10\\x00"
-                    b"\\x80\\x00\\x00\\xaa\\x00\\x38\\x9b\\x71"
+                    b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                    b"\x80\x00\x00\xaa\x00\x38\x9b\x71"
                 )
                 if (cb_size < 22 or 18 + cb_size > chunk_size
                         or valid_bits != 16 or extension[8:24] != pcm_subtype
