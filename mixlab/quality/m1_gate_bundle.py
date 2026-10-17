@@ -17,6 +17,7 @@ from .pilot_sensitivity import inspect_real_pilot
 from .reviewer_influence import inspect_real_reviewer_influence
 from .study_binding import verify_study_pack_binding
 from ..evaluation.json_admission import load_bounded_json
+from ..ingest import inspect_wav_and_digest
 
 _ERROR = "Invalid or changed private M1 gate inputs"
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -51,31 +52,55 @@ def _shape(row, *, trials, reviewers, count_field, reviewer_field):
 
 
 def _detect_cross_pair_identical_render(pack):
-    """Detect one checksum-verified WAV duplicated across distinct trial pairs.
+    """Flag identical *PCM* in different frozen pairs, without source disclosure.
 
-    The binding validator must have already verified this frozen evidence and
-    *every* source WAV. Raw output SHA repetition across different pairs is a
-    conservative false-independence warning, not proof of musical identity.
-    Never return a hash, track name, pair identity or path to public reports.
+    First verify_study_pack_binding() must authenticate every original WAV
+    against its checksum-bound private receipt. This additional read uses
+    the official bounded, streaming PCM digest, which normalizes away RIFF
+    header/metadata changes rather than trusting raw-file SHA equality.
     """
     evidence = load_bounded_json(pack / "private" / "evidence.json")
+    answers = load_bounded_json(pack / "private" / "answer-key.json")
     renders = evidence.get("renders") if type(evidence) is dict else None
-    if (type(renders) is not list or not 10 <= len(renders) <= 20):
+    if (type(renders) is not list or not 10 <= len(renders) <= 20
+            or type(answers) is not list or len(renders) != 2 * len(answers)):
         _fail()
-    identities = {}
-    duplicate = False
+    render_by_identity = {}
     for row in renders:
         if type(row) is not dict:
             _fail()
-        pair = row.get("pair")
-        digest = row.get("output_sha256")
-        if type(pair) is not str or type(digest) is not str or not _SHA.fullmatch(digest):
+        pair, family, checksum = (row.get("pair"), row.get("family"),
+                                  row.get("output_sha256"))
+        if (type(pair) is not str or type(family) is not str
+                or type(checksum) is not str or _SHA.fullmatch(checksum) is None
+                or (pair, family) in render_by_identity):
             _fail()
-        previous_pair = identities.setdefault(digest, pair)
-        if previous_pair != pair:
-            duplicate = True
-    return duplicate
+        render_by_identity[pair, family] = checksum
 
+    pcm_by_pair = {}
+    duplicate = False
+    for ordinal, row in enumerate(answers, 1):
+        if (type(row) is not dict or row.get("trial") != f"trial-{ordinal:03d}"
+                or type(row.get("pair")) is not str
+                or type(row.get("A")) is not str
+                or type(row.get("B")) is not str):
+            _fail()
+        pair = row["pair"]
+        for label in ("A", "B"):
+            claimed = render_by_identity.get((pair, row[label]))
+            if claimed is None:
+                _fail()
+            audio = pack / "review" / f"{row['trial']}-{label}.wav"
+            actual, file_sha = inspect_wav_and_digest(audio)
+            if file_sha != claimed or type(actual.get("pcm_sha256")) is not str:
+                _fail()
+            digest = actual["pcm_sha256"]
+            if _SHA.fullmatch(digest) is None:
+                _fail()
+            previous_pair = pcm_by_pair.setdefault(digest, pair)
+            if previous_pair != pair:
+                duplicate = True
+    return duplicate
 
 def compose_m1_gate_reports(binding, assignment, position, pair, reviewer, *, rating_count,
                             cross_pair_duplicate_render=False):
