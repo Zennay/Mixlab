@@ -218,7 +218,7 @@ def compare_envelopes(baseline: str | Path, candidates: list[str | Path]) -> dic
 
 class _PrivateParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
-        self.exit(2, "Invalid arguments (details withheld)\\n")
+        self.exit(2, "Invalid arguments (details withheld)\n")
 
 
 def main(argv: list[str] | None = None) -> int:
