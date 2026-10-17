@@ -11,6 +11,9 @@ optional check** adds local sustained-bias evidence without changing it.
 ```sh
 python3 -m mixlab.quality.local_dc BASELINE.wav CANDIDATE.wav
 python3 -m mixlab.quality.local_dc BASELINE.wav CANDIDATE.wav --strict
+# Batch mode (1–8 distinct candidates): decode baseline only once
+python3 -m mixlab.quality.local_dc BASELINE.wav A.wav B.wav --batch
+python3 -m mixlab.quality.local_dc BASELINE.wav A.wav B.wav --batch --strict
 ```
 
 The tool **never uploads or writes audio**, never prints private file names,
@@ -24,6 +27,33 @@ consume only O(channels × floor(frames / 250ms)) memory. Per-source and
 pair-wide device/inode/size/mtime/ctime freeze checks reject detectable source
 changes, including path swaps. This is best effort and **not** an atomic
 filesystem snapshot.
+
+## Batch input contract
+
+The optional `--batch` switch is **isolated** to this local-DC tool; it does
+not change the already-active ML-07 precision batch PR or the shared renderer,
+review pack, audio scanner, or evaluation contract.
+
+Before **any PCM is decoded**, the batch admits all 2–9 regular, non-symlink
+WAV inputs with `O_NOFOLLOW` and validates individual physical size, PCM16
+mono/stereo shape and version-independent wave headers. All candidates must
+match the baseline sample rate, channel count and frame count. The baseline
+and candidates must have **distinct device/inode IDs**, rejecting both
+same-path reuse and hardlink aliases. Hard caps for the **whole batch**:
+**8,000,000 total PCM frames**, **128 MiB total physical WAV bytes**,
+**at most eight candidates**, plus individual 2M-frame/32MiB limits. A
+batch is rejected before streaming any PCM if *any* header, format, alias or
+aggregate budget violates the contract. Non-mutating scan then reads baseline
+PCM exactly once, scans each candidate once, and verifies all identities,
+sizes and timestamps again after the last candidate. An invalid, late-changed
+or missing input fails the **whole batch** without partial JSON.
+
+Results use ordered neutral IDs (`candidate-001` etc.) with per-channel
+`candidate_excess_bias_warning` and overall tri-state. Source paths, audio,
+sample data, inode numbers and source hashes never appear in the public
+result or stderr. `--strict` returns 2 on any true/unknown warning; invalid
+input returns 3 with empty stdout. The same code and diagnostic thresholds
+also apply in single-pair mode.
 
 ## Evidence and limits
 
