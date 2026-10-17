@@ -86,6 +86,9 @@ class FoldDownAbLevelTests(unittest.TestCase):
         row = self.row()
         self.assertFalse(row["ab_mono_fold_down_level_confound_risk"])
         self.assertIsNone(row["mono_fold_down_level_delta_db_vs_baseline"])
+        # Two equally broken mono playbacks are not a *relative* delta, but
+        # must never advertise a valid technical level preflight either.
+        self.assertFalse(row["rms_and_window_level_preflight_pass"])
 
     def test_silent_stereo_and_mono_keep_null_fold_down_delta(self):
         write(self.base, [(0, 0)] * 8000)
