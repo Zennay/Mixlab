@@ -24,6 +24,11 @@ MIN_DISTINCT_VALUES = 32
 # while fewer than 10% of corresponding baseline samples do.
 CANDIDATE_GRID_FRACTION = 0.995
 BASELINE_GRID_FRACTION = 0.10
+# Allow detection relative to an already coarser baseline only when it
+# demonstrably contains at least two MORE low-bit dimensions than the
+# candidate (four meaningful residue phases at the candidate's grid).
+MIN_RICH_BASELINE_RESIDUES = 4
+MIN_RICH_RESIDUE_FRACTION = 0.05
 GRID_STEPS = (256, 128, 64, 32, 16)
 REGIONS = 8
 MIN_REGION_INFORMATIVE = 512
@@ -131,14 +136,24 @@ def _precision_grid_loss(reference: dict, candidate: dict, an: int, bn: int) -> 
     """
     for step in GRID_STEPS:
         ref, cand = reference[step], candidate[step]
+        # A baseline may itself be quantized (e.g. step 16). Comparing
+        # against a much coarser candidate (e.g. step 64) is still a loss,
+        # even though the baseline's strongest modulo-64 bin is ~25%.
+        # Require >=4 materially occupied baseline residues rather than
+        # flagging a one-bit change from an already coarse two-bin source.
+        reference_is_richer = sum(
+            count / an >= MIN_RICH_RESIDUE_FRACTION for count in ref
+        ) >= MIN_RICH_BASELINE_RESIDUES
         if (max(cand) / bn >= CANDIDATE_GRID_FRACTION
-                and max(ref) / an < BASELINE_GRID_FRACTION):
+                and (max(ref) / an < BASELINE_GRID_FRACTION
+                     or reference_is_richer)):
             return True
         first, second = sorted(range(step), key=cand.__getitem__, reverse=True)[:2]
         adjacent = (first - second) % step in (1, step - 1)
         if (adjacent
                 and (cand[first] + cand[second]) / bn >= CANDIDATE_GRID_FRACTION
-                and sum(sorted(ref, reverse=True)[:2]) / an < 2 * BASELINE_GRID_FRACTION):
+                and (sum(sorted(ref, reverse=True)[:2]) / an < 2 * BASELINE_GRID_FRACTION
+                     or reference_is_richer)):
             return True
     return False
 
