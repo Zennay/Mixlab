@@ -170,6 +170,35 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(metrics["partial_stereo_channel_loss_risk"])
         self.assertIsNone(scan_wav(self.base)["partial_stereo_channel_loss_fraction"])
 
+    def test_attenuated_flat_top_detected_across_streaming_boundary(self):
+        # A previously clipped signal later turned down to ~-2.2 dBFS
+        # escapes near-full-scale checks but retains exact flat tops.
+        samples = self.samples.copy()
+        samples[4094:4099] = [26000] * 5
+        wav(self.candidate, samples)
+        report = compare_wavs(self.base, [self.candidate])
+        row = report["candidates"][0]
+        self.assertEqual(0.0, row["metrics"]["near_full_scale_fraction"])
+        self.assertEqual(1, row["metrics"]["high_flat_top_plateau_count"])
+        self.assertTrue(row["metrics"]["high_flat_top_plateau_risk"])
+        self.assertIn("high_flat_top_plateau_inspect_for_prior_limiting", row["warnings"])
+        self.assertNotIn("high_flat_top_plateau_inspect_for_prior_limiting",
+                         report["baseline_warnings"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+        # An isolated 3-sample percussion peak is below the rule's length.
+        samples[4094:4099] = self.samples[4094:4099]
+        samples[1100:1103] = [26000] * 3
+        wav(self.candidate, samples)
+        metrics = scan_wav(self.candidate)
+        self.assertEqual(0, metrics["high_flat_top_plateau_count"])
+        self.assertFalse(metrics["high_flat_top_plateau_risk"])
+        # The reference must be inspected equally, not trusted blindly.
+        wav(self.base, [26000] * len(self.samples))
+        report = compare_wavs(self.base, [self.candidate])
+        self.assertIn("high_flat_top_plateau_inspect_for_prior_limiting",
+                      report["baseline_warnings"])
+        self.assertEqual(1, report["baseline"]["high_flat_top_plateau_count"])
+
     def test_sample_splice_click_detected_across_stream_read_boundary(self):
         samples = self.samples.copy()
         samples[4095], samples[4096], samples[4097] = 0, 22000, 0
