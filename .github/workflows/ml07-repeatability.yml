@@ -1,0 +1,48 @@
+name: ML-07 independent PCM repeatability
+
+on:
+  pull_request:
+    paths:
+      - mixlab/quality/repeatability.py
+      - tests/test_quality_repeatability.py
+      - docs/quality-render-repeatability.md
+      - .github/workflows/ml07-repeatability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-reproducibility:
+    name: source-bound PCM gate (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout immutable PR source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checkout is exact requested commit
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          printf 'Quality source SHA: %s\n' "$EXPECTED"
+      - name: Set up stdlib Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile and verify privacy/reproducibility under a fixed memory ceiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/repeatability.py tests/test_quality_repeatability.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_repeatability.py' -v
