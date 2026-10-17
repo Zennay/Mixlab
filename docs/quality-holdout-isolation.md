@@ -43,15 +43,19 @@ tool, pack and tuning pipeline.
    The `recording_id` metadata catches known same-song remasters/edits
    with changed PCM when the user supplies the correct lineage.
 3. A separate bounded CPU-only **exact audible excerpt reuse** screen
-   samples up to three approximately 200-ms non-silent PCM windows from each
-   validated source and scans all other sources of the same sample rate and
-   channel count with overlapping streaming blocks. A byte-for-byte reused
+   samples up to three non-silent PCM windows per source (at most 4,096
+   frames and 200 ms; at 96 kHz this is ~43 ms), and scans the other
+   sources through bounded, overlapping PCM read blocks. Stereo whole-frame
+   excerpts and their exact L/R channel projections are checked separately,
+   including against mono sources of the same sample rate. A byte-for-byte reused
    cropped excerpt is held even when neither full-file checksum, complete
    decoded-PCM hash nor declared recording ID agrees. The bounded anchor
    matcher additionally catches **exact** PCM16 variants from polarity
    inversion, stereo L/R swapping, doubling gain, or their combinations
    (only when multiplication remains in signed-16-bit range). This is an
    integer-identical reproduction check, not a fuzzy perceptual fingerprint.
+   It also detects an isolated copied left or right channel when the rest
+   of the stereo file differs, including mono/stereo copies.
    Development-development
    reuse is outside this gate; development-evaluation and evaluation-evaluation
    reuse are screened. Common silence and quiet spacers are intentionally not
@@ -83,9 +87,11 @@ forgeries; wrong pair orientation; identical audible PCM cropped into a distinct
 missing partitions or rights metadata; bad pinned ID; malformed JSON;
 stream-block-spanning reused PCM; actual source mutation after substring
 screening but before the final rescan; polarity inversion, exact doubled
-positive/negative gain, stereo-channel exchange, integer overflow in
-PCM16 transformations, a 1.5x nonmatching-gain control, and redaction in
-CLI subprocesses.
+positive/negative gain, stereo-channel exchange, mono copies of stereo channels
+and one-channel copies between stereo files, integer overflow in PCM16
+transformations, a 1.5x nonmatching-gain control, the exact upper
+2,000,000-source-frame limit and rejection of 2,000,001 frames, and
+redaction in CLI subprocesses.
 
 The dedicated GitHub-hosted workflow pins exact source revision, runs this
 focused suite on Python 3.13 and 3.14 under a 192 MiB virtual-memory cap
