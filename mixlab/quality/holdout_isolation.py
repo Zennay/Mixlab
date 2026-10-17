@@ -149,7 +149,11 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                 for _, view_channels, view_pcm in _pcm_channel_views(pcm, channels):
                     view_samples = array("h")
                     view_samples.frombytes(view_pcm)
-                    if sum(abs(sample) for sample in view_samples) < (
+                    # Subtract each view's DC mean. Constant recording
+                    # offsets (even loud +2400/-2400 PCM values) and quiet
+                    # flat channels carry no usable musical fingerprint.
+                    center = sum(view_samples) // len(view_samples)
+                    if sum(abs(sample - center) for sample in view_samples) < (
                             512 * len(view_samples)):
                         continue
                     for variant in _pcm_exact_transform_variants(
