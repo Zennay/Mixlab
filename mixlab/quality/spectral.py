@@ -23,6 +23,10 @@ DEFAULT_THRESHOLD_DB = 6.0
 # A clean spectral ratio must not silently imply fair A/B loudness:
 # detect an independently obvious full-file RMS mismatch first.
 RMS_LEVEL_CONFOUND_DB = 1.5
+# Risk-only stereo mono-fold proxy. True mono playback and downstream
+# mastering are not simulated; this detects obvious polarity cancellation.
+MONO_FOLD_LOSS_DB = -10.0
+MONO_FOLD_CHANGE_DB = 6.0
 MIN_RESOLVABLE_RATIO = 1e-4
 READ_FRAMES = 4096
 MAX_CANDIDATES = 8
@@ -79,6 +83,7 @@ def _scan_spectral_private(
                 # Channel-local aggregates catch A/B left/right spectral
                 # migrations hidden by an identical total stereo spectrum.
                 channel_energy = [[0.0, 0.0, 0.0, 0.0] for _ in range(channels)]
+                stereo_cross_energy = 0.0
                 # Constant memory (eight aggregate bins), never samples or
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
@@ -112,6 +117,9 @@ def _scan_spectral_private(
                         channel_energy[channel][1] += low_sample_energy
                         channel_energy[channel][2] += mid_sample_energy
                         channel_energy[channel][3] += high_sample_energy
+                        if channels == 2 and channel == 1:
+                            # Adjacent samples form one stereo PCM16 frame.
+                            stereo_cross_energy += (samples[index - 1] / 32768) * value
                         span = min(SPECTRAL_SPANS - 1, ((frames - remaining + index // channels) * SPECTRAL_SPANS) // frames)
                         span_energy[span][0] += sample_energy
                         span_energy[span][1] += low_sample_energy
@@ -150,6 +158,10 @@ def _scan_spectral_private(
         "midpass_180_2500_ratio": math.sqrt(mid_energy / total_energy) if total_energy else None,
         "highpass_2500_ratio": math.sqrt(high_energy / total_energy) if total_energy else None,
         "_rms": rms,
+        "_mono_fold_ratio": (
+            math.sqrt(max(0.0, min(1.0, (0.5 * total_energy + stereo_cross_energy) / total_energy)))
+            if channels == 2 and total_energy else None
+        ),
         # Only used privately to flag aliases / hardlinks in a blind pack.
         "_source_key": (before.st_dev, before.st_ino),
         "_source_stat_identity": _source_identity(before),
@@ -234,6 +246,27 @@ def compare_spectral_balance(
             warnings.append("stereo_channel_near_silence_inspect")
         seen_sources.add(current["_source_key"])
         deltas = {}
+        # Channel-local energy ratios cannot see polarity inversion: squared
+        # band energies remain equal even when mono folding cancels content.
+        # Use one summed L*R cross-energy to estimate RMS((L+R)/2)
+        # relative to the original two-channel RMS, with no PCM retention.
+        if reference["channels"] == 2:
+            fold_a, fold_b = reference["_mono_fold_ratio"], current["_mono_fold_ratio"]
+            if (reference["_rms"] >= SILENT_WINDOW_RMS and
+                    current["_rms"] >= SILENT_WINDOW_RMS and
+                    fold_a is not None and fold_b is not None):
+                if min(fold_a, fold_b) > MIN_RESOLVABLE_RATIO:
+                    fold_delta = 20 * math.log10(fold_b / fold_a)
+                    deltas["stereo_mono_fold_ratio_delta_db"] = round(fold_delta, 3)
+                    if abs(fold_delta) >= MONO_FOLD_CHANGE_DB:
+                        warnings.append("stereo_mono_fold_change_inspect")
+                else:
+                    deltas["stereo_mono_fold_ratio_delta_db"] = None
+                if min(fold_a, fold_b) <= 10 ** (MONO_FOLD_LOSS_DB / 20):
+                    warnings.append("stereo_mono_fold_cancellation_inspect")
+            else:
+                deltas["stereo_mono_fold_ratio_delta_db"] = None
+                warnings.append("stereo_mono_fold_unresolved_inspect")
         # The ratios below intentionally normalize out overall gain.
         # Report an independent sample-RMS confound, *not* perceptual LUFS.
         if reference["_rms"] >= SILENT_WINDOW_RMS and current["_rms"] >= SILENT_WINDOW_RMS:
