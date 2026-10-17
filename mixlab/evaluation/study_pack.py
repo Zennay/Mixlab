@@ -21,6 +21,32 @@ from ..ingest import validate_library
 from ..models import Recipe
 
 
+MAX_SIDE_RUN = 2
+
+
+def side_schedule(rng, families):
+    """Pre-rating A/B positions: True means the baseline plays as A.
+
+    Independent coin flips can put the baseline on one side in every trial.
+    Draw instead from schedules that balance baseline-as-A overall and within
+    each candidate family (difference at most 1) and never repeat a side more
+    than MAX_SIDE_RUN times in a row. Fixed before any rendering or rating.
+    """
+    def balanced(flags):
+        return abs(2 * sum(flags) - len(flags)) <= 1
+    for _ in range(100000):
+        flags = [rng.random() < .5 for _ in families]
+        if not balanced(flags):
+            continue
+        if any(len(set(flags[i:i + MAX_SIDE_RUN + 1])) == 1
+               for i in range(len(flags) - MAX_SIDE_RUN)):
+            continue
+        if all(balanced([f for f, fam in zip(flags, families) if fam == family])
+               for family in set(families)):
+            return flags
+    raise ValueError("No balanced A/B side schedule found")
+
+
 def build(manifest_path, study_path, destination, seed=None):
     study = verify_study(study_path)
     manifest, tracks = validate_library(manifest_path)
@@ -51,6 +77,7 @@ def build(manifest_path, study_path, destination, seed=None):
         private.mkdir(mode=0o700)
         rng = random.Random(seed) if seed is not None else random.SystemRandom()
         cards, answers, evidence = [], [], []
+        baseline_first = side_schedule(rng, [entry["candidate_family"] for entry, *_ in plan])
         for number, (entry, pair, a, b) in enumerate(plan, 1):
             outputs = {}
             for family in ("baseline", entry["candidate_family"]):
@@ -66,7 +93,8 @@ def build(manifest_path, study_path, destination, seed=None):
                                  "source_hashes": [a["sha256"], b["sha256"]], "output_sha256": digest(path)})
             trial = f"trial-{number:03d}"
             order = ["baseline", entry["candidate_family"]]
-            rng.shuffle(order)
+            if not baseline_first[number - 1]:
+                order.reverse()
             for label, variant in zip(("A", "B"), order):
                 shutil.copyfile(outputs[variant], review / f"{trial}-{label}.wav")
             cards.append(trial)
@@ -79,7 +107,8 @@ def build(manifest_path, study_path, destination, seed=None):
         dump(private / "evidence.json", {
             "schema_version": 1, "kind": "frozen-study-pilot", "manifest_sha256": manifest_sha,
             "study_id": study["study_id"], "renders": evidence, "pack_id": pack_id,
-            "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random"},
+            "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random",
+                              "side_schedule": f"balanced overall and per family, max run {MAX_SIDE_RUN}"},
             "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
         write_review(review / "index.html", cards, pack_id)
         dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),

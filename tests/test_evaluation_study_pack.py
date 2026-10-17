@@ -12,7 +12,7 @@ from mixlab.cli import digest, dump
 from mixlab.engine import write_wav
 from mixlab.evaluation import aggregate, verify_pack
 from mixlab.evaluation.study import freeze, write_exclusive
-from mixlab.evaluation.study_pack import build, main, verify_study_pack
+from mixlab.evaluation.study_pack import build, main, side_schedule, verify_study_pack
 from mixlab.quality.pack import inspect_review_pack
 
 KEYS = ["C major", "G major", "A minor", "F# major", "D minor", "E minor"]
@@ -103,6 +103,22 @@ class StudyPackTests(unittest.TestCase):
                     mock.patch.object(study_pack, "verify_pack", return_value=(receipt, forged, trials)), \
                     self.assertRaisesRegex(ValueError, "inventory"):
                 verify_study_pack(self.pack, self.study)
+
+    def test_side_schedule_is_balanced_without_long_runs(self):
+        import random
+        families = ["bass_swap", "echo_exit", "hard_cut", "bass_swap", "echo_exit",
+                    "hard_cut", "bass_swap", "echo_exit", "hard_cut", "bass_swap"]
+        for n in range(5, 11):
+            for seed in range(50):
+                flags = side_schedule(random.Random(seed), families[:n])
+                self.assertLessEqual(abs(2 * sum(flags) - n), 1)
+                self.assertFalse(any(len(set(flags[i:i + 3])) == 1 for i in range(n - 2)))
+                for family in set(families[:n]):
+                    picked = [f for f, fam in zip(flags, families[:n]) if fam == family]
+                    self.assertLessEqual(abs(2 * sum(picked) - len(picked)), 1)
+        _, _, trials = verify_pack(self.pack)
+        sides = [row["A"] == "baseline" for _, row in sorted(trials.items())]
+        self.assertLessEqual(abs(2 * sum(sides) - len(sides)), 1)
 
     def test_existing_aggregation_accepts_the_pack(self):
         _, _, trials = verify_pack(self.pack)
