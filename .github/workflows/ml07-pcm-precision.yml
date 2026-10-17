@@ -1,0 +1,33 @@
+name: MixLab ML-07 PCM16 precision-loss QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/precision.py"
+      - "tests/test_quality_precision.py"
+      - "docs/quality-pcm-precision.md"
+      - ".github/workflows/ml07-pcm-precision.yml"
+permissions:
+  contents: read
+jobs:
+  precision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact immutable PR source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify head commit
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile precision source and regressions
+        run: python3 -m compileall -q mixlab/quality/precision.py tests/test_quality_precision.py
+      - name: Run bounded original synthetic precision probes
+        run: python3 -m unittest discover -s tests -p "test_quality_precision.py" -v
+      - name: Run current canonical quality and privacy regressions
+        run: |
+          python3 -m unittest discover -s tests -p "test_quality.py" -v
+          python3 -m unittest discover -s tests -p "test_quality_cli_privacy.py" -v
