@@ -12,7 +12,7 @@ from . import EnergyOnsetProvider, beat_errors
 from .meter import AccentMeterProvider
 from .tonal import KEYS, ChromaKeyProvider, key_report
 from ..evaluation.json_admission import load_bounded_json
-from ..ingest import HASH, ID, number
+from ..ingest import HASH, ID, digest, number
 
 MAX_ITEMS = 200
 FIELDS = {"id", "path", "sha256", "bpm", "first_beat", "downbeats", "key", "annotator"}
@@ -80,30 +80,36 @@ def evaluate(path, tolerance=.07):
     beat_provider, meter, tonal = EnergyOnsetProvider(), AccentMeterProvider(), ChromaKeyProvider()
     rows = []
     for item in items:
-        beats = beat_provider.analyze(item["path"])
-        if beats.source_sha256 != item["sha256"]:
-            raise ValueError(f"Source checksum mismatch for {item['id']}")
+        def bound(record):
+            # Every provider hashes the bytes it analysed; all of them must be
+            # the annotated recording, so a swap between providers fails closed.
+            if record.source_sha256 != item["sha256"]:
+                raise ValueError(f"Source checksum mismatch for {item['id']}")
+            return record
+        beats = bound(beat_provider.analyze(item["path"]))
         reference_grid = _grid(item, beats.duration_seconds)
         row = {"id": item["id"], "beat_abstained": not beats.beats_seconds,
                "beat_f1": beat_errors(reference_grid, beats.beats_seconds, tolerance)["f1"]
                if beats.beats_seconds else None}
         if item["downbeats"]:
             # Downbeats on the verified grid isolate bar-phase errors from tempo errors.
-            on_reference = meter.analyze(item["path"], list(reference_grid))
+            on_reference = bound(meter.analyze(item["path"], list(reference_grid)))
             row["downbeat_abstained_reference_grid"] = not on_reference.downbeats_seconds
             row["downbeat_f1_reference_grid"] = (beat_errors(
                 item["downbeats"], on_reference.downbeats_seconds, tolerance)["f1"]
                 if on_reference.downbeats_seconds else None)
             if len(beats.beats_seconds) >= 16:
-                on_estimate = meter.analyze(item["path"], list(beats.beats_seconds))
+                on_estimate = bound(meter.analyze(item["path"], list(beats.beats_seconds)))
                 row["downbeat_f1_estimated_grid"] = (beat_errors(
                     item["downbeats"], on_estimate.downbeats_seconds, tolerance)["f1"]
                     if on_estimate.downbeats_seconds else None)
             else:
                 row["downbeat_f1_estimated_grid"] = None
         if item["key"] is not None:
-            estimate = tonal.analyze(item["path"])
+            estimate = bound(tonal.analyze(item["path"]))
             row["reference_key"], row["estimated_key"] = item["key"], estimate.key
+        if digest(item["path"]) != item["sha256"]:
+            raise ValueError(f"Source checksum mismatch for {item['id']}")
         rows.append(row)
     downbeat_rows = [r for r in rows if "downbeat_abstained_reference_grid" in r]
     key_rows = [(r["reference_key"], r["estimated_key"]) for r in rows if "reference_key" in r]

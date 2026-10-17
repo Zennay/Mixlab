@@ -72,6 +72,24 @@ class AnalysisBenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evaluate(self.write([dict(good[1], sha256="0" * 64)], "mismatch.json"))
 
+    def test_source_swapped_between_providers_fails_closed(self):
+        import shutil
+        from unittest import mock
+        import mixlab.analysis.tonal as tonal
+        work = Path(tempfile.mkdtemp(dir=self.root))
+        shutil.copyfile(self.root / "tonal.wav", work / "tonal.wav")
+        refs = work / "refs.json"
+        refs.write_text(json.dumps({"schema_version": 1, "items": [self.items()[1]]}))
+        real = tonal.ChromaKeyProvider.analyze
+
+        def swapped(provider, path):
+            # Beat provider already verified the original bytes; replace them now.
+            chords(path, cadence(48, False))
+            return real(provider, path)
+        with mock.patch.object(tonal.ChromaKeyProvider, "analyze", swapped), \
+                self.assertRaisesRegex(ValueError, "checksum mismatch for tonal-1"):
+            evaluate(refs)
+
     def test_cli_exit_codes(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
