@@ -264,6 +264,31 @@ def _baseline_diverse(base):
     return 20 * dominant <= 7 * base["eligible_samples"]
 
 
+def _aligned_active_evidence(base_source, candidate_source, channel):
+    """Require enough simultaneous active PCM, not just independent activity.
+
+    Each matched 100ms interval already meets the per-source 50% active-frame
+    gate. A contiguous run of four matched intervals must contain at least
+    MIN_ELIGIBLE high-level samples from each participant. This is internal
+    evidence only: never disclose private time-window positions.
+    """
+    base = base_source["_private_window_profiles"][channel]
+    candidate = candidate_source["_private_window_profiles"][channel]
+    run = base_count = candidate_count = 0
+    previous = None
+    for w in sorted(base.keys() & candidate.keys()):
+        if previous is None or w != previous + 1:
+            run = base_count = candidate_count = 0
+        run += 1
+        base_count += base[w]["eligible_samples"]
+        candidate_count += candidate[w]["eligible_samples"]
+        if (run >= MIN_ACTIVE_WINDOWS and base_count >= MIN_ELIGIBLE
+                and candidate_count >= MIN_ELIGIBLE):
+            return True
+        previous = w
+    return False
+
+
 def _regional_coarse_loss(base_source, candidate_source, channel):
     """Return a sustained 400ms candidate-specific quantization contrast."""
     before = base_source["_private_window_profiles"][channel]
@@ -346,12 +371,21 @@ def inspect_ab(baseline, candidates):
         for index, candidate in enumerate(results[1:], start=1):
             per_channel = []
             for channel, (base, current) in enumerate(zip(results[0], candidate)):
-                if not base["evidenced"] or not current["evidenced"]:
+                base_windows = sources[0]["_private_window_profiles"][channel]
+                candidate_windows = sources[index]["_private_window_profiles"][channel]
+                if (not base["evidenced"] or not current["evidenced"]
+                        or not _aligned_active_evidence(sources[0], sources[index], channel)):
+                    # Independent sustained activity is NOT evidence that
+                    # the two sources contain simultaneous comparable PCM.
                     per_channel.append(None)
-                elif (_coarse_loss(base, current)
-                      or _regional_coarse_loss(sources[0], sources[index], channel)):
-                    # Further candidate-specific loss can still be detected
-                    # even if the reference is already less than full precision.
+                elif _regional_coarse_loss(sources[0], sources[index], channel):
+                    # A sustained defect proved on the SAME aligned windows.
+                    per_channel.append(True)
+                elif base_windows.keys() != candidate_windows.keys():
+                    # Unmatched audible spans can skew global statistics and
+                    # can hide a missing/stale section of a render. Abstain.
+                    per_channel.append(None)
+                elif _coarse_loss(base, current):
                     per_channel.append(True)
                 elif (not _baseline_diverse(base)
                       or _regional_reference_degraded(sources[0], channel)):
@@ -368,7 +402,7 @@ def inspect_ab(baseline, candidates):
                 "per_channel_review": per_channel,
             })
         return {
-            "metric": "pcm16_multi_resolution_lattice_vs_baseline_v4",
+            "metric": "pcm16_aligned_multi_resolution_vs_baseline_v5",
             "technical_proxy_only": True,
             "channels": shape[0],
             "sample_rate": shape[1],
