@@ -196,6 +196,39 @@ without including a path or canary in the error. This proves detection of
 that changes and restores the bytes between read intervals. Freeze the
 filesystem when conducting real blinded human studies.
 
+## Stop duplicated listening examples from counting as independent pairs
+
+The external M1 gate does **not** treat the renderer's source-ID claims as
+authentication of actual music: a source hash may be self-declared while
+different supposed pairs reuse the exact same listening WAV. If identical
+`output_sha256` commitments appear across two **distinct frozen pairs**,
+the private, already-verified pack is admitted as *structurally valid* but the
+combined technical result becomes `REVIEW_REQUIRED` with the anonymous
+reason `identical-render-across-frozen-pairs`.
+
+This extra check runs on the original, independently verified private render
+metadata *only after* the existing freeze validator has hashed the actual WAV
+files. It reports a boolean and a generic reason, never the original checksum,
+audio bytes, trial names, pair IDs, track IDs or reviewer answers. Duplicate
+content within a single pair is handled separately by baseline-vs-candidate
+quality checks; the cross-pair rule does not mistake the two legal sides of
+one trial for independent music examples.
+
+The real-file regression deliberately copies the verified baseline WAV from
+one frozen trial into a different trial, updates that render's actual SHA,
+recomputes the genuine receipt/pack identity and resubmits three complete
+synthetic ballots. Both upstream `verify_pack` and pinned study binding
+still accept this checksum-consistent pack. The new cross-pair screen must
+force a methodological HOLD instead of counting the repeated audio as
+independent support. A separate unchanged distinct-WAV control remains
+unflagged. Pure contract tests reject forged non-boolean flags.
+
+**Limitation:** exact file-level checksum equality only. Different WAV
+headers, equal PCM re-encoded in another container or perceptually identical
+re-renders can evade this *fast* duplicate check. The study remains
+source-rights- and human-independence-UNVERIFIED; a clear technical screen
+is not a statistically or musically validated result.
+
 ## Gate and ownership
 
 Owns only this newly added module, test suite, workflow and document.
