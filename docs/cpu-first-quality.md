@@ -64,11 +64,13 @@ Audio-only review folders without an index can still be checked, but
 
 The review preflight additionally fingerprints each playback waveform
 *privately*, including sample rate/channel layout, and reports a neutral
-`repeated_pcm_across_trials_inspect_blinding` warning when an exact PCM
-recording is reused in a **different** randomized A/B trial. Its only
-cross-reference is an earlier opaque slot such as `trial-001/A`, never a
-file path, raw samples or a fingerprint. This is a potential **recognition
-and unblinding risk**, not evidence that a listener actually identified
+`repeated_pcm_across_trials_inspect_blinding` **trial-level** warning
+when an exact PCM recording is reused in a **different** randomized A/B
+trial. Critically, the report does **not** reveal which A/B slot repeated
+or link to an earlier slot: that would itself give away the hidden reference
+in a reviewer-visible QA report. Private digests, source paths and audio
+never leave memory. This is a potential **recognition and unblinding
+risk**, not evidence that a listener actually identified
 the baseline. Deliberate repeated-reference designs may require an
 explicit independent protocol review, but must not silently pass a strict
 blind-review gate. The official synthetic `fixture -> benchmark` pack
