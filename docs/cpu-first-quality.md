@@ -389,3 +389,25 @@ quiet-passage detector: background noise can mask an interruption,
 and intentional dramatic breaks may trigger it. No sample timeline,
 source path or PCM buffer appears in the JSON; no audio is repaired.
 Human listening remains required for genuine transition quality.
+
+
+### Audible-onset alignment between A/B choices
+
+Two equally long, similarly loud excerpts can begin at noticeably
+different times without triggering the original >=200ms **RMS-window
+edge-silence** warning. The per-frame scanner now records
+`prominent_audio_onset_ms`, the position of the *first* mono or stereo
+frame whose absolute PCM16 sample reaches **5% full-scale** (1638 units).
+When both versions have such an event, a difference of **>=75ms**
+produces `prominent_onset_mismatch_ms`,
+`prominent_onset_mismatch_risk` and
+`ab_prominent_audio_onset_mismatch_inspect`. It is independent of the
+chosen 20–1000ms RMS window and does not record audio, private paths
+or an onset waveform. Entirely silent/below-threshold clips report a
+null onset and rely on existing silence warnings instead.
+
+This flag is for reviewer inspection of **possible listening-time
+confounds**; it is not beat detection, downbeat/phrase synchronization,
+DJ phrase compatibility or a quality winner. A deliberate anticipation,
+pickup or soft fade may have different first-prominent-sample times
+without being defective. Listening with permitted music remains essential.
