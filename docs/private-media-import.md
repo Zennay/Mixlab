@@ -7,8 +7,7 @@ normalizes your permitted local media into the PCM16 stereo format consumed by
 [energy cue suggestions](cue-suggestions.md) and
 [Transition Studio](transition-studio.md).
 
-Music files **stay on your computer**. An already installed local `ffmpeg` +
-`ffprobe` is required. MixLab never installs these tools, downloads media,
+Music files **stay on your computer**. For MP3/FLAC/M4A and other codecs, an already installed local `ffmpeg` + `ffprobe` is required. **Native 44.1kHz PCM16 WAV is imported without FFmpeg**, including mono-to-stereo upmix. MixLab never installs these tools, downloads media,
 connects to streaming services or exposes an HTTP server.
 
 ## Create a private source manifest
@@ -125,3 +124,38 @@ existing renderer only handles equal-BPM pairs. The active separate
 pitch-preserving tempo PR and source-separation/automatic analysis gates are
 not replaced. The actual frozen rights-cleared real-music A/B listener study
 remains necessary before any claim that the transitions beat crossfades.
+
+
+## New: FFmpeg-free native WAV workflow
+
+You can now use the complete source import, visual Cue Editor and private
+Transition Studio on a machine with **only Python 3.10+** when your
+source files are already **uncompressed PCM16 WAV at 44,100 Hz**, mono or
+stereo. Each selected source WAV is validated against the manifest's
+SHA256, frame count, maximum 15-minute duration and 256 MiB source limit.
+Only source PCM bytes are copied into a newly written canonical WAV;
+metadata chunks are not copied. A mono source is duplicated sample-wise
+to the two stereo output channels. Source sample rate, pitch, speed and
+musical timing are never altered.
+
+The standard-library route is used automatically; no CLI flag or
+installation is necessary. When any source is MP3, FLAC, M4A, AAC, OGG,
+OPUS, AIFF or a noncanonical WAV requiring conversion, that source still
+uses FFprobe + FFmpeg and requires those binaries to have been installed
+separately. MixLab does not install a decoder, fetch codecs, download
+music or bypass music service DRM.
+
+For a WAV-only library, use the guided project wizard (with real BPM,
+rights, and manual cues), then the interactive session:
+
+~~~bash
+python3 -m mixlab.project_wizard /private/wav-library /private/wav-library/sources.json
+python3 -m mixlab.interactive_session start /private/wav-library/sources.json /private/wav-session
+~~~
+
+Open /private/wav-session/sources/cue-editor.html, approve your cue
+positions, then finish the session with the exported cue selection file.
+
+The import receipt explicitly distinguishes "stdlib PCM16 stereo at
+44100 Hz" from "ffmpeg PCM16 stereo at 44100 Hz". All other private
+checksums, provenance, rights and output limits remain in force.
