@@ -21,7 +21,7 @@ No audio, PCM fingerprints, file paths or segment positions are returned.
 For each channel separately, the detector counts **informative** PCM samples
 (|sample| >=1024). Globally at least 2048 informative samples and 32 distinct
 values are required on *both* sides. Its **fixed-size residue histograms**
-detect any quantizer phase (sample mod 256 or 64), not just multiples of the
+detect any quantizer phase (sample mod 256, 128, 64, 32 or 16), not just multiples of the
 step: the candidate must concentrate >=99.5% of informative samples on one
 residue; the baseline must have <10% even in its **most frequent** residue.
 This also avoids false alarms when both sources are coarse but quantized with
@@ -37,6 +37,13 @@ A globally decisive warning also takes precedence over unavailable regional
 data. A clean (false) flag requires informative, negative global and regional
 evidence on *all* channels. Silence or insufficient data returns `null`,
 **not** a clean bill of health.
+
+
+Quantizer steps 16–256 correspond to discarding roughly 4–8 low PCM16 bits
+(about 12–8 retained bits). Smaller steps, including an 8-sample grid, are
+intentionally outside this conservative screen; neither a clean result nor
+a warning determines perceptual audibility. The added step-16/32 checks
+retain the same sample/region budgets and remain phase-independent.
 
 The thresholds are heuristics designed to recognize conspicuous PCM
 resolution collapse without misclassifying already coarse baselines,
@@ -71,7 +78,7 @@ a conservative CI admission bound, **not** a guaranteed bound on all operating
 systems or evidence that the VPS has sufficient free RAM. Existing ML-07
 quality/companion/privacy suites run separately.
 
-Adversarial tests also exercise signed PCM, shifted 64/256-step quantization,
+Adversarial tests also exercise signed PCM, shifted 16/32/64/128/256-step quantization,
 different quantizer offsets in noncontiguous regions, partial one-channel
 loss, unknown/short regions, chunk-size invariance, read-only file hashes,
 nonregular sources, and redacted CLI errors. Healthy and suspicious verdicts
