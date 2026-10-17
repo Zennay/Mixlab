@@ -108,33 +108,15 @@ def _verified_study(path, expected_study_id):
     return study
 
 
-def verify_study_pack_binding(study_path, pack_path, expected_study_id):
-    """Validate frozen-selection/pack *claims* against a separately pinned ID.
+def _preflight_render_claims(study, evidence):
+    """Reject forged render metadata before scanning bounded private PCM.
 
-    Existing verify_pack checks every private review WAV against the stored
-    render digest. This additional check connects the study selection to every
-    private key and render entry; it does not authenticate source recordings or
-    replace the blind public HTML/quality preflight.
+    The verdict must still be checked against independently verified WAVs;
+    callers compare the loaded claims with verify_pack's post-read evidence.
     """
-    study = _verified_study(study_path, expected_study_id)
-    # Reject a mismatched preregistration before touching private WAV/PCM.
-    # Keep this check supplemental: verify_pack below still re-opens and
-    # validates all canonical receipts, private evidence and audio digests.
-    root = Path(pack_path)
-    public_hint = load_bounded_json(root / "receipt.json")
-    private_hint = load_bounded_json(root / "private" / "evidence.json")
-    if (not isinstance(public_hint, dict) or not isinstance(private_hint, dict)
-            or public_hint.get("study_id") != expected_study_id
-            or private_hint.get("study_id") != expected_study_id):
-        _fail()
-    receipt, evidence, trials = verify_pack(pack_path)
-    if (receipt.get("study_id") != expected_study_id
-            or evidence.get("study_id") != expected_study_id):
-        _fail()
     pairs = study["pairs"]
     renders = evidence.get("renders")
-    if (len(trials) != len(pairs) or not isinstance(renders, list)
-            or len(renders) != 2 * len(pairs)):
+    if not isinstance(renders, list) or len(renders) != 2 * len(pairs):
         _fail()
     by_study = {}
     seen_pack_pairs = set()
@@ -149,9 +131,9 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
             _fail()
         by_study.setdefault(study_pair, []).append(row)
 
+    binding = []
     for index, frozen in enumerate(pairs, 1):
-        ident = frozen["pair_id"]
-        rows = by_study.get(ident, [])
+        rows = by_study.get(frozen["pair_id"], [])
         if len(rows) != 2:
             _fail()
         families = {r["family"] for r in rows}
@@ -170,30 +152,53 @@ def verify_study_pack_binding(study_path, pack_path, expected_study_id):
             recipe = row.get("recipe")
             if not isinstance(recipe, dict) or recipe.get("family") != row["family"]:
                 _fail()
-            # The two declared source tempos matching is insufficient when
-            # recipe.bpm is independent metadata outside pack_id. A fabricated
-            # recipe at a different global tempo contradicts this no-stretch
-            # M1 study even if both source-bpm claims are intact.
-            actual_bpm = recipe.get("bpm")
-            if (type(actual_bpm) not in (int, float)
-                    or not math.isfinite(actual_bpm)
-                    or actual_bpm != frozen["a_bpm"]):
+            bpm = recipe.get("bpm")
+            if (type(bpm) not in (int, float) or not math.isfinite(bpm)
+                    or bpm != frozen["a_bpm"]):
                 _fail()
             beats = recipe.get("beats")
             if type(beats) is not int or not 1 <= beats <= 64:
                 _fail()
             for field, expected in (("a_bpm", frozen["a_bpm"]),
                                     ("b_bpm", frozen["b_bpm"])):
-                number = recipe.get(field)
-                if (type(number) not in (int, float) or not math.isfinite(number)
-                        or number != expected):
+                actual = recipe.get(field)
+                if (type(actual) not in (int, float) or not math.isfinite(actual)
+                        or actual != expected):
                     _fail()
+        binding.append((index, pair, families))
+    if set(by_study) != {row["pair_id"] for row in pairs}:
+        _fail()
+    return binding
+
+
+def verify_study_pack_binding(study_path, pack_path, expected_study_id):
+    """Validate frozen-selection/pack claims against a separately pinned ID.
+
+    Pre-admit every cheap frozen study/render metadata contract before opening
+    the private PCM. Then verify actual review WAV checksums using the existing
+    bounded pack validator and reject evidence modified between the passes.
+    This is not authentication of original source recordings.
+    """
+    study = _verified_study(study_path, expected_study_id)
+    root = Path(pack_path)
+    public_hint = load_bounded_json(root / "receipt.json")
+    private_hint = load_bounded_json(root / "private" / "evidence.json")
+    if (not isinstance(public_hint, dict) or not isinstance(private_hint, dict)
+            or public_hint.get("study_id") != expected_study_id
+            or private_hint.get("study_id") != expected_study_id):
+        _fail()
+    binding = _preflight_render_claims(study, private_hint)
+    receipt, evidence, trials = verify_pack(pack_path)
+    if (receipt.get("study_id") != expected_study_id
+            or evidence.get("study_id") != expected_study_id
+            or evidence.get("renders") != private_hint.get("renders")
+            or len(trials) != len(binding)):
+        _fail()
+    for index, pair, families in binding:
         trial = trials.get(f"trial-{index:03d}")
         if (not isinstance(trial, dict) or trial.get("pair") != pair
                 or {trial.get("A"), trial.get("B")} != families):
             _fail()
-    if set(by_study) != {row["pair_id"] for row in pairs}:
-        _fail()
 
     return {
         "schema_version": 1,
