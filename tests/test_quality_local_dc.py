@@ -118,6 +118,21 @@ class LocalDCQualityTests(unittest.TestCase):
         self.alt.write_bytes(payload)
         self._assert_riff_rejected_before_pcm()
 
+    def test_exactly_1024_riff_chunk_headers_are_admitted(self):
+        _wav(self.base)
+        _wav(self.alt)
+        # Canonical WAV has fmt+data; 1,022 optional empty chunks is exactly
+        # the public 1,024-header cap. There must not be an off-by-one veto.
+        self._append_riff_chunks(self.alt, (b"JUNK" + struct.pack("<I", 0)) * 1022)
+        self.assertIs(local_dc.inspect(self.base, self.alt)["warning"], False)
+        self.assertIs(local_dc.inspect_batch(self.base, [self.alt])["warning"], False)
+
+    def test_1025_riff_chunk_headers_rejected_before_pcm(self):
+        _wav(self.base)
+        _wav(self.alt)
+        self._append_riff_chunks(self.alt, (b"JUNK" + struct.pack("<I", 0)) * 1023)
+        self._assert_riff_rejected_before_pcm()
+
     def test_more_than_thousand_riff_chunks_rejected_with_bounded_headers(self):
         _wav(self.base)
         _wav(self.alt)
