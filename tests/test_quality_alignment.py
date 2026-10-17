@@ -262,6 +262,29 @@ class EnvelopeAlignmentTests(unittest.TestCase):
             compare_envelopes(alias, [self.other])
 
 
+    def test_full_two_million_frame_stereo_admission_is_bounded(self):
+        # Most demanding admitted uncompressed format at 8 kHz:
+        # two independent PCM16 channels at 2M frames each. Exercise the
+        # real streaming decoder rather than only a mocked frame budget.
+        block = array("h", [2000, 1000] * 4096)
+        if sys.byteorder != "little":
+            block.byteswap()
+        tail = array("h", [2000, 1000] * (2_000_000 % 4096))
+        if sys.byteorder != "little":
+            tail.byteswap()
+        for path in (self.base, self.other):
+            with wave.open(str(path), "wb") as output:
+                output.setnchannels(2)
+                output.setsampwidth(2)
+                output.setframerate(8000)
+                for _ in range(2_000_000 // 4096):
+                    output.writeframesraw(block.tobytes())
+                output.writeframesraw(tail.tobytes())
+        row = self.row()
+        self.assertIsNone(row["temporal_envelope_shift_risk"])
+        self.assertIsNone(row["regional_timing_shift_risk"])
+        self.assertIsNone(row["stereo_differential_timing_shift_risk"])
+
     def test_real_two_million_frame_limit_without_loading_all_pcm(self):
         # Full advertised admission boundary, not just mocked source limits.
         # Constant non-silent PCM is deliberately uninformative (risk=None).
