@@ -280,8 +280,8 @@ class RealPCMEndToEndTests(unittest.TestCase):
         from test_quality_study_binding import _canonical_sha, _write_json
 
         study = json.loads(self.fixture.study.read_text())
-        key_path = self.fixture.private / "answer-key.json"
-        evidence_path = self.fixture.private / "evidence.json"
+        key_path = self.fixture.pack / "private" / "answer-key.json"
+        evidence_path = self.fixture.pack / "private" / "evidence.json"
         receipt_path = self.fixture.pack / "receipt.json"
         keys = json.loads(key_path.read_text())
         evidence = json.loads(evidence_path.read_text())
@@ -305,7 +305,7 @@ class RealPCMEndToEndTests(unittest.TestCase):
             keys.append(answer)
             for label in ("A", "B"):
                 variant = answer[label]
-                wav_path = self.fixture.review / f"{trial}-{label}.wav"
+                wav_path = self.fixture.pack / "review" / f"{trial}-{label}.wav"
                 with wave.open(str(wav_path), "wb") as out:
                     out.setnchannels(1)
                     out.setsampwidth(2)
