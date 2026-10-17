@@ -54,6 +54,31 @@ class LocalDCQualityTests(unittest.TestCase):
              offsets=[[offset] * int(rate * duration)])
         return path
 
+    def test_batch_real_eight_million_frame_aggregate_ceiling(self):
+        # Eight independent 1M-frame PCM16 mono WAVs, no fabricated nframes.
+        # This exercises the full 8M-frame admission and bounded scanner.
+        sources = [self.base] + [
+            Path(self.tmp.name) / f"bounded-{i:03d}.wav" for i in range(7)
+        ]
+        def create_real_wavs(frame_count):
+            payload = bytes(frame_count * 2)
+            for path in sources:
+                with wave.open(str(path), "wb") as writer:
+                    writer.setnchannels(1)
+                    writer.setsampwidth(2)
+                    writer.setframerate(8000)
+                    writer.writeframes(payload)
+        create_real_wavs(1_000_000)
+        output = local_dc.inspect_batch(sources[0], sources[1:])
+        self.assertEqual(output["candidate_count"], 7)
+        self.assertEqual(output["frames"], 1_000_000)
+        self.assertIs(output["warning"], False)
+        create_real_wavs(1_000_001)
+        with mock.patch.object(local_dc, "_scan_private_pcm",
+                               side_effect=AssertionError("PCM decoded over limit")):
+            with self.assertRaisesRegex(ValueError, "resource admission"):
+                local_dc.inspect_batch(sources[0], sources[1:])
+
     def test_batch_two_candidates_are_anon_and_ordered(self):
         _wav(self.base)
         first = self._batch_candidate(1, offset=3400)
