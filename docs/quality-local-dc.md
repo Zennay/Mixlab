@@ -17,7 +17,9 @@ The tool **never uploads or writes audio**, never prints private file names,
 and uses only Python stdlib. It opens regular read-only sources with
 `O_NOFOLLOW` and `O_NONBLOCK`; each input is capped at 32 MiB and 2,000,000
 frames; allowed PCM is 16-bit uncompressed mono/stereo at 8–96 kHz. Shape
-must match exactly. Reads are bounded to 4096 frames/chunk. Window sums
+must match exactly; baseline and candidate must also resolve to **distinct
+regular-file identities** (same path or hardlinks are rejected; independent
+identical copies remain admissible). Reads are bounded to 4096 frames/chunk. Window sums
 consume only O(channels × floor(frames / 250ms)) memory. Per-source and
 pair-wide device/inode/size/mtime/ctime freeze checks reject detectable source
 changes, including path swaps. This is best effort and **not** an atomic
@@ -58,6 +60,9 @@ analysis or evaluation scopes. Keep the PR **draft**; no queue/worker/VPS
 changes, merge, deployment or synthetic-to-musical quality claim.
 
 Synthetic regression evidence from CI must be linked to the **exact PR
-HEAD SHA** before human review. CI uses GitHub-hosted ephemeral workers
+HEAD SHA** before human review. Coverage includes a genuine 2-million-frame,
+96 kHz stereo boundary fixture (not mocked metadata), exact one-second and
+sub-second signals, duplicate/hardlink admission and input mutation. These
+synthetic samples are not rights-permitted music or human listening proof. CI uses GitHub-hosted ephemeral workers
 because the always-on VPS currently has no free swap; this does not prove
 a production VPS render budget.
