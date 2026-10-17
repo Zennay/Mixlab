@@ -1,6 +1,7 @@
 """Synthetic security/immutability tests for the isolated ML-07 FD guard."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 from unittest.mock import patch
@@ -382,6 +383,28 @@ class PrivateFdGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "details withheld"):
             validate_private_ab_group([self.source, target])
 
+    def test_ab_group_rejects_identical_inode_even_with_distinct_path(self):
+        alias = self.root / "PRIVATE_HARDLINK.wav"
+        os.link(self.source, alias)
+        for pair in ([self.source, self.source], [self.source, alias]):
+            with self.subTest(same_file=pair[0] == pair[1]):
+                with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError(
+                    "Audio read before duplicate inode admission"
+                )) as intercepted:
+                    with self.assertRaisesRegex(ValueError, "details withheld") as result:
+                        validate_private_ab_group(pair)
+                    intercepted.assert_not_called()
+                    self.assertNotIn(str(self.root), str(result.exception))
+
+    def test_ab_group_distinct_inodes_do_not_claim_different_audio(self):
+        # Byte-identical, independently stored source files remain legal:
+        # this FD guard is NOT PR #68's acoustic/exact-PCM reuse detector.
+        copy = self.root / "private-byte-duplicate.wav"
+        shutil.copyfile(self.source, copy)
+        report = validate_private_ab_group([self.source, copy])
+        self.assertTrue(report["shape_comparable"])
+        self.assertNotIn("identical", json.dumps(report))
+
     def test_ab_group_stereo_identical_shape_admitted(self):
         make_wav(self.source, channels=2, frames=8193)
         other = self.root / "stereo-new.wav"
@@ -399,11 +422,16 @@ class PrivateFdGuardTests(unittest.TestCase):
             source.write(struct.pack("<I", 2_000_000 * 2))
             source.truncate(44 + 2_000_000 * 2)
         self.assertEqual(8_000_000, MAX_GROUP_FRAMES)
+        copies = [self.source]
+        for index in range(4):
+            path = self.root / f"budget-candidate-{index}.wav"
+            shutil.copyfile(self.source, path)
+            copies.append(path)
         with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError(
             "PCM work exceeded pre-admission budget"
         )) as intercepted:
             with self.assertRaisesRegex(ValueError, "details withheld"):
-                validate_private_ab_group([self.source] * 5)
+                validate_private_ab_group(copies)
             intercepted.assert_not_called()
 
     def test_ab_group_exact_eight_million_frames_admitted(self):
@@ -413,7 +441,12 @@ class PrivateFdGuardTests(unittest.TestCase):
             source.seek(40)
             source.write(struct.pack("<I", 2_000_000 * 2))
             source.truncate(44 + 2_000_000 * 2)
-        result = validate_private_ab_group([self.source] * 4)
+        copies = [self.source]
+        for index in range(3):
+            path = self.root / f"exact-budget-{index}.wav"
+            shutil.copyfile(self.source, path)
+            copies.append(path)
+        result = validate_private_ab_group(copies)
         self.assertEqual(3, result["candidate_count"])
         self.assertEqual(2_000_000, result["frames"])
 
