@@ -1,0 +1,56 @@
+name: MixLab ML-07 streaming PCM chunk invariants
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tests/test_quality_streaming_chunk_invariants.py"
+      - "docs/quality-streaming-chunk-invariants.md"
+      - ".github/workflows/ml07-streaming-chunk-invariants.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml07-pcm-chunk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pcm-boundaries:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout immutable PR source without persisted token
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run new boundary suite and existing canonical quality regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile tests/test_quality_streaming_chunk_invariants.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_streaming_chunk_invariants.py' -v
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality.py' -v
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_cli.py' -v
