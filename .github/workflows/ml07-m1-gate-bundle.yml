@@ -5,7 +5,44 @@ on:
     branches: [main]
     paths:
       - "mixlab/quality/m1_gate_bundle.py"
+      - "mixlab/quality/assignment_balance.py"
+      - "mixlab/quality/listener_position.py"
+      - "mixlab/quality/pilot_sensitivity.py"
+      - "mixlab/quality/reviewer_influence.py"
+      - "mixlab/quality/study_binding.py"
+      - "mixlab/quality/repeatability.py"
+      - "mixlab/quality/pack.py"
+      - "mixlab/evaluation/__init__.py"
+      - "mixlab/evaluation/json_admission.py"
       - "tests/test_quality_m1_gate_bundle.py"
+      - "tests/test_quality_composed_m1_gates.py"
+      - "tests/test_quality_assignment_balance.py"
+      - "tests/test_quality_listener_position.py"
+      - "tests/test_quality_pilot_sensitivity.py"
+      - "tests/test_quality_reviewer_influence.py"
+      - "tests/test_quality_study_binding.py"
+      - "docs/quality-m1-gate-bundle.md"
+      - ".github/workflows/ml07-m1-gate-bundle.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mixlab/quality/m1_gate_bundle.py"
+      - "mixlab/quality/assignment_balance.py"
+      - "mixlab/quality/listener_position.py"
+      - "mixlab/quality/pilot_sensitivity.py"
+      - "mixlab/quality/reviewer_influence.py"
+      - "mixlab/quality/study_binding.py"
+      - "mixlab/quality/repeatability.py"
+      - "mixlab/quality/pack.py"
+      - "mixlab/evaluation/__init__.py"
+      - "mixlab/evaluation/json_admission.py"
+      - "tests/test_quality_m1_gate_bundle.py"
+      - "tests/test_quality_composed_m1_gates.py"
+      - "tests/test_quality_assignment_balance.py"
+      - "tests/test_quality_listener_position.py"
+      - "tests/test_quality_pilot_sensitivity.py"
+      - "tests/test_quality_reviewer_influence.py"
+      - "tests/test_quality_study_binding.py"
       - "docs/quality-m1-gate-bundle.md"
       - ".github/workflows/ml07-m1-gate-bundle.yml"
   workflow_dispatch:
@@ -53,6 +90,13 @@ jobs:
           set -euo pipefail
           ulimit -v 196608
           python -m py_compile mixlab/quality/m1_gate_bundle.py tests/test_quality_m1_gate_bundle.py
-          for pattern in test_quality_m1_gate_bundle.py test_quality_composed_m1_gates.py; do
+          for pattern in \
+            test_quality_m1_gate_bundle.py \
+            test_quality_composed_m1_gates.py \
+            test_quality_assignment_balance.py \
+            test_quality_listener_position.py \
+            test_quality_pilot_sensitivity.py \
+            test_quality_reviewer_influence.py \
+            test_quality_study_binding.py; do
             /usr/bin/time -v python -m unittest discover -s tests -p "$pattern" -v
           done
