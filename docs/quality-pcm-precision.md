@@ -59,3 +59,20 @@ gates still require lawful tracks, downbeat/phrase/key/stem proof, and a
 pre-registered A/B study with independent listeners. The feature is isolated
 from concurrent quality, DSP and evaluation owners and is not integrated into
 the shared CLI/pack code until an integration owner accepts it.
+
+
+## CI resource proof and adversarial regressions
+
+The PR-only GitHub-hosted workflow checks exact immutable source SHA,
+compiles source/tests, runs synthetic maximum-size 2,000,000-frame stereo
+fixtures, and measures peak RSS with `/usr/bin/time -v`. It fails if the
+entire synthetic precision test process exceeds **192 MiB peak RSS**; this is
+a conservative CI admission bound, **not** a guaranteed bound on all operating
+systems or evidence that the VPS has sufficient free RAM. Existing ML-07
+quality/companion/privacy suites run separately.
+
+Adversarial tests also exercise signed PCM, shifted 64/256-step quantization,
+different quantizer offsets in noncontiguous regions, partial one-channel
+loss, unknown/short regions, chunk-size invariance, read-only file hashes,
+nonregular sources, and redacted CLI errors. Healthy and suspicious verdicts
+are **synthetic signal-invariant assertions**, not listening preferences.
