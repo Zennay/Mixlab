@@ -326,7 +326,8 @@ def validate_library(manifest_path):
         tid = _identifier(track.get("id"), "track id")
         if tid in tracks:
             raise ValueError("Duplicate track id")
-        if track.get("rights") not in RIGHTS:
+        rights = track.get("rights")
+        if not isinstance(rights, str) or rights not in RIGHTS:
             raise ValueError("Explicit permission required")
         if not isinstance(track.get("provenance"), str) or not track["provenance"].strip():
             raise ValueError("Provenance required")
@@ -339,6 +340,10 @@ def validate_library(manifest_path):
         path = (source.parent / relative).resolve()
         if not path.is_relative_to(source.parent) or path.suffix.lower() != ".wav":
             raise ValueError("Source must be a WAV inside the library")
+        partition = track.get("partition")
+        if partitioned and (not isinstance(partition, str) or
+                            partition not in {"development", "evaluation"}):
+            raise ValueError("All tracks need a development/evaluation partition")
         sha = track.get("sha256")
         if not isinstance(sha, str) or not HASH.fullmatch(sha):
             raise ValueError("Invalid source checksum")
@@ -348,9 +353,7 @@ def validate_library(manifest_path):
         number(track.get("bpm"), "manual bpm", 30, 300)
         if "downbeat_seconds" in track:
             number(track["downbeat_seconds"], "manual downbeat", 0, info["duration_seconds"])
-        partition = track.get("partition")
-        if partitioned and partition not in {"development", "evaluation"}:
-            raise ValueError("All tracks need a development/evaluation partition")
+
         recording = track.get("recording_id", tid)
         _identifier(recording, "recording id")
         for identity in ("pcm:" + info["pcm_sha256"], "recording:" + recording):
