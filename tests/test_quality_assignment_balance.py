@@ -6,7 +6,6 @@ import sys
 import unittest
 from pathlib import Path
 
-from test_quality_study_binding import FrozenStudyBindingTests
 from mixlab.quality.assignment_balance import (
     AssignmentBalanceError, audit_study_assignment, inspect_assignments,
 )
@@ -14,6 +13,9 @@ from mixlab.quality.assignment_balance import (
 
 class AssignmentBiasTests(unittest.TestCase):
     def setUp(self):
+        # Import here so discovery does not accidentally run the entire
+        # existing canonical study-binding suite a second time.
+        from test_quality_study_binding import FrozenStudyBindingTests
         self.fixtures = FrozenStudyBindingTests(
             "test_valid_five_pair_study_is_bound_to_actual_pcm_receipts")
         self.fixtures.setUp()
