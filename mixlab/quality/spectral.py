@@ -100,6 +100,7 @@ def _scan_spectral_private(
                 # per-span envelopes in the public report.
                 span_energy = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(SPECTRAL_SPANS)]
                 span_cross_energy = [0.0] * SPECTRAL_SPANS
+                span_band_cross_energy = [[0.0] * 3 for _ in range(SPECTRAL_SPANS)]
                 # Detect left/right dropouts *within* a track despite equal
                 # whole-file channel RMS. Eight by two private RMS accumulators.
                 span_channel_energy = [[0.0] * channels for _ in range(SPECTRAL_SPANS)]
@@ -161,6 +162,11 @@ def _scan_spectral_private(
                         span_energy[span][3] += high_sample_energy
                         if channels == 2 and channel == 1:
                             span_cross_energy[span] += (samples[index - 1] / 32768) * value
+                            span_band_cross_energy[span][0] += low_state[0] * low_state[1]
+                            span_band_cross_energy[span][1] += mid_state[0] * mid_state[1]
+                            span_band_cross_energy[span][2] += (
+                                (samples[index - 1] / 32768 - high_state[0]) * high_residual
+                            )
                         if channel == 0:
                             span_energy[span][4] += 1
                     remaining -= count
@@ -220,6 +226,21 @@ def _scan_spectral_private(
                 math.sqrt(total / frames),
             )
             for total, low, mid, high in channel_energy
+        ],
+        "_mono_fold_band_spans": [
+            tuple(
+                (
+                    math.sqrt(band_energy / total),
+                    math.sqrt(max(0.0, min(1.0, 0.5 + cross / band_energy))),
+                ) if channels == 2 and band_energy > 0 and total > 0
+                  and count and math.sqrt(total / (count * channels)) >= SILENT_WINDOW_RMS
+                else None
+                for band_energy, cross in zip((low, mid, high), crossing)
+            )
+            for (_, low, mid, high, count), crossing, total in (
+                (span, cross, span[0])
+                for span, cross in zip(span_energy, span_band_cross_energy)
+            )
         ],
         "_channel_band_spans": [
             tuple(
@@ -362,6 +383,27 @@ def compare_spectral_balance(
                 deltas["stereo_" + name + "_band_mono_fold_cancellation_risk"] = meaningful_cancellation
                 if meaningful_cancellation:
                     warnings.append("stereo_" + name + "_band_mono_fold_cancellation_inspect")
+
+        # The same cancellation can affect just two parts of an otherwise
+        # healthy track. Eight private filtered-band cross-energy windows
+        # spot persistent mono loss hidden by whole-band and broadband means.
+        if reference["channels"] == 2:
+            for name, band in (("low", 0), ("mid", 1), ("high", 2)):
+                cancellation_spans = sum(
+                    any(
+                        source_span[band] is not None
+                        and source_span[band][0] >= BAND_FOLD_MIN_PROXY_RATIO
+                        and source_span[band][1] <= 10 ** (BAND_FOLD_LOSS_DB / 20)
+                        for source_span in (ref_spans, cur_spans)
+                    )
+                    for ref_spans, cur_spans in zip(
+                        reference["_mono_fold_band_spans"], current["_mono_fold_band_spans"]
+                    )
+                )
+                risk = cancellation_spans >= 2
+                deltas["stereo_temporal_" + name + "_band_mono_fold_risk"] = risk
+                if risk:
+                    warnings.append("stereo_temporal_" + name + "_band_mono_fold_inspect")
 
         # The ratios below intentionally normalize out overall gain.
         # Report an independent sample-RMS confound, *not* perceptual LUFS.
