@@ -32,6 +32,24 @@ def _identity(st: os.stat_result) -> tuple[int, ...]:
     return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
 
 
+def _validate_riff_envelope(handle, physical_bytes: int) -> None:
+    """Reject RIFF containers with a forged length or trailing unclaimed bytes.
+
+    Python's wave module can parse the declared audio frames while quietly
+    ignoring bytes appended *outside* the advertised RIFF container. That can
+    make a malformed private A/B source look clean. Validate its physical
+    envelope before opening the wave parser, without decoding any PCM.
+    """
+    header = handle.read(12)
+    if (len(header) != 12 or header[:4] != b"RIFF" or
+            header[8:12] != b"WAVE"):
+        raise ValueError("Invalid private RIFF/WAVE envelope")
+    declared_bytes = 8 + struct.unpack_from("<I", header, 4)[0]
+    if declared_bytes != physical_bytes:
+        raise ValueError("Private RIFF size does not match physical bytes")
+    handle.seek(0)
+
+
 def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
     """Retain window means only; fail closed on nonregular/changing input."""
     fd = None
@@ -50,6 +68,7 @@ def _scan_private_pcm(source: str | os.PathLike[str]) -> dict:
             raise ValueError("private WAV outside byte bounds")
         with os.fdopen(fd, "rb", closefd=True) as handle:
             fd = None
+            _validate_riff_envelope(handle, before.st_size)
             with wave.open(handle, "rb") as wav:
                 channels, width, rate, frames, compression, _ = wav.getparams()
                 if channels not in (1, 2) or width != 2 or compression != "NONE":
@@ -205,6 +224,7 @@ def _admit_batch(sources: list[str | os.PathLike[str]]) -> list[dict]:
             seen.add(key)
             with os.fdopen(fd, "rb", closefd=True) as handle:
                 fd = None
+                _validate_riff_envelope(handle, actual.st_size)
                 with wave.open(handle, "rb") as wav:
                     channels, width, rate, frames, comp, _ = wav.getparams()
                     if comp != "NONE" or width != 2 or channels not in (1, 2):
