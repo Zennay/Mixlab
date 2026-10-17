@@ -598,6 +598,50 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("stereo_temporal_low_channel_spectral_shift_inspect", row["warnings"])
         self.assertNotIn("stereo_temporal_high_channel_spectral_shift_inspect", row["warnings"])
 
+    def test_sparse_stereo_channel_bands_have_no_false_zero_mismatch(self):
+        # Global audio remains audible; only one interval has analyzable
+        # channel bands, so no temporal consistency can be inferred.
+        make_stereo_band_segments(self.base, [False] * 8)
+        make_stereo_band_segments(self.other, [True] * 8)
+        for path in (self.base, self.other):
+            with wave.open(str(path), "rb") as inp:
+                values = array("h")
+                values.frombytes(inp.readframes(inp.getnframes()))
+            for idx in range(6000 * 2, len(values)):
+                values[idx] = 0
+            if sys.byteorder != "little":
+                values.byteswap()
+            with wave.open(str(path), "wb") as out:
+                out.setnchannels(2)
+                out.setsampwidth(2)
+                out.setframerate(48000)
+                out.writeframes(values.tobytes())
+        row = self.report()["candidates"][0]
+        for band in ("low", "mid", "high"):
+            self.assertIsNone(
+                row["stereo_temporal_" + band + "_channel_spectral_mismatch_fraction"]
+            )
+        self.assertIn("insufficient_temporal_spectral_coverage_inspect", row["warnings"])
+
+    def test_stereo_channel_temporal_shift_is_opaque_and_strict_cli_gated(self):
+        make_stereo_band_segments(self.base, [False] * 4 + [True] * 4)
+        make_stereo_band_segments(self.other, [True] * 4 + [False] * 4)
+        result = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("stereo_temporal_low_channel_spectral_shift_inspect", result.stdout)
+        for secret in (str(self.dir), self.base.name, self.other.name):
+            self.assertNotIn(secret, result.stdout + result.stderr)
+        self.assertNotIn("_channel_band_spans", result.stdout)
+
+    def test_temporal_stereo_band_comparisons_are_direction_symmetric(self):
+        make_stereo_band_segments(self.base, [False] * 4 + [True] * 4)
+        make_stereo_band_segments(self.other, [True] * 4 + [False] * 4)
+        forward = self.report()["candidates"][0]
+        backward = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        for band in ("low", "mid", "high"):
+            metric = "stereo_temporal_" + band + "_channel_spectral_mismatch_fraction"
+            self.assertEqual(forward[metric], backward[metric])
+
     def test_stereo_temporal_bands_are_gain_invariant(self):
         patterns = [False, True, False, True, False, True, False, True]
         make_stereo_band_segments(self.base, patterns, gain=8000)
