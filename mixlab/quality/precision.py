@@ -121,11 +121,26 @@ def _assert_source_identity(path: str | Path, expected: tuple[int, ...]) -> None
 
 
 def _precision_grid_loss(reference: dict, candidate: dict, an: int, bn: int) -> bool:
-    # Require the reference not to be concentrated on ANY grid offset; a
-    # similarly coarse reference shifted by one LSB is not evidence of loss.
-    return any(max(candidate[step]) / bn >= CANDIDATE_GRID_FRACTION
-               and max(reference[step]) / an < BASELINE_GRID_FRACTION
-               for step in GRID_STEPS)
+    """Find a single quantizer phase or a tightly adjacent two-phase jitter.
+
+    Two-phase detection only admits adjacent residues (modulo step). This
+    avoids incorrectly reporting an 8-sample grid as a 16-sample grid when
+    its two occupied residues are eight apart. Compare against the baseline's
+    strongest bins, not the candidate offsets, to reject shifted coarse
+    baselines. No audio or residue statistics leave this private function.
+    """
+    for step in GRID_STEPS:
+        ref, cand = reference[step], candidate[step]
+        if (max(cand) / bn >= CANDIDATE_GRID_FRACTION
+                and max(ref) / an < BASELINE_GRID_FRACTION):
+            return True
+        first, second = sorted(range(step), key=cand.__getitem__, reverse=True)[:2]
+        adjacent = (first - second) % step in (1, step - 1)
+        if (adjacent
+                and (cand[first] + cand[second]) / bn >= CANDIDATE_GRID_FRACTION
+                and sum(sorted(ref, reverse=True)[:2]) / an < 2 * BASELINE_GRID_FRACTION):
+            return True
+    return False
 
 
 def _evaluate_precision(a: dict, b: dict) -> dict:
