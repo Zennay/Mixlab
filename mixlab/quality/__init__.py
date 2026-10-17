@@ -664,6 +664,29 @@ def _mono_fold_down_ab_level_confound(baseline: dict, candidate: dict) -> tuple[
     return delta, abs(delta) >= MONO_FOLD_DOWN_AB_LEVEL_MISMATCH_DB
 
 
+def _mono_playback_level_difference(
+    baseline: dict, candidate: dict, *, tolerance_db: float
+) -> tuple[float | None, bool]:
+    """Compare actual computed mono playback RMS, not only stereo power.
+
+    A 4 dB mono mismatch can coexist with matching global/channel stereo
+    levels and a fold-down *loss difference* below the 6 dB screening rule.
+    Fully cancelled mono has no finite playback level to report.
+    """
+    if baseline["channels"] != 2 or candidate["channels"] != 2:
+        return None, False
+    if baseline["rms_dbfs"] is None or candidate["rms_dbfs"] is None:
+        return None, False
+    base_loss = baseline["mono_fold_down_loss_db"]
+    candidate_loss = candidate["mono_fold_down_loss_db"]
+    if base_loss is None or candidate_loss is None:
+        return None, (base_loss is None) != (candidate_loss is None)
+    original_mono_dbfs = baseline["rms_dbfs"] - base_loss
+    candidate_mono_dbfs = candidate["rms_dbfs"] - candidate_loss
+    delta = round(candidate_mono_dbfs - original_mono_dbfs, 3)
+    return delta, abs(delta) > tolerance_db
+
+
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                  window_ms: int = 100, loudness_tolerance_db: float = 1.5) -> dict:
     """Diagnose candidate-vs-baseline safety for a neutral human A/B review.
@@ -763,6 +786,13 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             )
             if ab_mono_fold_down_window_level_confound_risk:
                 warnings.append("ab_mono_fold_down_window_confound_inspect_not_lufs")
+        mono_playback_rms_delta_db, mono_playback_level_confound_risk = (
+            _mono_playback_level_difference(
+                base, metrics, tolerance_db=loudness_tolerance_db
+            )
+        )
+        if mono_playback_level_confound_risk:
+            warnings.append("ab_mono_playback_rms_level_mismatch_not_lufs")
         # Aligned durations do not guarantee aligned audible starts/ends.
         # Only inspect non-silent pairs; a completely silent side is handled
         # by the existing silence-specific warning.
@@ -886,6 +916,8 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "ab_mono_fold_down_level_confound_risk": ab_mono_fold_down_level_confound_risk,
             "ab_mono_fold_down_window_level_mismatch_fraction": ab_mono_fold_down_window_level_mismatch_fraction,
             "ab_mono_fold_down_window_level_confound_risk": ab_mono_fold_down_window_level_confound_risk,
+            "mono_playback_rms_delta_db_vs_baseline": mono_playback_rms_delta_db,
+            "mono_playback_level_confound_risk": mono_playback_level_confound_risk,
             "edge_silence_mismatch_risk": edge_silence_mismatch_risk,
             "prominent_onset_mismatch_ms": onset_gap_ms,
             "prominent_onset_mismatch_risk": prominent_onset_mismatch_risk,
@@ -910,6 +942,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
                 and not stereo_window_channel_level_confound_risk
                 and not ab_mono_fold_down_level_confound_risk
                 and not ab_mono_fold_down_window_level_confound_risk
+                and not mono_playback_level_confound_risk
                 # Even if BOTH sides cancel perfectly, their identical
                 # global/window RMS is no evidence of usable mono playback.
                 and (base["channels"] != 2 or (
