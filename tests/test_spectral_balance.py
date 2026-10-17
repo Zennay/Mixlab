@@ -94,6 +94,17 @@ class SpectralBalanceTests(unittest.TestCase):
             result["baseline"]["rms_dbfs"], row["metrics"]["rms_dbfs"], delta=0.1
         )
 
+    def test_midrange_loss_triggers_even_with_matched_pcm_rms(self):
+        make_wav(self.base, freq=1000)
+        make_wav(self.other, freq=30)
+        result = self.report()
+        row = result["candidates"][0]
+        self.assertAlmostEqual(result["baseline"]["rms_dbfs"], row["metrics"]["rms_dbfs"], delta=0.2)
+        self.assertLess(row["mid_proxy_delta_db"], -6)
+        self.assertIn("mid_spectral_balance_shift_inspect", row["warnings"])
+        self.assertIsNotNone(result["baseline"]["midpass_180_2500_ratio"])
+        self.assertNotIn(str(self.base), json.dumps(result))
+
     def test_gain_only_does_not_trigger_relative_spectrum(self):
         make_wav(self.other, gain=6000)
         row = self.report()["candidates"][0]
@@ -231,6 +242,14 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("_spans", serialized)
         self.assertNotIn(str(self.dir), serialized)
 
+    def test_temporal_midrange_rearrangement_is_flagged(self):
+        make_segmented_wav(self.base, [1000] * 4 + [30] * 4)
+        make_segmented_wav(self.other, [30] * 4 + [1000] * 4)
+        row = self.report()["candidates"][0]
+        self.assertGreaterEqual(row["temporal_mid_proxy_mismatch_fraction"], 0.25)
+        self.assertIn("mid_temporal_spectral_shift_inspect", row["warnings"])
+        self.assertIsInstance(row["temporal_mid_proxy_mismatch_fraction"], float)
+
     def test_one_short_spectral_change_does_not_trigger_persistent_bias(self):
         make_segmented_wav(self.base, [100] * 8)
         make_segmented_wav(self.other, [5000] + [100] * 7)
@@ -245,6 +264,7 @@ class SpectralBalanceTests(unittest.TestCase):
         row = self.report()["candidates"][0]
         self.assertEqual(0.0, row["temporal_low_proxy_mismatch_fraction"])
         self.assertEqual(0.0, row["temporal_high_proxy_mismatch_fraction"])
+        self.assertEqual(0.0, row["temporal_mid_proxy_mismatch_fraction"])
         self.assertNotIn("low_temporal_spectral_shift_inspect", row["warnings"])
 
     def test_silent_segments_have_no_fake_zero_db_temporal_evidence(self):
@@ -252,6 +272,7 @@ class SpectralBalanceTests(unittest.TestCase):
         row = self.report()["candidates"][0]
         self.assertIsNone(row["temporal_low_proxy_mismatch_fraction"])
         self.assertIsNone(row["temporal_high_proxy_mismatch_fraction"])
+        self.assertIsNone(row["temporal_mid_proxy_mismatch_fraction"])
         self.assertIn("insufficient_audible_energy_for_spectral_comparison", row["warnings"])
 
     def test_cli_output_status_and_argument_privacy(self):
