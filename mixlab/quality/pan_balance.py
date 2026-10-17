@@ -199,9 +199,15 @@ def main(argv=None):
     parser = _PrivateArgumentParser(description="Offline anonymous stereo pan A/B screen")
     parser.add_argument("baseline")
     parser.add_argument("candidate")
+    parser.add_argument("--fail-on-review", action="store_true",
+                        help="Exit 3 on technical review or insufficient evidence")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(inspect(args.baseline, args.candidate), sort_keys=True))
+        result = inspect(args.baseline, args.candidate)
+        print(json.dumps(result, sort_keys=True))
+        # Optional automation gate; never silently label absent evidence clean.
+        if args.fail_on_review and result["stereo_pan_confound_review"] is not False:
+            return 3
         return 0
     except (OSError, ValueError, OverflowError, struct.error, ZeroDivisionError):
         print("Stereo pan preflight rejected private input", file=sys.stderr)
