@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
 
 from mixlab.quality.relative_mono import assess, inspect
@@ -109,6 +110,64 @@ class RelativeMonoTests(unittest.TestCase):
         self.assertEqual(
             result["candidates"][0]["status"], "insufficient_stereo_evidence"
         )
+
+    def test_mixed_batch_never_promotes_disjoint_candidate(self):
+        _wave(self.base, mode="normal")
+        clean = self.root / "clean.wav"
+        sparse = self.root / "sparse.wav"
+        antiphase = self.root / "antiphase.wav"
+        _wave(clean, mode="normal")
+        _wave(sparse, mode="sparse-opposed")
+        _wave(antiphase, mode="opposed")
+        result = inspect(str(self.base), [str(clean), str(sparse), str(antiphase)])
+        self.assertEqual([row["status"] for row in result["candidates"]], [
+            "no_new_sustained_mono_cancellation_detected",
+            "insufficient_stereo_evidence",
+            "candidate_introduces_mono_cancellation",
+        ])
+        self.assertEqual([row["candidate_id"] for row in result["candidates"]],
+                         ["candidate-01", "candidate-02", "candidate-03"])
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertFalse(result["milestone_pass"])
+
+    def test_fractional_sample_rate_and_96khz_synchronous_windows(self):
+        for sample_rate in (11025, 96000):
+            with self.subTest(sample_rate=sample_rate):
+                count = sample_rate * 12 // 10
+                _wave(self.base, mode="normal", frames=count, rate=sample_rate)
+                _wave(self.candidate, mode="opposed", frames=count, rate=sample_rate)
+                report = inspect(str(self.base), [str(self.candidate)])
+                self.assertEqual(report["candidates"][0]["status"],
+                                 "candidate_introduces_mono_cancellation")
+
+    def test_file_mutation_between_streaming_passes_is_rejected(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="normal")
+        from mixlab.quality import relative_mono
+        actual = relative_mono._paired_phase_fractions
+
+        def changed_after_canonical_scan(base, candidate):
+            with open(self.candidate, "r+b") as out:
+                out.seek(44)
+                out.write(b"\\x01\\x00\\x02\\x00")
+                out.flush()
+                os.fsync(out.fileno())
+            return actual(base, candidate)
+
+        with patch("mixlab.quality.relative_mono._paired_phase_fractions",
+                   side_effect=changed_after_canonical_scan):
+            with self.assertRaisesRegex(ValueError, "changed"):
+                inspect(str(self.base), [str(self.candidate)])
+
+    def test_excessive_declared_frame_count_rejected_before_paired_read(self):
+        with wave.open(str(self.base), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(8000)
+            out.writeframes(b"\\x00\\x00\\x00\\x00" * 2_000_001)
+        _wave(self.candidate, mode="normal")
+        with self.assertRaises(ValueError):
+            inspect(str(self.base), [str(self.candidate)])
 
     def test_mismatched_frames_do_not_get_positive_claim(self):
         _wave(self.base, mode="normal")
