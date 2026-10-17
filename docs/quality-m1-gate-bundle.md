@@ -13,6 +13,48 @@ receipt, evidence, answer-key or ballots before/after the scan.
 No existing evaluator, renderer, study producer, zCloud scheduling or shared
 contracts are altered. This is **ML-07 quality-validation only**.
 
+## Process-argument privacy for real listening sessions
+
+The preferred **local-only** CLI does not put private study paths, reviewer
+file names, or the pinned study ID in process arguments. Supply a small
+JSON request through stdin instead of constructing a command with those
+values on the command line:
+
+```bash
+python3 -m mixlab.quality.m1_gate_bundle --private-input-stdin < /private/m1-request.json
+```
+
+The private input file, created **outside the repository**, must contain exactly
+the four keys below. This is a shape example, **not** production evidence:
+
+```json
+{
+  "study": "/private/study.json",
+  "pack": "/private/frozen-pack",
+  "ratings": [
+    "/private/reviewer-01.json",
+    "/private/reviewer-02.json",
+    "/private/reviewer-03.json"
+  ],
+  "expected_study_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+```
+
+Create and store the request only on a consented/private host with restrictive
+permissions (for example, `umask 077` before creating it). Do not pass the
+JSON itself to `echo`, shell history, GitHub Actions expressions, CI artifacts,
+chat, Notion or stdout. Avoid public CI for live listening material.
+
+The stdin parser reads **at most 32 KiB**, rejects duplicate JSON keys,
+unexpected fields, malformed types, nonfinite JSON constants, invalid UTF-8,
+and any mixture of stdin mode with positional paths/flags. It uses the same
+frozen PCM/ratings verification and the same exit codes as the legacy CLI.
+The legacy positional form remains available for existing synthetic scripts,
+but it may disclose file paths through operating-system process listings.
+
+This reduces command-line exposure; it does not protect against malicious
+local root access, unsafe storage permissions or a compromised execution host.
+
 ## Private-only invocation
 
 ```bash
