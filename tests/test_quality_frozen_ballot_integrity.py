@@ -6,18 +6,20 @@ No person, music recording, licensed source or external service is involved.
 """
 import copy
 import json
+import subprocess
+import sys
 import unittest
 
 from mixlab.quality.assignment_balance import audit_study_assignment
 from mixlab.quality.listener_position import inspect_listener_sides
 from mixlab.quality.pilot_sensitivity import inspect_real_pilot
 from mixlab.quality.reviewer_influence import inspect_real_reviewer_influence
-from test_quality_composed_m1_gates import CombinedM1GatesTests
+import test_quality_composed_m1_gates
 
 
 class FrozenBallotContractTests(unittest.TestCase):
     def setUp(self):
-        self.base = CombinedM1GatesTests(
+        self.base = test_quality_composed_m1_gates.CombinedM1GatesTests(
             "test_all_four_gates_accept_checksum_bound_unanimous_candidate_votes"
         )
         self.base.setUp()
@@ -129,6 +131,39 @@ class FrozenBallotContractTests(unittest.TestCase):
         for gate, check in self.post_rating_gates():
             with self.subTest(gate=gate), self.assertRaises(ValueError):
                 check()
+
+    def test_all_unusable_ballots_are_admitted_but_force_methodology_review(self):
+        self.base.generate_reviews([["Both unusable"] * 5 for _ in range(3)])
+        reports = {name: check() for name, check in self.post_rating_gates()}
+        for report in reports.values():
+            self.assert_no_private_leaks(report)
+        self.assertEqual(reports["button"]["decisive_vote_count"], 0)
+        self.assertIsNone(reports["pair"]["one_sided_pair_sign_reference_probability"])
+        self.assertTrue(reports["pair"]["pair_sensitivity_review_required"])
+        self.assertIsNone(reports["reviewer"]["full_candidate_preference_fraction"])
+        self.assertTrue(reports["reviewer"]["reviewer_influence_review_required"])
+
+    def test_public_clis_redact_invalid_ballot_paths_and_reviewers(self):
+        self.patch_rating(0, lambda d: d.__setitem__("reviewer", "listener 01"))
+        b = self.base
+        commands = (
+            ["mixlab.quality.listener_position", str(b.pack)],
+            ["mixlab.quality.pilot_sensitivity", str(b.study), str(b.pack)],
+            ["mixlab.quality.reviewer_influence", str(b.study), str(b.pack)],
+        )
+        for command in commands:
+            args = [sys.executable, "-m", *command, *map(str, b.ratings)]
+            if command[0] != "mixlab.quality.listener_position":
+                args += ["--expected-study-id", b.pinned]
+            with self.subTest(cli=command[0]):
+                result = subprocess.run(
+                    args, capture_output=True, text=True, timeout=12)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+                for secret in (str(b.root), "listener 01", b.pinned,
+                               b.receipt["pack_id"], "trial-001"):
+                    self.assertNotIn(secret, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
