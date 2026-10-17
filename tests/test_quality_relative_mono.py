@@ -60,7 +60,9 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
                 left = v
                 right = (0 if frames // 2 <= i < frames // 2 + rate * 60 // 1000 else v)
             elif mode == "single-impulse":
-                left = right = 16000 if i == 4000 else v
+                # Detectable >=8192-LSB isolated impulse, but <16384 jump
+                # from the adjacent sine frames to isolate this one gate.
+                left = right = 14000 if i == 4000 else v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -312,6 +314,17 @@ class RelativeMonoTests(unittest.TestCase):
         report = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
         self.assertFalse(report["milestone_pass"])
+
+    def test_baseline_audio_glitch_is_not_a_clean_comparison_either(self):
+        _wave(self.base, mode="single-impulse")
+        _wave(self.candidate, mode="alternate")
+        from mixlab.quality import compare_wavs
+        canonical = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(canonical["baseline"]["isolated_sample_impulse_risk"])
+        checked = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(checked["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(checked["milestone_pass"])
+        self.assertNotIn(str(self.root), json.dumps(checked))
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
