@@ -231,6 +231,30 @@ class ListenerControlTests(unittest.TestCase):
         self.mutate('h1{font-size:40px', 'h1{font-size:39px')
         self.reject()
 
+    def test_unchanged_script_moved_before_form_is_rejected(self):
+        page = self.path.read_text(encoding="utf-8")
+        script = page[page.index('<script>'):page.index('</script>') + len('</script>')]
+        page = page.replace(script, '', 1)
+        page = page.replace('<form data-pack-id=', script + '<form data-pack-id=', 1)
+        self.path.write_text(page, encoding="utf-8")
+        self.reject()
+
+    def test_unchanged_style_moved_inside_form_is_rejected(self):
+        page = self.path.read_text(encoding="utf-8")
+        style = page[page.index('<style>'):page.index('</style>') + len('</style>')]
+        page = page.replace(style, '', 1)
+        page = page.replace('</form>', style + '</form>', 1)
+        self.path.write_text(page, encoding="utf-8")
+        self.reject()
+
+    def test_unchanged_script_inside_form_is_rejected(self):
+        page = self.path.read_text(encoding="utf-8")
+        script = page[page.index('<script>'):page.index('</script>') + len('</script>')]
+        page = page.replace(script, '', 1)
+        page = page.replace('</form>', script + '</form>', 1)
+        self.path.write_text(page, encoding="utf-8")
+        self.reject()
+
     def test_valid_one_trial(self):
         write_review(self.path, ["trial-001"], "f" * 64)
         self.assertEqual(check_review_controls(self.path)["trial_count"], 1)
