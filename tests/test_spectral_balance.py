@@ -68,6 +68,20 @@ def make_stereo_split_wav(path, *, left_hz, right_hz, gain=8000, rate=48000):
         output.writeframes(samples.tobytes())
 
 
+def make_stereo_polarity_wav(path, *, right_sign=1, left_sign=1, rate=48000, gain=8000):
+    samples = array("h")
+    for i in range(12000):
+        value = int(gain * math.sin(2 * math.pi * 600 * i / rate))
+        samples.extend((value * left_sign, value * right_sign))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -298,6 +312,48 @@ class SpectralBalanceTests(unittest.TestCase):
         make_wav(self.base, freq=1000, channels=2)
         make_wav(self.other, freq=1000, channels=2)
         self.assertNotIn("stereo_channel_near_silence_inspect", self.report()["candidates"][0]["warnings"])
+
+    def test_stereo_polarity_flip_detects_mono_cancellation_despite_equal_energy(self):
+        make_stereo_polarity_wav(self.base)
+        make_stereo_polarity_wav(self.other, right_sign=-1)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertIsNone(row["stereo_mono_fold_ratio_delta_db"])
+        for name in ("low", "mid", "high"):
+            self.assertAlmostEqual(0, row[name + "_proxy_delta_db"], delta=0.01)
+            self.assertFalse(row["stereo_channel_" + name + "_spectral_shift_risk"])
+        self.assertNotIn("_mono_fold", json.dumps(self.report()))
+        strict = self.cli(self.base, self.other, "--fail-on-warnings")
+        self.assertEqual(2, strict.returncode, strict.stderr)
+        self.assertNotIn(str(self.dir), strict.stdout + strict.stderr)
+
+    def test_identically_antiphase_ab_is_not_falsely_clean(self):
+        make_stereo_polarity_wav(self.base, right_sign=-1)
+        make_stereo_polarity_wav(self.other, left_sign=-1)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertIsNone(row["stereo_mono_fold_ratio_delta_db"])
+
+    def test_stereo_mono_fold_ab_flip_warns_both_comparison_directions(self):
+        make_stereo_polarity_wav(self.base, right_sign=-1)
+        make_stereo_polarity_wav(self.other)
+        row = self.report()["candidates"][0]
+        self.assertIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        flipped = compare_spectral_balance(self.other, [self.base])["candidates"][0]
+        self.assertIn("stereo_mono_fold_cancellation_inspect", flipped["warnings"])
+
+    def test_stereo_mono_fold_gain_invariant_and_healthy_in_phase(self):
+        make_stereo_polarity_wav(self.base, gain=8000)
+        make_stereo_polarity_wav(self.other, gain=7500)
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertAlmostEqual(0.0, row["stereo_mono_fold_ratio_delta_db"], delta=0.001)
+
+    def test_mono_sources_do_not_fabricate_stereo_fold_evidence(self):
+        row = self.report()["candidates"][0]
+        self.assertNotIn("stereo_mono_fold_ratio_delta_db", row)
+        self.assertFalse(any("mono_fold" in w for w in row["warnings"]))
 
     def test_channel_swapped_stereo_can_hide_all_global_spectral_changes(self):
         make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
