@@ -6,6 +6,7 @@ on:
     paths:
       - 'mixlab/quality/bitdepth.py'
       - 'tests/test_quality_bitdepth.py'
+      - 'tests/test_quality_bitdepth_stress.py'
       - 'docs/quality-effective-bitdepth.md'
       - '.github/workflows/ml07-bitdepth.yml'
   workflow_dispatch:
@@ -36,8 +37,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           python --version
-          python -m compileall -q mixlab/quality/bitdepth.py tests/test_quality_bitdepth.py
+          python -m compileall -q mixlab/quality/bitdepth.py tests/test_quality_bitdepth.py tests/test_quality_bitdepth_stress.py
           ulimit -v 196608
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_bitdepth.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_bitdepth_stress.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
           /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
