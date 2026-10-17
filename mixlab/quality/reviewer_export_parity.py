@@ -1,7 +1,6 @@
 """Read-only QA for browser reviewer-code versus rating-ingest compatibility.
 
-This static *contract* check cannot prove the browser implements the pattern,
-the inline JS is safe, the reviewer is independent, or musical preference.
+This exact generated-markup check cannot prove that the browser implements\nthe input pattern, that the generator itself is safe, or musical preference.
 The official full-page pack check remains mandatory.
 """
 from __future__ import annotations
@@ -13,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import tempfile
 
 from .repeatability import _open_no_symlink_components
 
@@ -30,6 +30,8 @@ class _ReviewerFields(HTMLParser):
         self.forms = 0
         self.form_depth = 0
         self.reviewers = []
+        self.pack_ids = []
+        self.trials = []
         self.bypass = False
 
     def handle_starttag(self, tag, attrs):
@@ -39,8 +41,11 @@ class _ReviewerFields(HTMLParser):
         if tag == "form":
             self.forms += 1
             self.form_depth += 1
+            self.pack_ids.append(values.get("data-pack-id"))
             if "novalidate" in values or duplicates:
                 self.bypass = True
+        elif tag == "fieldset":
+            self.trials.append(values.get("data-trial"))
         elif tag == "input" and values.get("name") == "reviewer":
             self.reviewers.append((self.form_depth == 1, values, duplicates))
         elif tag == "button":
@@ -84,6 +89,42 @@ class _ReviewerFields(HTMLParser):
         )
 
 
+def _canonical_markup_matches(page: str, parser: _ReviewerFields) -> bool:
+    """Keep a valid input pattern from masking altered trial UI or JavaScript.
+
+    Match the byte-for-byte canonical offline review generator with exactly
+    one allowed added attribute: the browser-safe reviewer input pattern.
+    No private answer key, audio, receipts or user identifiers are opened.
+    A standalone pass is still NOT proof that a frozen review pack is valid.
+    """
+    if len(parser.pack_ids) != 1 or len(parser.trials) < 1 or len(parser.trials) > 60:
+        return False
+    pack_id = parser.pack_ids[0]
+    if not isinstance(pack_id, str) or re.fullmatch(r"[0-9a-f]{64}", pack_id) is None:
+        return False
+    trial_ids = [f"trial-{n:03d}" for n in range(1, len(parser.trials) + 1)]
+    if parser.trials != trial_ids:
+        return False
+    from ..cli import write_review
+    with tempfile.TemporaryDirectory(prefix="mixlab-reviewer-parity-") as tmp:
+        generated = Path(tmp) / "index.html"
+        write_review(generated, trial_ids, pack_id)
+        expected = generated.read_text(encoding="utf-8")
+    canonical_field = 'name="reviewer" required maxlength="40"'
+    # Once the generator owner ships the pattern, exact unmodified generator
+    # equality suffices; until then, allow precisely one proposed attribute.
+    if BROWSER_PATTERN not in expected:
+        if expected.count(canonical_field) != 1:
+            return False
+        expected = expected.replace(
+            canonical_field,
+            'name="reviewer" required pattern="' + BROWSER_PATTERN +
+            '" maxlength="40"',
+            1,
+        )
+    return expected == page
+
+
 def _identity(info):
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
@@ -112,9 +153,10 @@ def inspect_reviewer_export_contract(path):
                     or _identity(before) != _identity(named)):
                 raise ValueError(_ERROR)
         parser = _ReviewerFields()
-        parser.feed(raw.decode("utf-8", errors="strict"))
+        page = raw.decode("utf-8", errors="strict")
+        parser.feed(page)
         parser.close()
-        match = parser.contract_matches()
+        match = parser.contract_matches() and _canonical_markup_matches(page, parser)
         return {
             "schema_version": 1,
             "metric": "offline_reviewer_export_ingest_parity",
@@ -122,6 +164,7 @@ def inspect_reviewer_export_contract(path):
             "technical_gate": "pass" if match else "hold",
             "browser_runtime_verified": False,
             "full_review_page_verified": False,
+            "canonical_generated_markup_verified": match,
             "ratings_aggregate_verified": False,
             "human_musical_preference_proven": False,
             "release_authorized": False,
