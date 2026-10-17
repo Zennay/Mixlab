@@ -37,6 +37,9 @@ class ListenerControlTests(unittest.TestCase):
         self.assertEqual(actual["playback_controls"], 4)
         self.assertEqual(actual["required_rating_controls"], 2)
         self.assertTrue(actual["static_listener_controls_verified"])
+        self.assertTrue(actual["official_inline_script_unchanged"])
+        self.assertTrue(actual["official_stylesheet_unchanged"])
+        self.assertTrue(actual["trial_legends_verified"])
         self.assertFalse(actual["human_musical_preference_verified"])
         self.assertNotIn(str(self.root), json.dumps(actual))
         self.assertNotIn("a" * 64, json.dumps(actual))
@@ -186,6 +189,46 @@ class ListenerControlTests(unittest.TestCase):
 
     def test_missing_document_language_is_rejected(self):
         self.mutate('<html lang="en">', '<html>')
+        self.reject()
+
+    def test_inline_script_cannot_change_rating_selection(self):
+        self.mutate("preference:f.get(el.dataset.trial)",
+                    "preference:f.get('trial-001')")
+        self.reject()
+
+    def test_inline_script_cannot_post_ratings_to_a_server(self):
+        self.mutate("const blob=new Blob([JSON.stringify",
+                    "fetch('https://example.invalid', {method:'POST'});const blob=new Blob([JSON.stringify")
+        self.reject()
+
+    def test_hidden_answer_key_comment_is_rejected(self):
+        self.mutate('</html>', '<!-- trial-001=A --> </html>')
+        self.reject()
+
+    def test_missing_or_duplicate_doctype_rejected(self):
+        with self.subTest("missing"):
+            self.mutate('<!doctype html>', '')
+            self.reject()
+        with self.subTest("duplicate"):
+            write_review(self.path, ["trial-001", "trial-002"], "a" * 64)
+            self.mutate('<!doctype html>', '<!doctype html><!doctype html>')
+            self.reject()
+
+    def test_duplicate_legend_is_rejected(self):
+        self.mutate('<legend>trial-001</legend>',
+                    '<legend>trial-001</legend><legend>trial-001</legend>')
+        self.reject()
+
+    def test_legend_cannot_be_hidden_as_label(self):
+        self.mutate('<legend>trial-001</legend>', '<label>trial-001</label>')
+        self.reject()
+
+    def test_extra_script_hidden_in_body_is_rejected(self):
+        self.mutate('</form>', '</form><script>console.log("extra")</script>')
+        self.reject()
+
+    def test_benign_css_reordering_is_refused_until_ux_contract_review(self):
+        self.mutate('h1{font-size:40px', 'h1{font-size:39px')
         self.reject()
 
     def test_valid_one_trial(self):
