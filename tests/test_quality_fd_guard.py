@@ -535,6 +535,61 @@ class PrivateFdGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "details withheld"):
             validate_private_ab_group([self.source, target])
 
+    def test_ab_group_rejects_mismatched_extensible_speaker_layout_before_pcm(self):
+        make_wav(self.source, channels=2, rate=48000)
+        baseline = self.source.read_bytes()
+        candidate = self.root / "PRIVATE_LEFT_CENTER.wav"
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        # Bitmask 0x5 = L+Center. Both sources are two-channel PCM16 at
+        # the same rate and duration, but their channel mapping differs.
+        payload = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                              48000 * 4, 4, 16, 22, 16, 5) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + payload
+        mixed = bytearray(baseline[:12] + fmt + baseline[36:])
+        mixed[4:8] = struct.pack("<I", len(mixed) - 8)
+        candidate.write_bytes(mixed)
+        self.assertTrue(validate_private_pcm16(candidate)["pcm16_payload_complete"])
+        with patch.object(wave.Wave_read, "readframes", side_effect=AssertionError(
+            "must reject speaker layout before PCM scan"
+        )) as read:
+            with self.assertRaisesRegex(ValueError, "details withheld") as exc:
+                validate_private_ab_group([self.source, candidate])
+            read.assert_not_called()
+        self.assertNotIn(str(self.root), str(exc.exception))
+
+    def test_ab_group_accepts_explicit_standard_stereo_layout(self):
+        make_wav(self.source, channels=2, rate=48000)
+        original = self.source.read_bytes()
+        candidate = self.root / "standard-extensible.wav"
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        payload = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                              48000 * 4, 4, 16, 22, 16, 3) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + payload
+        mixed = bytearray(original[:12] + fmt + original[36:])
+        mixed[4:8] = struct.pack("<I", len(mixed) - 8)
+        candidate.write_bytes(mixed)
+        report = validate_private_ab_group([self.source, candidate])
+        self.assertTrue(report["shape_comparable"])
+        self.assertNotIn("speaker_mask", json.dumps(report))
+        self.assertNotIn("PRIVATE", json.dumps(report))
+
+    def test_ab_group_unspecified_extensible_layout_is_not_claimed_comparable(self):
+        make_wav(self.source, channels=2, rate=48000)
+        original = self.source.read_bytes()
+        candidate = self.root / "unknown-speakers.wav"
+        subtype = (b"\x01\x00\x00\x00\x00\x00\x10\x00"
+                   b"\x80\x00\x00\xaa\x00\x38\x9b\x71")
+        payload = struct.pack("<HHIIHHHHI", 0xFFFE, 2, 48000,
+                              48000 * 4, 4, 16, 22, 16, 0) + subtype
+        fmt = b"fmt " + struct.pack("<I", 40) + payload
+        mixed = bytearray(original[:12] + fmt + original[36:])
+        mixed[4:8] = struct.pack("<I", len(mixed) - 8)
+        candidate.write_bytes(mixed)
+        with self.assertRaisesRegex(ValueError, "details withheld"):
+            validate_private_ab_group([self.source, candidate])
+
     def test_ab_group_rejects_identical_inode_even_with_distinct_path(self):
         alias = self.root / "PRIVATE_HARDLINK.wav"
         os.link(self.source, alias)
