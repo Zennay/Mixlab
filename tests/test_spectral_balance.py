@@ -87,6 +87,34 @@ class SpectralBalanceTests(unittest.TestCase):
             text=True, capture_output=True, timeout=15
         )
 
+    def test_independent_low_mid_high_sine_frequency_order(self):
+        # Blind-to-implementation signal oracle: first-order proxies should
+        # respond to deliberately distinct synthetic tone regions.
+        ratios = []
+        for frequency in (40, 600, 8000):
+            make_wav(self.base, freq=frequency, rate=48000, duration=0.5)
+            report = scan_spectral_proxy(self.base)
+            ratios.append((
+                report["lowpass_180_ratio"],
+                report["midpass_180_2500_ratio"],
+                report["highpass_2500_ratio"],
+            ))
+        self.assertGreater(ratios[0][0], ratios[1][0])
+        self.assertGreater(ratios[1][0], ratios[2][0])
+        self.assertGreater(ratios[1][1], ratios[0][1])
+        self.assertGreater(ratios[1][1], ratios[2][1])
+        self.assertLess(ratios[0][2], ratios[1][2])
+        self.assertLess(ratios[1][2], ratios[2][2])
+
+    def test_streaming_read_block_size_does_not_change_public_results(self):
+        make_segmented_wav(self.base, [40, 200, 600, 1000, 2500, 4000, 6000, 8000])
+        make_segmented_wav(self.other, [40, 200, 600, 1000, 2500, 4000, 6000, 8000])
+        reference = self.report()
+        for block in (1, 257, 4096, 8191):
+            with self.subTest(block=block), patch.object(spectral, "READ_FRAMES", block):
+                self.assertEqual(reference, self.report())
+                self.assertEqual(reference["baseline"], scan_spectral_proxy(self.base))
+
     def test_public_scan_api_redacts_inode_timestamps_and_private_envelopes(self):
         public = scan_spectral_proxy(self.base)
         self.assertEqual({"sample_rate", "channels", "frames", "rms_dbfs",
