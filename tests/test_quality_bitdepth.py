@@ -164,6 +164,61 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual([False, True], result["per_channel_review"])
         self.assertTrue(result["coarse_resolution_review"])
 
+    def test_regional_quantization_four_window_is_not_hidden_by_clean_majority(self):
+        # Exactly 400ms of the middle of a 1s WAV loses 8 LSBs.
+        # Whole-file dominant-residue fraction is only about 40%, below 99.5%.
+        values = array.array("h")
+        values.frombytes(samples())
+        for frame in range(2400, 5600):
+            for channel in (0, 1):
+                index = 2 * frame + channel
+                values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        wav(self.bad, values.tobytes())
+        report = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([True, True], report["candidates"][0]["per_channel_review"])
+        self.assertEqual(3, self.cli(self.base, self.bad, "--strict").returncode)
+
+    def test_three_consecutive_quantized_windows_are_not_persistent(self):
+        values = array.array("h")
+        values.frombytes(samples())
+        for frame in range(2400, 4800):
+            for channel in (0, 1):
+                index = 2 * frame + channel
+                values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        wav(self.bad, values.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([False, False], result["candidates"][0]["per_channel_review"])
+
+    def test_four_separated_one_window_artifacts_are_not_consecutive(self):
+        values = array.array("h")
+        values.frombytes(samples())
+        for frame in range(8000):
+            if frame // 800 in (0, 2, 4, 6):
+                for channel in (0, 1):
+                    index = 2 * frame + channel
+                    values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        wav(self.bad, values.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([False, False], result["candidates"][0]["per_channel_review"])
+
+    def test_four_window_local_damage_in_right_channel_only(self):
+        values = array.array("h")
+        values.frombytes(samples())
+        for frame in range(2400, 5600):
+            index = 2 * frame + 1
+            values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        wav(self.bad, values.tobytes())
+        result = bitdepth.inspect_ab(self.base, [self.bad])
+        self.assertEqual([False, True], result["candidates"][0]["per_channel_review"])
+
     def test_batch_earlier_good_never_covers_later_bad(self):
         data = bitdepth.inspect_ab(self.base, [self.good, self.bad])
         self.assertEqual([False, True], [r["coarse_resolution_review"] for r in data["candidates"]])
