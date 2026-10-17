@@ -68,6 +68,7 @@ jobs:
           set -euo pipefail
           test "$(git -C upstream-pr71 rev-parse HEAD)" = "e512d8fc2eae79efe765dc9a523105fad68a196f"
           cp mixlab/quality/listener_position.py upstream-pr71/mixlab/quality/listener_position.py
+          cp mixlab/quality/repeatability.py upstream-pr71/mixlab/quality/repeatability.py
           cd upstream-pr71
           ulimit -v 196608
           /usr/bin/time -v python -B - <<'PY'
