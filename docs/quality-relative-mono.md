@@ -4,7 +4,7 @@
 
 ## Problem
 
-The existing `mixlab.quality.compare_wavs` reports absolute stereo fold-down cancellation per WAV. A candidate can have much worse mono playback than the matched baseline while both have similar stereo RMS. Merely subtracting per-file risky-window fractions is **not** trustworthy: two individually loud clips can alternate their samples with **zero jointly audible frames**. The companion retains the canonical streaming scanner as its initial format/level check, then performs a second bounded **synchronous** pass over each baseline/candidate pair. Only samples simultaneously above 512/32768 absolute PCM amplitude contribute to the relative fold-down estimate. No audio is retained or emitted.
+The existing `mixlab.quality.compare_wavs` reports absolute stereo fold-down cancellation per WAV. A candidate can have much worse mono playback than the matched baseline while both have similar stereo RMS. Merely subtracting per-file risky-window fractions is **not** trustworthy: two individually loud clips can alternate their samples with **zero jointly audible frames**. The companion retains the canonical streaming scanner as its initial format/level check, then performs a second bounded **synchronous** pass only for **RMS-comparable stereo pairs**. Already-loudness-confounded or mono inputs get a HOLD immediately without a redundant CPU-heavy paired scan. Only samples simultaneously above 512/32768 absolute PCM amplitude contribute to the relative fold-down estimate. No audio is retained or emitted.
 
 ## Interface
 
