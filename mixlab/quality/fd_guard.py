@@ -42,6 +42,7 @@ def _locate_data_chunk(stream, size):
     if not 44 <= declared_end <= size:
         raise ValueError(_ERROR)
     seen_fmt = False
+    speaker_mask = None
     for _ in range(MAX_PRE_DATA_CHUNKS):
         if stream.tell() + 8 > declared_end:
             raise ValueError(_ERROR)
@@ -91,12 +92,19 @@ def _locate_data_chunk(stream, size):
                         or valid_bits != 16 or extension[8:24] != pcm_subtype
                         or (channel_mask and channel_mask.bit_count() != channels)):
                     raise ValueError(_ERROR)
+            # Classic PCM conventionally carries mono center or stereo L/R.
+            # The extensible speaker mask is authoritative when provided.
+            # Keep it *private* for cohort comparability, not in JSON.
+            if format_tag == 1:
+                speaker_mask = 4 if channels == 1 else 3
+            else:
+                speaker_mask = channel_mask
             seen_fmt = True
         if chunk[:4] == b"data":
             if not seen_fmt:
                 raise ValueError(_ERROR)
             stream.seek(0)
-            return data_start, chunk_size
+            return data_start, chunk_size, speaker_mask
         stream.seek(next_chunk)
     raise ValueError(_ERROR)
 
@@ -151,7 +159,9 @@ def admitted_pcm16(path, *, seen_inodes=None, require_neutral_container=False):
             fd = -1
             # An attacker can fit millions of empty RIFF chunks below
             # 32 MiB; do not let wave.open walk an unbounded header chain.
-            data_start, data_bytes = _locate_data_chunk(stream, before.st_size)
+            data_start, data_bytes, speaker_mask = _locate_data_chunk(
+                stream, before.st_size
+            )
             # Strict neutrality is opt-in: the public blind WAVs should
             # contain only the canonical fmt(16) and PCM data chunks. This
             # rejects pre/post-data labels and hidden trailing bytes; ordinary
@@ -175,6 +185,7 @@ def admitted_pcm16(path, *, seen_inodes=None, require_neutral_container=False):
                         or data_bytes != frames * channels * width
                         or data_start + data_bytes > before.st_size):
                     raise ValueError(_ERROR)
+                reader._ml07_speaker_mask = speaker_mask
                 yield reader
                 after = os.fstat(stream.fileno())
                 # lstat-equivalent comparison rejects rename/replacement and
@@ -258,6 +269,11 @@ def validate_private_ab_group(paths, *, require_neutral_container=False):
             if (reader.getframerate(), reader.getnchannels(), reader.getnframes()) != header:
                 raise ValueError(_ERROR)
         if header[2] * len(readers) > MAX_GROUP_FRAMES:
+            raise ValueError(_ERROR)
+        # Two files can have identical PCM16 shape but advertise different
+        # speaker positions. Keep the masks internal and fail the blind A/B
+        # group before reading any PCM when playback layouts disagree.
+        if len({reader._ml07_speaker_mask for reader in readers}) != 1:
             raise ValueError(_ERROR)
         for reader in readers:
             _consume_pcm16(reader)
