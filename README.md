@@ -47,6 +47,23 @@ The fixture command writes a complete example. Replace sources only with explici
 
 Keep source media, derived stems, private renders, manifests with personal paths and credentials outside this public repository. Only synthetic CI fixtures and sanitized aggregate evidence may be uploaded by the foundation workflow.
 
+## Direct een complete lokale WAV-set maken
+
+De nieuwe private `party_mix` route voert bestaande stappen achter elkaar
+uit: rechten- en SHA-gebonden lokale muziekinvoer → handmatige cue-Studio →
+zelfgekozen overgangen → één doorlopende PCM16-WAV.
+
+```bash
+python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /private/full-set.wav \
+  --transition pair-001:bass_swap --transition pair-002:echo_exit
+```
+
+De volgorde van de paren is expliciet en moet één doorlopende route vormen;
+er wordt geen maat, BPM of muziekrecht automatisch geraden. Bekijk
+[de complete set-handleiding](docs/continuous-set-export.md) en
+[de één-commando route](docs/one-command-studio.md) voor grenzen,
+herstel na fouten en de niet-bewezen muzikale kwaliteit.
+
 ## Engine tools
 
 ```bash
