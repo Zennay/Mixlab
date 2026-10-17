@@ -128,8 +128,11 @@ def create_stem_session(library, output, *, a_instrumental, a_vocals,
                         b_instrumental, b_vocals, pair_id, bpm, beats,
                         a_start, b_start, rights, provenance, gain_db=-12):
     """Generate cropped stereo stems and render three true stem-aware WAV styles."""
-    library = Path(library).absolute().resolve(strict=True)
-    if not library.is_dir() or library.is_symlink():
+    lexical_library = Path(library).absolute()
+    if lexical_library.is_symlink():
+        raise ValueError("Private stem library must not be a symlink")
+    library = lexical_library.resolve(strict=True)
+    if not library.is_dir():
         raise ValueError("Private stem library must be a directory")
     fields = dict(a_instrumental=a_instrumental, a_vocals=a_vocals,
                   b_instrumental=b_instrumental, b_vocals=b_vocals)
