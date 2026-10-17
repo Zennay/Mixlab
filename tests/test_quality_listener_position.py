@@ -190,6 +190,45 @@ class ListenerPositionTests(unittest.TestCase):
         finally:
             os.chdir(first_cwd)
 
+    def test_same_reviewer_under_changed_case_is_not_three_independent_votes(self):
+        self.ratings([["A", "B", "A", "B", "A"]] * 3)
+        second = self.paths[1]
+        vote = json.loads(second.read_text(encoding="utf-8"))
+        vote["reviewer"] = "LISTENER-01"
+        second.write_text(json.dumps(vote), encoding="utf-8")
+        with self.assertRaises(ListenerPositionError) as raised:
+            self.inspect()
+        self.assertNotIn("LISTENER", str(raised.exception))
+
+    def test_incomplete_and_duplicate_trial_ratings_cannot_create_a_pass(self):
+        original = ["A", "B", "A", "B", "A"]
+        self.ratings([original] * 3)
+        first = self.paths[0]
+        raw = first.read_text()
+        for corruption in ("missing", "duplicate", "foreign"):
+            with self.subTest(kind=corruption):
+                first.write_text(raw, encoding="utf-8")
+                vote = json.loads(raw)
+                if corruption == "missing":
+                    vote["ratings"].pop()
+                elif corruption == "duplicate":
+                    vote["ratings"][-1]["trial"] = "trial-001"
+                else:
+                    vote["ratings"][-1]["trial"] = "trial-999"
+                first.write_text(json.dumps(vote), encoding="utf-8")
+                with self.assertRaises(ListenerPositionError):
+                    self.inspect()
+
+    def test_input_budget_rejects_oversized_json_and_too_many_files(self):
+        self.ratings([["A", "B", "A", "B", "A"]] * 3)
+        first = self.paths[0]
+        first.write_text(first.read_text() + (" " * 70_000), encoding="utf-8")
+        with self.assertRaises(ListenerPositionError):
+            self.inspect()
+        # Even before any I/O, at most 16 reviewer files are admitted.
+        with self.assertRaises(ListenerPositionError):
+            inspect_listener_sides(self.pack, [*self.paths] * 6)
+
     def test_cli_exit_codes_and_no_private_identity_disclosure(self):
         self.ratings([["A", "B", "A", "B", "A"],
                       ["B", "A", "B", "A", "B"],
