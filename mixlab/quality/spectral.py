@@ -39,7 +39,7 @@ def _source_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def scan_spectral_proxy(
+def _scan_spectral_private(
     path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES,
     expected_format: tuple[int, int, int] | None = None,
 ) -> dict:
@@ -174,6 +174,20 @@ def scan_spectral_proxy(
     }
 
 
+def scan_spectral_proxy(
+    path: str | Path, *, max_frames: int = MAX_SOURCE_FRAMES,
+    expected_format: tuple[int, int, int] | None = None,
+) -> dict:
+    """Public, strictly redacted PCM16 spectral metrics only.
+
+    File identities, private per-channel energies and per-span summaries
+    remain internal to compare_spectral_balance and never escape via this API.
+    """
+    return _public_metrics(
+        _scan_spectral_private(path, max_frames=max_frames, expected_format=expected_format)
+    )
+
+
 def _severe_stereo_channel_loss(metrics: dict) -> bool:
     """One channel near-silent while the other carries substantial energy."""
     if metrics["channels"] != 2:
@@ -193,7 +207,7 @@ def compare_spectral_balance(
     if not candidates or len(candidates) > MAX_CANDIDATES:
         raise ValueError("Expected 1..8 candidates")
 
-    reference = scan_spectral_proxy(baseline)
+    reference = _scan_spectral_private(baseline)
     rows = []
     # Revalidate every participant *after* the whole comparison, not just
     # each WAV at its own scan end. An early baseline can otherwise change
@@ -205,7 +219,7 @@ def compare_spectral_balance(
         remaining_budget = MAX_AGGREGATE_FRAMES - scanned_frames
         if remaining_budget <= 0:
             raise ValueError("Aggregate frame budget exceeded")
-        current = scan_spectral_proxy(
+        current = _scan_spectral_private(
             candidate, max_frames=min(MAX_SOURCE_FRAMES, remaining_budget),
             expected_format=(reference["sample_rate"], reference["channels"], reference["frames"]),
         )
