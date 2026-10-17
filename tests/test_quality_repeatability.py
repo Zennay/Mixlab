@@ -392,6 +392,39 @@ class RepeatabilityTests(unittest.TestCase):
                     verify_repeatability(one, two, receipts=pair)
         self.assertTrue(verify_repeatability(one, two)["repeatable_pcm"])
 
+    def test_untrusted_receipt_size_and_nesting_are_rejected_before_serialization(self):
+        # JSON serialization *before* checking the 16KiB cap can allocate
+        # arbitrarily large data on hostile private metadata. The validator
+        # must first bound strings, collection nodes, depth and cycles.
+        import copy
+        one, two, ra, rb = self._render_fixture_with_receipts()
+        cyclic = {}
+        cyclic["again"] = cyclic
+        too_deep = {}
+        pointer = too_deep
+        for i in range(25):
+            child = {}
+            pointer["item"] = child
+            pointer = child
+        oversized = (
+            dict(rb, comment="private" * 400000),
+            dict(rb, extras={str(i): i for i in range(250)}),
+            dict(rb, extras=too_deep),
+            dict(rb, extras=cyclic),
+        )
+        for index, bad in enumerate(oversized):
+            with self.subTest(kind=index), patch(
+                "mixlab.quality.repeatability.json.dumps",
+                side_effect=AssertionError("serialization before admission")
+            ):
+                with self.assertRaisesRegex(
+                    RepeatabilityError, "^invalid, changed or incompatible source$"
+                ):
+                    verify_repeatability(one, two, receipts=(ra, bad))
+        self.assertTrue(verify_repeatability(
+            one, two, receipts=(ra, rb)
+        )["render_receipts_consistent"])
+
     def test_legacy_and_streaming_dsp_pcm_parity_for_shared_m1_recipes(self):
         # Migration guard: current bounded streaming DSP should preserve the
         # old in-memory renderer's PCM on the mutually supported PCM16 cases.
