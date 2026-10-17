@@ -6,6 +6,26 @@ automatic DJ, beat/key detector, signal repair tool, or substitute for a
 blinded A/B human preference test. The listener decides whether a transition
 is good; this tool catches incomparable / suspicious renders before a test.
 
+## Mid-clip single-channel dropout guard
+
+The bounded per-frame scanner now detects a **recovered 50ms or longer**
+near-zero gap in *one* stereo channel while the opposite channel remains
+prominent during at least 25% of those frames. It reports only
+`longest_interior_stereo_channel_quiet_gap_ms` and
+`short_interior_stereo_channel_dropout_risk`; the shared baseline/
+candidate warning is `short_interior_stereo_channel_dropout_inspect`.
+The test spans 4096-frame reads without storing the waveform. The existing
+>=20%-of-RMS-windows partial-channel-loss check can miss a 50–90ms gap
+that sits inside an otherwise audible 100ms window.
+
+This is intentionally conservative: it excludes opening/trailing
+silence, permanently silent channels, whole-mix breaks and mono audio.
+An intentional brief stereo pan can trigger the inspect flag; background
+noise above 64 PCM16 units can conceal genuine dropout. The check
+neither repairs audio nor infers a beat, music preference, origin or
+listener assignment. Raw sample positions, paths and private audio
+are never emitted.
+
 ## Run locally (Python 3.10+, standard library only)
 
 Use the existing renderer / benchmark to produce two or more short, private
