@@ -96,6 +96,27 @@ class RelativeMonoTests(unittest.TestCase):
         ])
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_same_inode_hardlink_cannot_count_as_new_ab_audio(self):
+        _wave(self.base, mode="normal")
+        os.link(self.base, self.candidate)
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "non_independent_ab_audio")
+        self.assertNotIn(str(self.base), json.dumps(report))
+
+    def test_noop_candidate_cli_returns_hold_without_filename(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="normal")
+        proc = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.relative_mono",
+             "--baseline", str(self.base), "--candidate", str(self.candidate)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(proc.returncode, 3)
+        self.assertEqual(proc.stderr, "")
+        self.assertNotIn(str(self.root), proc.stdout)
+        self.assertEqual(json.loads(proc.stdout)["candidates"][0]["status"],
+                         "non_independent_ab_audio")
+
     def test_channel_swap_is_not_independent_transition(self):
         _wave(self.base, mode="stereo")
         _wave(self.candidate, mode="stereo-swapped")
