@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from array import array
 import json
+import math
 from pathlib import Path
 import struct
 import sys
@@ -55,18 +56,18 @@ class StreamingChunkInvariants(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def _make(self, name: str, channels: int, *, spike=None, gap=None,
-              left_gap=None, extra_chunk=False, amplitude=4000, sample_rate=RATE):
+              left_gap=None, extra_chunk=False, amplitude=4000, sample_rate=RATE, gap_frames=480):
         frames = [[amplitude] * channels for _ in range(FRAMES)]
         if spike is not None:
             for offset in (-1, 1):
                 frames[spike + offset] = [0] * channels
             frames[spike] = [10000] * channels
         if gap is not None:
-            for index in range(gap, gap + 480):
+            for index in range(gap, gap + gap_frames):
                 frames[index] = [0] * channels
         if left_gap is not None:
             self.assertEqual(channels, 2)
-            for index in range(left_gap, left_gap + 480):
+            for index in range(left_gap, left_gap + gap_frames):
                 frames[index][0] = 0
         result = self.root / name
         _write(result, channels, [tuple(f) for f in frames],
@@ -128,6 +129,57 @@ class StreamingChunkInvariants(unittest.TestCase):
                 self.assertGreaterEqual(
                     metrics["longest_interior_stereo_channel_quiet_gap_ms"], 60)
                 self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_exact_fifty_millisecond_dropout_threshold_across_rates(self):
+        # A 50ms threshold must not turn into 49.9ms or 50.1ms when
+        # samples span readframes(4096). 44.1kHz is intentionally non-round.
+        for rate in (8000, 16000, 44100, 96000):
+            limit = rate // 20
+            for frames in (limit - 1, limit):
+                start = CHUNK - 3
+                with self.subTest(rate=rate, length=frames, kind="all"):
+                    sample = self._make(f"all-{rate}-{frames}.wav", 2,
+                                        gap=start, gap_frames=frames,
+                                        sample_rate=rate)
+                    metrics = scan_wav(sample)
+                    self.assertEqual(metrics["short_interior_pcm_dropout_risk"],
+                                     frames >= limit)
+                with self.subTest(rate=rate, length=frames, kind="left"):
+                    sample = self._make(f"left-{rate}-{frames}.wav", 2,
+                                        left_gap=start, gap_frames=frames,
+                                        sample_rate=rate)
+                    metrics = scan_wav(sample)
+                    self.assertEqual(
+                        metrics["short_interior_stereo_channel_dropout_risk"],
+                        frames >= limit)
+                    self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_clean_periodic_audio_does_not_create_fake_read_boundary_clicks(self):
+        # Use a real continuous, non-DC procedural tone, rather than the
+        # constant baseline used to isolate particular positive cases.
+        for channels in (1, 2):
+            with self.subTest(channels=channels):
+                baseline = self.root / f"clean-{channels}.wav"
+                candidate = self.root / f"quiet-clean-{channels}.wav"
+                def tone(amplitude):
+                    return [tuple(round(amplitude * math.sin(2 * math.pi * 220 * i / RATE))
+                                  for _ in range(channels)) for i in range(FRAMES)]
+                _write(baseline, channels, tone(6000))
+                _write(candidate, channels, tone(5600))
+                for path in (baseline, candidate):
+                    result = scan_wav(path)
+                    self.assertFalse(result["isolated_sample_impulse_risk"])
+                    self.assertFalse(result["severe_sample_discontinuity_risk"])
+                    self.assertFalse(result["short_interior_pcm_dropout_risk"])
+                    self.assertFalse(result["dc_offset_risk"])
+                    if channels == 2:
+                        self.assertFalse(result["short_interior_stereo_channel_dropout_risk"])
+                        self.assertFalse(result["mono_fold_down_cancellation_risk"])
+                report = compare_wavs(baseline, [candidate])
+                self.assertFalse(report["baseline_warnings"])
+                self.assertFalse(report["candidates"][0]["warnings"])
+                self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
+                self.assertNotIn(str(self.root), json.dumps(report))
 
     def test_pcm_digest_ignores_non_audio_riff_chunks(self):
         for channels in (1, 2):
