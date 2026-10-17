@@ -160,6 +160,25 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("ctime", serialized)
         self.assertEqual(public, self.report()["baseline"])
 
+    def test_public_metrics_whitelist_rejects_unexpected_unprefixed_private_keys(self):
+        private = spectral._scan_spectral_private(self.base)
+        canary = str(self.dir / "SHOULD_NEVER_BE_PUBLIC.wav")
+        private.update({
+            "future_metadata": canary,
+            "source_path": canary,
+            "future_internal_pcm_hash": "secret-test-hash",
+            "_internal_timestamp": 12345,
+        })
+        public = spectral._public_metrics(private)
+        self.assertEqual(scan_spectral_proxy(self.base), public)
+        self.assertEqual(7, len(public))
+        serialized = json.dumps(public)
+        self.assertNotIn(canary, serialized)
+        self.assertNotIn("secret-test-hash", serialized)
+        self.assertNotIn("future_metadata", serialized)
+        self.assertNotIn("source_path", serialized)
+        self.assertNotIn("_internal_timestamp", serialized)
+
     def test_public_scan_metrics_are_safe_at_chunk_and_sample_rate_edges(self):
         for rate in (8000, 44100, 96000):
             for frames in (1, 4095, 4096, 4097, 9003):
