@@ -467,6 +467,84 @@ class RealPCMEndToEndTests(unittest.TestCase):
                 self.assertNotIn(str(self.fixture.root), str(result.stdout + result.stderr))
                 self.assertNotIn(b"SECRET_PRIVATE_MUSIC", result.stdout + result.stderr)
 
+    def _write_bound_size_pcm(self, frames):
+        """Write 96 kHz stereo WAV *streaming*, then re-sign the true pack.
+
+        Two independent channels and two distinct A/B waveforms are required
+        for a genuine A/B comparison. No 8 MB PCM byte buffer is retained.
+        """
+        import hashlib
+        import math
+        import struct
+        import wave
+        from test_quality_study_binding import _write_json
+
+        answers = json.loads((self.fixture.pack / "private" / "answer-key.json").read_text())
+        evidence_path = self.fixture.pack / "private" / "evidence.json"
+        receipt_path = self.fixture.pack / "receipt.json"
+        evidence = json.loads(evidence_path.read_text())
+        receipt = json.loads(receipt_path.read_text())
+        target = answers[0]
+        for label in ("A", "B"):
+            wav_path = self.fixture.pack / "review" / f"{target['trial']}-{label}.wav"
+            # A 4096-frame stereo block carries deterministic original PCM.
+            tone = 132 + (label == "B") * 17
+            block = b"".join(
+                struct.pack("<hh",
+                            int(3100 * math.sin(2 * math.pi * tone * i / 96000)),
+                            int(2700 * math.sin(2 * math.pi * (tone + 29) * i / 96000)))
+                for i in range(4096)
+            )
+            with wave.open(str(wav_path), "wb") as sink:
+                sink.setnchannels(2)
+                sink.setsampwidth(2)
+                sink.setframerate(96000)
+                for _ in range(frames // 4096):
+                    sink.writeframesraw(block)
+                sink.writeframesraw(block[:4 * (frames % 4096)])
+                sink.writeframes(b"")
+            digest = hashlib.sha256()
+            with wav_path.open("rb") as stream:
+                for piece in iter(lambda: stream.read(65536), b""):
+                    digest.update(piece)
+            render = next(row for row in evidence["renders"]
+                          if row["pair"] == target["pair"]
+                          and row["family"] == target[label])
+            render["output_sha256"] = digest.hexdigest()
+        identity = {
+            "manifest": evidence["manifest_sha256"],
+            "answers": answers,
+            "outputs": [row["output_sha256"] for row in evidence["renders"]],
+        }
+        pack_id = hashlib.sha256(
+            json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
+        evidence["pack_id"] = pack_id
+        receipt["pack_id"] = pack_id
+        _write_json(evidence_path, evidence)
+        _write_json(receipt_path, receipt)
+        self.fixture.receipt = receipt
+
+    def test_real_maximum_two_million_frame_pcm_passes_all_five_gates(self):
+        from mixlab.evaluation import verify_pack
+        self._write_bound_size_pcm(2_000_000)
+        self.assertEqual(len(verify_pack(self.fixture.pack)[2]), 5)
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        result = self.bundle()
+        self.assertIn(result["technical_screen"], ("SCREENED", "REVIEW_REQUIRED"))
+        self.assertEqual(result["frozen_pair_count"], 5)
+        self.assertEqual(result["reviewer_file_count"], 3)
+        self.assertEqual(len(result["mandatory_gates_executed"]), 5)
+        self.assertIs(result["milestone_pass"], False)
+        self.assertNotIn(str(self.fixture.root), json.dumps(result))
+
+        # A REAL wave with one frame past the public scanner limit must fail
+        # even after reconstructing otherwise internally consistent commits.
+        self._write_bound_size_pcm(2_000_001)
+        self.ballots = self.fixture.generate_reviews([["candidate"] * 5] * 3)
+        with self.assertRaises(M1GateBundleError) as error:
+            self.bundle()
+        self.assertNotIn(str(self.fixture.root), str(error.exception))
+
     def test_midrun_ballot_edit_is_rejected_after_real_checks(self):
         from mixlab.quality import m1_gate_bundle as module
         original = module.inspect_real_pilot
