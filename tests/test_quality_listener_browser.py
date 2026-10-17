@@ -197,6 +197,32 @@ class BrowserFormTests(unittest.TestCase):
         self.assertIsNotNone(match, "offline Chrome media status marker was not rendered")
         self.assertEqual(match.group(1), "pass", "browser failed to decode a local WAV")
 
+        # The success gate must be a real decoder check, not just a count of
+        # visible controls. Remove one of the verified ten WAVs: a NEW browser
+        # profile must visibly mark the entire pack failed, not accept nine.
+        missing = self.root / "trial-005-B.wav"
+        missing.unlink()
+        for scenario in ("missing", "corrupt"):
+            if scenario == "corrupt":
+                # Present but structurally undecodable audio must also fail.
+                missing.write_bytes(b"RIFF" + b"\\x00" * 36)
+            new_command = [
+                "--user-data-dir=" + str(self.root / f"pcm-chrome-negative-{scenario}")
+                if arg.startswith("--user-data-dir=") else arg
+                for arg in command
+            ]
+            try:
+                bad = subprocess.run(new_command, capture_output=True, text=True,
+                                     timeout=35, env=env)
+            except subprocess.TimeoutExpired:
+                self.fail("negative offline Chrome WAV check timed out")
+            self.assertEqual(bad.returncode, 0, "Chromium negative media smoke crashed")
+            bad_marker = re.search(r'<html\\b[^>]*data-mixlab-audio-check="([^"]+)"',
+                                   bad.stdout, flags=re.IGNORECASE)
+            self.assertIsNotNone(bad_marker, "negative PCM decoder result missing")
+            self.assertEqual(bad_marker.group(1), "fail",
+                             "missing or undecodable audio was incorrectly accepted")
+
 
 
 if __name__ == "__main__":
