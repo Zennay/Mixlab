@@ -22,7 +22,10 @@ second of active stereo audio was available without that defect, and `null`
 when there is insufficient active evidence to conclude either way. Also
 inspect `evidence_status` (`review_pan_balance`,
 `no_sustained_pan_bias_detected`, `insufficient_active_audio`).
-Exit 2: invalid, changed or unavailable input; stderr is generic. Run this
+Exit 2: invalid, changed or unavailable input; stderr is generic. A private
+argument parser also rejects missing, unknown or extra operands without echoing
+any supplied path or secret. The CLI does not expose its input filenames even
+when the command line itself is malformed. Run this
 locally against rights-permitted audio, not on publicly uploaded recordings.
 
 ## Policy / limits
