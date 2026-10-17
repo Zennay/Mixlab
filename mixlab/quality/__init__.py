@@ -562,7 +562,7 @@ def _signal_warnings(metrics: dict) -> list[str]:
 
 
 def _short_window_level_confound(baseline_windows: list[float],
-                                 candidate_windows: list[float]) -> tuple[float | None, bool]:
+                                 candidate_windows: list[float]) -> tuple[float | None, bool, int]:
     """Compare aligned RMS windows without returning any private envelope."""
     if len(baseline_windows) != len(candidate_windows):
         raise ValueError("Candidate window count differs from baseline")
@@ -577,7 +577,8 @@ def _short_window_level_confound(baseline_windows: list[float],
         ):
             mismatched_windows += 1
     fraction = round(mismatched_windows / audible_windows, 6) if audible_windows else None
-    return fraction, audible_windows >= 3 and mismatched_windows / audible_windows >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION
+    return (fraction, audible_windows >= 3 and mismatched_windows / audible_windows >= SHORT_WINDOW_LEVEL_MISMATCH_FRACTION,
+            audible_windows)
 
 
 def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
@@ -645,7 +646,7 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
         if base["rms_dbfs"] is not None and metrics["rms_dbfs"] is not None:
             level_difference = round(metrics["rms_dbfs"] - base["rms_dbfs"], 3)
         warnings = _signal_warnings(metrics)
-        short_window_level_mismatch_fraction, short_window_level_mismatch_risk = _short_window_level_confound(
+        short_window_level_mismatch_fraction, short_window_level_mismatch_risk, audible_level_windows = _short_window_level_confound(
             base_windows, candidate_windows
         )
         if short_window_level_mismatch_risk:
@@ -778,7 +779,15 @@ def compare_wavs(baseline: str | Path, candidates: list[str | Path], *,
             "edge_silence_shifted_pcm_of": edge_silence_shifted_pcm_of,
             "edge_silence_transformed_pcm_of": edge_silence_transformed_pcm_of,
             "requires_human_review": True,
+            # Backwards-compatible RMS-only diagnostic above. This stricter
+            # technical gate also needs >=3 aligned audible RMS windows and
+            # no sustained short-window mismatch; it does not imply LUFS
+            # equivalence, beat alignment or listener preference.
             "level_comparable_for_blind_ab": level_difference is not None and abs(level_difference) <= loudness_tolerance_db,
+            "rms_and_window_level_preflight_pass": (
+                level_difference is not None and abs(level_difference) <= loudness_tolerance_db
+                and audible_level_windows >= 3 and not short_window_level_mismatch_risk
+            ),
         })
     # Do not publish a result if any baseline or candidate changed at any
     # point during the multi-input job, even *after* its own PCM scan.
