@@ -122,7 +122,7 @@ class ResolutionTests(unittest.TestCase):
         # NOT produce a definitive false/true for either A/B variant.
         active = 1920
         frames_per_window = 9600
-        zero = b"\\x00\\x00" * (frames_per_window - active)
+        zero = b"\x00\x00" * (frames_per_window - active)
         sparse = (samples(frames=active, channels=1) + zero) * 12
         sparse_coarse = (samples(frames=active, channels=1, collapse=True) + zero) * 12
         wav(self.base, sparse, rate=96000, channels=1)
@@ -138,7 +138,7 @@ class ResolutionTests(unittest.TestCase):
         # Two isolated three-window islands meet the previous global
         # >=4-window requirement but never form four continuous windows.
         active = samples(frames=9600, channels=1) * 3
-        gap = b"\\x00\\x00" * (9600 * 4)
+        gap = b"\x00\x00" * (9600 * 4)
         excerpt = active + gap + active
         wav(self.base, excerpt, rate=96000, channels=1)
         wav(self.good, excerpt, rate=96000, channels=1)
