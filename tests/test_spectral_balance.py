@@ -4,6 +4,7 @@ import json
 import math
 import os
 from pathlib import Path
+from unittest.mock import patch
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,7 @@ import unittest
 import wave
 
 from mixlab.quality.spectral import compare_spectral_balance, scan_spectral_proxy
+import mixlab.quality.spectral as spectral
 
 
 def make_wav(path, *, freq=100, gain=8000, rate=48000, channels=1, duration=0.25, width=2):
@@ -127,7 +129,7 @@ class SpectralBalanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_spectral_balance(self.base, [])
         with self.assertRaises(ValueError):
-            compare_spectral_balance(self.base, [self.other] * 61)
+            compare_spectral_balance(self.base, [self.other] * 9)
 
     def test_nonregular_inputs_and_truncated_audio_do_not_block(self):
         fifo = self.dir / "SECRET_FIFO"
@@ -143,6 +145,31 @@ class SpectralBalanceTests(unittest.TestCase):
         self.other.write_bytes(self.other.read_bytes()[:-2])
         with self.assertRaises((ValueError, wave.Error)):
             self.report()
+
+    def test_per_source_frame_budget_is_checked_before_pcm_reads(self):
+        with self.assertRaises(ValueError):
+            scan_spectral_proxy(self.base, max_frames=11999)
+        for budget in (0, True, -1, 2_000_001):
+            with self.assertRaises(ValueError):
+                scan_spectral_proxy(self.base, max_frames=budget)
+
+    def test_aggregate_frame_budget_is_enforced_before_extra_pcm(self):
+        before = self.base.read_bytes(), self.other.read_bytes()
+        calls = []
+        original = wave.Wave_read.readframes
+
+        def traced(source, count):
+            calls.append(count)
+            return original(source, count)
+
+        # 12000 baseline + 12000 first candidate leave one frame;
+        # the next candidate must fail at header admission, not PCM scan.
+        with patch.object(spectral, "MAX_AGGREGATE_FRAMES", 24001):
+            with patch.object(wave.Wave_read, "readframes", traced):
+                with self.assertRaises(ValueError):
+                    compare_spectral_balance(self.base, [self.other, self.other])
+        self.assertEqual(6, len(calls))
+        self.assertEqual(before, (self.base.read_bytes(), self.other.read_bytes()))
 
     def test_cli_output_status_and_argument_privacy(self):
         clean = self.cli(self.base, self.other)
