@@ -1732,6 +1732,60 @@ class QualityTests(unittest.TestCase):
         self.assertIsNone(mono["longest_interior_stereo_channel_quiet_gap_ms"])
         self.assertFalse(mono["short_interior_stereo_channel_dropout_risk"])
 
+    def test_combined_review_pack_stereo_swap_and_short_channel_dropout(self):
+        # Integration proof on the merged code path after independent
+        # pack-swap and PCM-dropout changes landed in main. Both signals
+        # must survive the anonymized review-pack projection together.
+        review = self.root / "combined-stereo-review"
+        review.mkdir()
+        stereo = [v for i in range(8000)
+                  for v in (int(6000 * math.sin(i * .11)),
+                            int(7000 * math.cos(i * .17)))]
+        swapped = [v for i in range(0, len(stereo), 2)
+                   for v in (stereo[i + 1], stereo[i])]
+        altered = stereo.copy()
+        for frame in range(4050, 4530):  # 60ms, crosses 4096-frame read.
+            altered[2 * frame + 1] = 0
+        unrelated = [v for i in range(8000)
+                     for v in (int(4500 * math.sin(i * .21)),
+                               int(3200 * math.cos(i * .09)))]
+        wav(review / "trial-001-A.wav", stereo, channels=2)
+        wav(review / "trial-001-B.wav", unrelated, channels=2)
+        wav(review / "trial-002-A.wav", swapped, channels=2)
+        wav(review / "trial-002-B.wav", altered, channels=2)
+        before = {p.name: p.read_bytes() for p in review.iterdir()}
+        report = inspect_review_pack(review)
+        self.assertEqual(2, report["trial_count"])
+        self.assertEqual(1, report["cross_trial_repeated_variant_count"])
+        self.assertEqual(
+            ["repeated_pcm_across_trials_inspect_blinding"],
+            report["trials"][1]["trial_warnings"],
+        )
+        self.assertTrue(
+            report["trials"][1]["B"]["metrics"]["short_interior_stereo_channel_dropout_risk"]
+        )
+        self.assertIn(
+            "short_interior_stereo_channel_dropout_inspect",
+            report["trials"][1]["B"]["warnings"],
+        )
+        self.assertNotIn("repeated_pcm_across_trials_inspect_blinding",
+                         report["trials"][1]["A"]["warnings"])
+        self.assertNotIn("repeated_pcm_across_trials_inspect_blinding",
+                         report["trials"][1]["B"]["warnings"])
+        self.assertFalse(report["answer_key_opened"])
+        serialized = json.dumps(report)
+        self.assertNotIn(str(self.root), serialized)
+        self.assertNotIn("sha256", serialized)
+        self.assertNotIn("trial-001-A.wav", serialized)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in review.iterdir()})
+        strict = subprocess.run(
+            [sys.executable, "-m", "mixlab.quality.pack", str(review),
+             "--fail-on-warnings"], capture_output=True, text=True,
+        )
+        self.assertEqual(2, strict.returncode)
+        self.assertEqual(report, json.loads(strict.stdout))
+        self.assertNotIn(str(self.root), strict.stdout + strict.stderr)
+
     def test_cli_json_output_no_media_paths(self):
         p = subprocess.run([sys.executable, "-m", "mixlab.quality", str(self.base), str(self.candidate)],
                            capture_output=True, text=True, check=True)
