@@ -36,6 +36,18 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
                 self.source.write_text(value, encoding="utf-8")
                 self.assertEqual(load_bounded_json(self.source), json.loads(value))
 
+    def test_depth_boundary_and_quoted_delimiters_are_not_nesting(self):
+        at_limit = "[" * 64 + "0" + "]" * 64
+        self.source.write_text(at_limit, encoding="utf-8")
+        self.assertEqual(load_bounded_json(self.source), json.loads(at_limit))
+        past_limit = "[" * 65 + "0" + "]" * 65
+        self.source.write_text(past_limit, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "nesting"):
+            load_bounded_json(self.source)
+        note = "brackets [ { } ] then quoted " + chr(34) + " backslash " + chr(92)
+        self.source.write_text(json.dumps({"note": note}), encoding="utf-8")
+        self.assertEqual(load_bounded_json(self.source), {"note": note})
+
     def test_reject_duplicate_keys_at_nested_level(self):
         self.source.write_text('{"a":{"x":1,"x":2}}', encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Duplicate"):
