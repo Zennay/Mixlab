@@ -117,6 +117,10 @@ def inspect(baseline: str | os.PathLike[str], candidate: str | os.PathLike[str])
     """Compare equal-length PCM16 sources without exposing either location."""
     ref = _scan_private_pcm(baseline)
     alt = _scan_private_pcm(candidate)
+    # Alias/hardlink pairs are not a meaningful blind A/B comparison. Reject
+    # even if the two path strings differ, without exposing their identities.
+    if ref["_identity"][:2] == alt["_identity"][:2]:
+        raise ValueError("A/B sources must be distinct regular files")
     if any(ref[k] != alt[k] for k in ("channels", "sample_rate", "frames", "window_count")):
         raise ValueError("private PCM16 sources do not have identical shape")
     n = ref["window_count"]
