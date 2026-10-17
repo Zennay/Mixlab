@@ -72,6 +72,9 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
     history = deque(maxlen=8)
     seen = 0
     sample_peak = 0
+    # Discrete PCM hitting signed 16-bit rails is not necessarily clipped,
+    # but it must not receive a clean A/B technical-risk verdict.
+    full_scale_pcm_sample_count = 0
     interpolated_peak = 0.0
     intersample_over_count = 0
     # The short finite interpolation kernel attenuates signals near Nyquist.
@@ -100,6 +103,7 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
             frame = tuple(values[offset:offset + channels])
             frame_peak = max(abs(v) for v in frame)
             sample_peak = max(sample_peak, frame_peak)
+            full_scale_pcm_sample_count += sum(abs(v) >= 32767 for v in frame)
             if frames_seen < 4:
                 leading_edge_peak = max(leading_edge_peak, frame_peak)
             trailing_frame_peaks.append(frame_peak)
@@ -131,6 +135,8 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "sample_peak_dbfs": round(20 * math.log10(sample_peak / 32768), 3) if sample_peak else None,
         "interpolated_peak_dbfs_estimate": round(20 * math.log10(peak / 32768), 3) if peak else None,
         "intersample_overs_estimated": intersample_over_count,
+        "full_scale_pcm_samples": full_scale_pcm_sample_count,
+        "full_scale_pcm_risk": bool(full_scale_pcm_sample_count),
         "screen_evaluable": nframes >= 8,
         "intersample_over_risk": bool(intersample_over_count),
         "high_frequency_near_ceiling_ambiguity_risk": bool(rapid_near_ceiling_crossings),
@@ -138,7 +144,8 @@ def _scan(reader: wave.Wave_read, channels: int, nframes: int) -> dict:
         "edge_interpolation_ambiguity_risk": edge_ambiguity,
         "technical_review_required": (
             nframes < 8 or bool(intersample_over_count) or
-            bool(rapid_near_ceiling_crossings) or edge_ambiguity
+            bool(rapid_near_ceiling_crossings) or edge_ambiguity or
+            bool(full_scale_pcm_sample_count)
         ),
     }
 
