@@ -298,6 +298,56 @@ class ResolutionTests(unittest.TestCase):
             capture_output=True, text=True, timeout=15,
         )
 
+    def test_actual_m1_renderer_families_preserve_pcm_resolution_and_private_files(self):
+        from hashlib import sha256
+        from mixlab.engine import FAMILY_NAMES, render
+        from mixlab.models import Recipe
+
+        baseline = self.root / "private-render-baseline.wav"
+        render(self.base, self.good, baseline, Recipe(family="baseline", beats=2))
+        seen = set()
+        for family in FAMILY_NAMES:
+            with self.subTest(family=family):
+                candidate = self.root / ("private-render-" + family + ".wav")
+                render(self.base, self.good, candidate, Recipe(family=family, beats=2))
+                before = [sha256(p.read_bytes()).hexdigest() for p in (baseline, candidate)]
+                review = bitdepth.inspect_ab(baseline, [candidate])
+                self.assertIs(review["candidates"][0]["coarse_resolution_review"], False)
+                self.assertEqual([False, False], review["candidates"][0]["per_channel_review"])
+                self.assertNotIn(str(self.root), json.dumps(review))
+                self.assertEqual(before, [sha256(p.read_bytes()).hexdigest()
+                                          for p in (baseline, candidate)])
+                seen.add(family)
+        self.assertEqual(set(FAMILY_NAMES), seen)
+
+    def test_actual_m1_output_with_injected_shifted_8bit_fault_is_detected(self):
+        from mixlab.engine import render
+        from mixlab.models import Recipe
+        baseline = self.root / "private-engine-baseline.wav"
+        clean_candidate = self.root / "private-engine-clean.wav"
+        broken_candidate = self.root / "private-engine-broken.wav"
+        render(self.base, self.good, baseline, Recipe(family="baseline", beats=2))
+        render(self.base, self.good, clean_candidate, Recipe(family="hard_cut", beats=2))
+        with wave.open(str(clean_candidate), "rb") as src:
+            raw = src.readframes(src.getnframes())
+            props = src.getparams()
+        values = array.array("h")
+        values.frombytes(raw)
+        for index in range(len(values)):
+            values[index] = values[index] // 256 * 256 + 37
+        if sys.byteorder != "little":
+            values.byteswap()
+        with wave.open(str(broken_candidate), "wb") as dst:
+            dst.setparams(props)
+            dst.writeframes(values.tobytes())
+        report = bitdepth.inspect_ab(baseline, [clean_candidate, broken_candidate])
+        self.assertEqual([False, True], [
+            row["coarse_resolution_review"] for row in report["candidates"]
+        ])
+        run = self.cli(baseline, clean_candidate, broken_candidate, "--strict")
+        self.assertEqual(3, run.returncode)
+        self.assertNotIn(str(self.root), run.stdout + run.stderr)
+
     def test_cli_clean_suspect_and_invalid_exit_codes(self):
         self.assertEqual(0, self.cli(self.base, self.good, "--strict").returncode)
         suspect = self.cli(self.base, self.bad, "--strict")
