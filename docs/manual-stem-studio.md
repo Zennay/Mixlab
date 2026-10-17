@@ -59,7 +59,7 @@ goedgekeurde beatcue in de eigen stem-export, geen automatische analyse.
 python3 -m mixlab.stem_render /private/stems/pair.json /private/stem-studio-01
 ```
 
-Open lokaal `/private/stem-studio-01/index.html` en beluister/drain
+Open lokaal `/private/stem-studio-01/index.html` en beluister/download
 de drie nieuwe echte WAV-renderfamilies:
 
 - **Vocal handoff** — de eerste track behoudt zijn vocal langer terwijl
