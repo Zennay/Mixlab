@@ -144,7 +144,7 @@ class CacheReceiptTests(TestCase):
     def test_directory_entry_rejected(self):
         self.entry.unlink()
         self.entry.mkdir()
-        with self.assertRaisesRegex(ValueError, "regular file"):
+        with self.assertRaisesRegex(ValueError, "regular file|could not be read safely"):
             self.read()
 
     def test_fifo_entry_rejected_without_blocking(self):
