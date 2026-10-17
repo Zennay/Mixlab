@@ -3,8 +3,11 @@ import io
 import json
 import math
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from mixlab.cli import digest, dump
 from mixlab.engine import write_wav
 from mixlab.evaluation import aggregate, verify_pack
@@ -95,6 +98,43 @@ class StudyPackTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
             main([str(self.manifest), str(self.study), str(self.pack)])
         self.assertEqual(caught.exception.code, 2)
+
+    def test_failed_render_leaves_no_partial_pack(self):
+        import mixlab.evaluation.study_pack as study_pack
+        calls = []
+        real = study_pack.render
+
+        def failing(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 4:
+                raise ValueError("synthetic render failure")
+            return real(*args, **kwargs)
+        target = self.root / "out-failed"
+        with mock.patch.object(study_pack, "render", failing), self.assertRaises(ValueError):
+            build(self.manifest, self.study, target, seed=1)
+        self.assertEqual(len(calls), 4)
+        self.assertFalse(target.exists())
+        self.assertEqual(list(self.root.glob(".mixlab-staging-*")), [])
+
+    def test_cli_errors_never_echo_private_paths(self):
+        secret = self.root / "SECRET-TOKEN-7f3a" / "private-library.json"
+        blocker = self.root / "SECRET-TOKEN-7f3a-file"
+        blocker.write_text("not a directory")
+        commands = [
+            # Parent is a regular file: the OS error names the private destination.
+            ["mixlab.evaluation.study_pack", str(self.manifest), str(self.study), str(blocker / "pack")],
+            ["mixlab.evaluation.study_pack", str(secret), str(self.study), str(self.root / "o1")],
+            ["mixlab.evaluation.study_pack", str(self.manifest), str(secret), str(self.root / "o2")],
+            ["mixlab.evaluation.study", "freeze", str(secret), str(self.root / "o3.json"), "--seed", "1"],
+            ["mixlab.evaluation.study", "verify", str(secret)],
+        ]
+        for command in commands:
+            with self.subTest(command=command[0:2]):
+                result = subprocess.run([sys.executable, "-m", *command], capture_output=True, text=True,
+                                        cwd=Path(__file__).resolve().parents[1], timeout=60)
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn("SECRET-TOKEN-7f3a", result.stdout + result.stderr)
+                self.assertNotIn(str(self.root), result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

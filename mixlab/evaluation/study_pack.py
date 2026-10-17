@@ -9,8 +9,11 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
+import os
 import random
 import shutil
+import tempfile
+from . import verify_pack
 from .study import verify_study
 from ..cli import digest, dump, write_review
 from ..dsp import render
@@ -35,49 +38,62 @@ def build(manifest_path, study_path, destination, seed=None):
         if not entry["renderable_without_stretch"]:
             raise ValueError(f"{entry['pair_id']} needs time stretching, which is not implemented")
         plan.append((entry, pair, a, b))
-    root = Path(destination)
-    root.mkdir(parents=True, exist_ok=False)
-    root.chmod(0o700)
-    review, private = root / "review", root / "private"
-    review.mkdir()
-    private.mkdir(mode=0o700)
-    rng = random.Random(seed) if seed is not None else random.SystemRandom()
-    cards, answers, evidence = [], [], []
-    for number, (entry, pair, a, b) in enumerate(plan, 1):
-        outputs = {}
-        for family in ("baseline", entry["candidate_family"]):
-            recipe = Recipe(family=family, bpm=pair["bpm"], beats=pair.get("beats", 8),
-                            a_start=pair.get("a_start", 0.), b_start=pair.get("b_start", 0.),
-                            a_bpm=a["bpm"], b_bpm=b["bpm"])
-            path = private / f"{number:03d}-{family}.wav"
-            metrics = render(a["resolved_path"], b["resolved_path"], path, recipe)
-            metrics["source_permission_declarations"] = {"a": a["rights"], "b": b["rights"]}
-            outputs[family] = path
-            evidence.append({"pair": pair["id"], "study_pair": entry["pair_id"], "family": family,
-                             "recipe": asdict(recipe), "metrics": metrics,
-                             "source_hashes": [a["sha256"], b["sha256"]], "output_sha256": digest(path)})
-        trial = f"trial-{number:03d}"
-        order = ["baseline", entry["candidate_family"]]
-        rng.shuffle(order)
-        for label, variant in zip(("A", "B"), order):
-            shutil.copyfile(outputs[variant], review / f"{trial}-{label}.wav")
-        cards.append(trial)
-        answers.append({"trial": trial, "pair": pair["id"], "A": order[0], "B": order[1]})
-    manifest_sha = digest(manifest_path)
-    pack_id = hashlib.sha256(json.dumps({"manifest": manifest_sha, "answers": answers,
-                                         "outputs": [e["output_sha256"] for e in evidence]},
-                                        sort_keys=True).encode()).hexdigest()
-    dump(private / "answer-key.json", answers)
-    dump(private / "evidence.json", {
-        "schema_version": 1, "kind": "frozen-study-pilot", "manifest_sha256": manifest_sha,
-        "study_id": study["study_id"], "renders": evidence, "pack_id": pack_id,
-        "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random"},
-        "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
-    write_review(review / "index.html", cards, pack_id)
-    dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
-                                 "render_count": len(evidence), "status": "rendered-not-listener-validated",
-                                 "manifest_sha256": manifest_sha, "study_id": study["study_id"]})
-    return root / "receipt.json"
+    final = Path(destination)
+    if final.exists() or final.is_symlink():
+        raise ValueError("Destination already exists; packs are never overwritten")
+    final.parent.mkdir(parents=True, exist_ok=True)
+    # Build privately and publish only a complete, verified pack: a failed
+    # render must never leave a partial review/ directory that looks shareable.
+    root = Path(tempfile.mkdtemp(prefix=".mixlab-staging-", dir=final.parent))
+    try:
+        review, private = root / "review", root / "private"
+        review.mkdir()
+        private.mkdir(mode=0o700)
+        rng = random.Random(seed) if seed is not None else random.SystemRandom()
+        cards, answers, evidence = [], [], []
+        for number, (entry, pair, a, b) in enumerate(plan, 1):
+            outputs = {}
+            for family in ("baseline", entry["candidate_family"]):
+                recipe = Recipe(family=family, bpm=pair["bpm"], beats=pair.get("beats", 8),
+                                a_start=pair.get("a_start", 0.), b_start=pair.get("b_start", 0.),
+                                a_bpm=a["bpm"], b_bpm=b["bpm"])
+                path = private / f"{number:03d}-{family}.wav"
+                metrics = render(a["resolved_path"], b["resolved_path"], path, recipe)
+                metrics["source_permission_declarations"] = {"a": a["rights"], "b": b["rights"]}
+                outputs[family] = path
+                evidence.append({"pair": pair["id"], "study_pair": entry["pair_id"], "family": family,
+                                 "recipe": asdict(recipe), "metrics": metrics,
+                                 "source_hashes": [a["sha256"], b["sha256"]], "output_sha256": digest(path)})
+            trial = f"trial-{number:03d}"
+            order = ["baseline", entry["candidate_family"]]
+            rng.shuffle(order)
+            for label, variant in zip(("A", "B"), order):
+                shutil.copyfile(outputs[variant], review / f"{trial}-{label}.wav")
+            cards.append(trial)
+            answers.append({"trial": trial, "pair": pair["id"], "A": order[0], "B": order[1]})
+        manifest_sha = digest(manifest_path)
+        pack_id = hashlib.sha256(json.dumps({"manifest": manifest_sha, "answers": answers,
+                                             "outputs": [e["output_sha256"] for e in evidence]},
+                                            sort_keys=True).encode()).hexdigest()
+        dump(private / "answer-key.json", answers)
+        dump(private / "evidence.json", {
+            "schema_version": 1, "kind": "frozen-study-pilot", "manifest_sha256": manifest_sha,
+            "study_id": study["study_id"], "renders": evidence, "pack_id": pack_id,
+            "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random"},
+            "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
+        write_review(review / "index.html", cards, pack_id)
+        dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
+                                     "render_count": len(evidence), "status": "rendered-not-listener-validated",
+                                     "manifest_sha256": manifest_sha, "study_id": study["study_id"]})
+        verify_pack(root)
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    if final.exists() or final.is_symlink():
+        shutil.rmtree(root, ignore_errors=True)
+        raise ValueError("Destination appeared during rendering; packs are never overwritten")
+    os.rename(root, final)
+    return final / "receipt.json"
 
 
 def main(argv=None):
@@ -90,8 +106,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         print(build(args.manifest, args.study, args.destination, args.seed))
-    except (ValueError, OSError, KeyError, TypeError) as exc:
+    except ValueError as exc:
         parser.exit(2, f"MixLab study pack: {exc}\n")
+    except (OSError, KeyError, TypeError):
+        # OS errors carry private operator paths; never echo them.
+        parser.exit(2, "MixLab study pack: input or output unavailable (details withheld)\n")
 
 
 if __name__ == "__main__":

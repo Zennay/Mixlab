@@ -232,8 +232,11 @@ def main(argv=None):
             study = verify_study(args.study)
     except FileExistsError:
         parser.exit(2, "MixLab study: output already exists; studies are never overwritten\n")
-    except (OSError, ValueError, TypeError, KeyError) as exc:
+    except ValueError as exc:
         parser.exit(2, f"MixLab study: {exc}\n")
+    except (OSError, TypeError, KeyError):
+        # OS errors carry private operator paths; never echo them.
+        parser.exit(2, "MixLab study: input or output unavailable (details withheld)\n")
     print(json.dumps({"study_id": study["study_id"], "pairs": len(study["pairs"])}, sort_keys=True))
 
 
