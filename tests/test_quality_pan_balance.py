@@ -174,6 +174,71 @@ class PanBalanceTests(unittest.TestCase):
                 self.assertNotIn("SECRET", result.stdout + result.stderr)
                 self.assertIn("rejected private arguments", result.stderr)
 
+    def test_ancestor_directory_symlink_refused_before_pcm(self):
+        real = self.root / "real_album"
+        real.mkdir()
+        baseline = real / "baseline.wav"
+        candidate = real / "candidate.wav"
+        wav(baseline)
+        wav(candidate)
+        alias = self.root / "untrusted_album"
+        alias.symlink_to(real, target_is_directory=True)
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("private PCM decoded")):
+            with self.assertRaises((OSError, ValueError)):
+                pan_balance.inspect(alias / "baseline.wav", candidate)
+
+    def test_ancestor_symlink_then_dotdot_rejected_without_normalizing(self):
+        real = self.root / "real_album"
+        real.mkdir()
+        nested = real / "nested"
+        nested.mkdir()
+        baseline = real / "baseline.wav"
+        wav(baseline)
+        wav(self.b)
+        alias = self.root / "alias_nested"
+        alias.symlink_to(nested, target_is_directory=True)
+        # This path would reach a valid, nonsymlink final WAV on Linux.
+        suspect = alias / ".." / "baseline.wav"
+        with mock.patch.object(pan_balance.struct, "iter_unpack",
+                               side_effect=AssertionError("private PCM decoded")):
+            with self.assertRaises((OSError, ValueError)):
+                pan_balance.inspect(suspect, self.b)
+
+    def test_parent_directory_replaced_by_symlink_midscan_is_refused(self):
+        album = self.root / "active_album"
+        album.mkdir()
+        original_a = album / "baseline.wav"
+        original_b = album / "candidate.wav"
+        wav(original_a)
+        wav(original_b)
+        moved = self.root / "moved_album"
+        original_unchanged = pan_balance._unchanged
+        swapped = False
+
+        def swap_then_check(record):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                album.rename(moved)
+                album.symlink_to(moved, target_is_directory=True)
+            return original_unchanged(record)
+
+        with mock.patch.object(pan_balance, "_unchanged", side_effect=swap_then_check):
+            with self.assertRaises((OSError, ValueError)):
+                pan_balance.inspect(original_a, original_b)
+
+    def test_path_bounds_fail_before_opening_any_directory(self):
+        wav(self.b)
+        overdeep = self.root.joinpath(*(["nested"] * 70), "baseline.wav")
+        huge = self.root / ("p" * 4080) / "baseline.wav"
+        for suspect in (overdeep, huge):
+            with self.subTest(path_kind="deep" if suspect == overdeep else "long"):
+                with mock.patch.object(pan_balance.os, "open",
+                                       side_effect=AssertionError("opened before path limits")):
+                    with self.assertRaises(ValueError):
+                        pan_balance.inspect(suspect, self.b)
+
     def test_upper_two_million_frame_stereo_source_budget(self):
         # Exactly 2M frames per source, 8 MiB stereo data per file; no sound upload.
         wav(self.a, frames=2_000_000, rate=48000)
