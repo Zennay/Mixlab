@@ -82,6 +82,22 @@ def make_stereo_polarity_wav(path, *, right_sign=1, left_sign=1, right_phase=0.0
         out.writeframes(samples.tobytes())
 
 
+def make_stereo_polarity_segments(path, signs, *, gain=8000, rate=48000):
+    samples = array("h")
+    for segment, sign in enumerate(signs):
+        for frame in range(6000):
+            i = segment * 6000 + frame
+            value = int(gain * math.sin(2 * math.pi * 600 * i / rate))
+            samples.extend((value, sign * value))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -367,6 +383,40 @@ class SpectralBalanceTests(unittest.TestCase):
         self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
         self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
         self.assertAlmostEqual(0.0, row["stereo_mono_fold_ratio_delta_db"], delta=0.001)
+
+    def test_half_recording_antiphase_flags_temporal_loss_not_whole_average(self):
+        make_stereo_polarity_segments(self.base, [1] * 8)
+        make_stereo_polarity_segments(self.other, [1] * 4 + [-1] * 4)
+        row = self.report()["candidates"][0]
+        self.assertAlmostEqual(-3.01, row["stereo_mono_fold_ratio_delta_db"], delta=0.1)
+        self.assertNotIn("stereo_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertNotIn("stereo_mono_fold_change_inspect", row["warnings"])
+        self.assertTrue(row["stereo_temporal_mono_fold_cancellation_risk"])
+        self.assertIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertNotIn("_fold_spans", json.dumps(self.report()))
+        self.assertNotIn(str(self.dir), json.dumps(self.report()))
+
+    def test_same_temporally_antiphase_pair_remains_inspect_not_false_clean(self):
+        make_stereo_polarity_segments(self.base, [1] * 4 + [-1] * 4)
+        make_stereo_polarity_segments(self.other, [1] * 4 + [-1] * 4)
+        row = self.report()["candidates"][0]
+        self.assertEqual(0.0, row["stereo_mono_fold_ratio_delta_db"])
+        self.assertIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_one_short_antiphase_span_does_not_trigger_persistent_mono_risk(self):
+        make_stereo_polarity_segments(self.base, [1] * 8)
+        make_stereo_polarity_segments(self.other, [1] * 7 + [-1])
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_mono_fold_cancellation_risk"])
+        self.assertNotIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+
+    def test_in_phase_stereo_across_all_spans_stays_clean(self):
+        make_stereo_polarity_segments(self.base, [1] * 8)
+        make_stereo_polarity_segments(self.other, [1] * 8, gain=7500)
+        row = self.report()["candidates"][0]
+        self.assertFalse(row["stereo_temporal_mono_fold_cancellation_risk"])
+        self.assertNotIn("stereo_temporal_mono_fold_cancellation_inspect", row["warnings"])
+        self.assertEqual([], row["warnings"])
 
     def test_mono_sources_do_not_fabricate_stereo_fold_evidence(self):
         row = self.report()["candidates"][0]
