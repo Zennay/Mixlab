@@ -34,9 +34,9 @@ def _attributes(attrs):
     if len(keys) != len(set(keys)):
         _deny()
     result = dict(attrs)
-    if (any(name in result for name in ("hidden", "inert", "disabled"))
-            or result.get("aria-hidden", "").lower() == "true"
-            or result.get("tabindex") == "-1"):
+    if (any(name in result for name in ("hidden", "inert", "disabled", "style", "tabindex"))
+            or any(name.startswith("on") for name in result)
+            or result.get("aria-hidden", "").lower() == "true"):
         _deny()
     return result
 
@@ -59,18 +59,27 @@ class _ReviewControls(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = _attributes(attrs)
+        # A browser can suppress or reinterpret otherwise valid-looking HTML
+        # inside these containers. HTMLParser alone is not a browser DOM.
+        if tag in {"template", "noscript", "plaintext", "xmp", "textarea",
+                   "iframe", "object", "embed", "video", "source", "img",
+                   "base", "link"}:
+            _deny()
+        if tag in {"script", "style", "label"} and a:
+            _deny()
         if tag == "html":
             self.lang = self.lang or bool(a.get("lang", "").strip())
         if a.get("aria-live") in ("polite", "assertive") and a.get("id") == "status":
             self.status_announcers += 1
         if tag == "form":
-            if self.form_count or self.form_open or self.field or self.label:
+            if self.form_count or self.form_open or self.field or self.label or set(a) != {"data-pack-id"}:
                 _deny()
             self.form_count += 1
             self.form_open = True
             self.pack_id = a.get("data-pack-id")
         elif tag == "fieldset":
-            if not self.form_open or self.field is not None or self.label is not None:
+            if (not self.form_open or self.field is not None or self.label is not None
+                    or set(a) != {"data-trial"}):
                 _deny()
             trial = a.get("data-trial")
             if not isinstance(trial, str) or not _TRIAL.fullmatch(trial):
