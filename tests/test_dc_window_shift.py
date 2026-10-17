@@ -100,6 +100,32 @@ class TemporalDcMismatchTests(unittest.TestCase):
         self.assertIsNone(row["ab_dc_window_mismatch_fraction"])
         self.assertFalse(row["ab_dc_window_mismatch_risk"])
 
+    def test_exact_pcm_sample_cutoff_distinguishes_983_from_984(self):
+        # 3% full-scale lies between 983 and 984 PCM16 counts.
+        for delta, expected in ((983, False), (984, True)):
+            with self.subTest(delta=delta):
+                write(self.alt, [(s + delta,) for s in self.signal])
+                row = self.row()
+                self.assertEqual(expected, row["ab_dc_window_mismatch_risk"])
+                self.assertEqual(float(expected), row["ab_dc_window_mismatch_fraction"])
+
+    def test_boundary_crossing_and_truncated_last_window(self):
+        # 20ms at 8kHz = 160 frames. 9003 frames: 56 full windows
+        # plus a final 43-frame window. PCM read blocks end at frame 4096.
+        sequence = [int(2600 * math.sin(i * .11 + .29)) for i in range(9003)]
+        write(self.base, [(s,) for s in sequence])
+        affected_windows = 23
+        write(self.alt, [(s + (1100 if i < affected_windows * 160 else 0),)
+                         for i, s in enumerate(sequence)])
+        result = compare_wavs(self.base, [self.alt], window_ms=20)
+        row = result["candidates"][0]
+        self.assertEqual(57, row["metrics"]["window_count"])
+        self.assertAlmostEqual(round(affected_windows / 57, 6),
+                               row["ab_dc_window_mismatch_fraction"], places=6)
+        self.assertTrue(row["ab_dc_window_mismatch_risk"])
+        self.assertFalse(row["ab_dc_offset_mismatch_risk"])
+        self.assertNotIn("PRIVATE__", json.dumps(result))
+
     def test_single_window_has_insufficient_sustained_evidence(self):
         write(self.alt, [(s + 1050,) for s in self.signal])
         report = compare_wavs(self.base, [self.alt], window_ms=1000)
