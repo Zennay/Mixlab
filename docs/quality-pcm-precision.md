@@ -40,8 +40,11 @@ different offsets.
 To catch a damaged part hidden by the undamaged rest, the same check runs
 across **8 fixed, corresponding time regions** per channel, each requiring
 >=512 informative samples and >=16 distinct values on both sides. At least
-**two** regions showing precision loss are necessary for a persistent regional
-warning; a single isolated region gives `null` rather than a false all-clear.
+**two distinct time regions** showing precision loss are necessary for a
+persistent regional warning **across the stereo pair**, even if the defect
+moves from left to right between those regions. Both channels failing in
+only the **same single time region** still counts as just one region and gives
+`null`, rather than claiming persistent damage or a false all-clear.
 The public report never includes those window positions or signal statistics.
 A globally decisive warning also takes precedence over unavailable regional
 data. A clean (false) flag requires informative, negative global and regional
