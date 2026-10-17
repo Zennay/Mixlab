@@ -159,6 +159,20 @@ def _preflight_render_claims(study, evidence):
             beats = recipe.get("beats")
             if type(beats) is not int or not 1 <= beats <= 64:
                 _fail()
+            # Use the canonical Recipe physical admission contract; the
+            # descriptive recipe metadata is NOT part of pack_id hashing.
+            # Reject forged impossible offsets/gains/durations without PCM.
+            if beats * 60 / bpm > 120:
+                _fail()
+            for field in ("a_start", "b_start"):
+                start = recipe.get(field)
+                if (type(start) not in (int, float) or not math.isfinite(start)
+                        or start < 0):
+                    _fail()
+            gain = recipe.get("gain_db")
+            if (type(gain) not in (int, float) or not math.isfinite(gain)
+                    or not -60 <= gain <= 0):
+                _fail()
             for field, expected in (("a_bpm", frozen["a_bpm"]),
                                     ("b_bpm", frozen["b_bpm"])):
                 actual = recipe.get(field)
