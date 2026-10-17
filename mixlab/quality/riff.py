@@ -44,6 +44,16 @@ def verify_private_pcm16_header(path: str | Path) -> None:
                 fields = handle.read(16)
                 if len(fields) != 16:
                     raise ValueError("Truncated PCM16 fmt payload")
+                # PCM has a 16-byte canonical fmt body; a recognized
+                # extended body includes at least the two-byte cbSize.
+                # Reject a fractional extension or forged cbSize that
+                # some decoders silently ignore.
+                if chunk_size != 16:
+                    if chunk_size < 18:
+                        raise ValueError("Incomplete PCM16 fmt extension")
+                    advertised_extension = int.from_bytes(handle.read(2), "little")
+                    if advertised_extension != chunk_size - 18:
+                        raise ValueError("Inconsistent PCM16 fmt extension")
                 encoding = int.from_bytes(fields[0:2], "little")
                 channels = int.from_bytes(fields[2:4], "little")
                 rate = int.from_bytes(fields[4:8], "little")
