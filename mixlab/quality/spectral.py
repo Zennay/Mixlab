@@ -27,6 +27,10 @@ RMS_LEVEL_CONFOUND_DB = 1.5
 # mastering are not simulated; this detects obvious polarity cancellation.
 MONO_FOLD_LOSS_DB = -10.0
 MONO_FOLD_CHANGE_DB = 6.0
+# Relative L/R gain moves can be hidden by identical whole-stereo RMS,
+# full-band ratios, mono-fold and gain-normalized channel spectra.
+STEREO_BALANCE_SHIFT_DB = 6.0
+STEREO_TEMPORAL_BALANCE_SHIFT_DB = 9.0
 MIN_RESOLVABLE_RATIO = 1e-4
 READ_FRAMES = 4096
 MAX_CANDIDATES = 8
@@ -473,6 +477,47 @@ def compare_spectral_balance(
                         and changed_spans >= 2
                         and changed_spans / eligible_spans >= TEMPORAL_PROXY_MIN_FRACTION):
                     warnings.append("stereo_temporal_" + name + "_channel_spectral_shift_inspect")
+
+        # Relative stereo volume placement is orthogonal to frequency
+        # balance. Swapping a quiet L and loud R leaves whole-file RMS,
+        # mono-fold RMS and each channel's normalized spectral ratios equal.
+        # Compare private L/R RMS ratios only when all channels are audible;
+        # publish flags/fractions, never direction, level or channel identity.
+        if reference["channels"] == 2:
+            ref_levels = [ch[3] for ch in reference["_channels"]]
+            cur_levels = [ch[3] for ch in current["_channels"]]
+            if min(*ref_levels, *cur_levels) >= SILENT_WINDOW_RMS:
+                reference_balance = 20 * math.log10(ref_levels[0] / ref_levels[1])
+                candidate_balance = 20 * math.log10(cur_levels[0] / cur_levels[1])
+                balance_changed = (
+                    abs(candidate_balance - reference_balance) >= STEREO_BALANCE_SHIFT_DB
+                )
+                deltas["stereo_channel_level_balance_shift_risk"] = balance_changed
+                if balance_changed:
+                    warnings.append("stereo_channel_level_balance_shift_inspect")
+            else:
+                deltas["stereo_channel_level_balance_shift_risk"] = None
+
+            balanced_spans = changed_balance_spans = 0
+            for reference_span, current_span in zip(
+                reference["_channel_spans"], current["_channel_spans"]
+            ):
+                if min(*reference_span, *current_span) < SILENT_WINDOW_RMS:
+                    continue
+                balanced_spans += 1
+                ref_balance_db = 20 * math.log10(reference_span[0] / reference_span[1])
+                cur_balance_db = 20 * math.log10(current_span[0] / current_span[1])
+                if abs(cur_balance_db - ref_balance_db) >= STEREO_TEMPORAL_BALANCE_SHIFT_DB:
+                    changed_balance_spans += 1
+            balance_fraction = (
+                round(changed_balance_spans / balanced_spans, 6)
+                if balanced_spans >= TEMPORAL_PROXY_MIN_SPANS else None
+            )
+            deltas["stereo_temporal_level_balance_mismatch_fraction"] = balance_fraction
+            if (balanced_spans >= TEMPORAL_PROXY_MIN_SPANS
+                    and changed_balance_spans >= 2
+                    and changed_balance_spans / balanced_spans >= TEMPORAL_PROXY_MIN_FRACTION):
+                warnings.append("stereo_temporal_level_balance_shift_inspect")
 
         # Whole-stereo ratios mask shifts in frequency placement between L/R.
         # Compare *each* channel at matched playback positions, but expose
