@@ -21,6 +21,19 @@ def verify_pack(root):
     key = _load(root / "private/answer-key.json")
     if not isinstance(receipt, dict) or not isinstance(evidence, dict) or not isinstance(key, list):
         raise ValueError("Invalid pack structure")
+    # The public receipt must describe the same manifest and schema as the
+    # private listening evidence. Without this, public provenance can be
+    # silently relabelled while the pack-id still verifies private data.
+    if (type(receipt.get("schema_version")) is not int
+            or receipt["schema_version"] != 1
+            or type(evidence.get("schema_version")) is not int
+            or evidence["schema_version"] != 1):
+        raise ValueError("Invalid frozen pack schema")
+    manifest_sha = evidence.get("manifest_sha256")
+    if (not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or receipt.get("manifest_sha256") != manifest_sha):
+        raise ValueError("Frozen pack manifest identity mismatch")
     renders = evidence.get("renders")
     if not isinstance(renders, list) or not renders:
         raise ValueError("Missing render evidence")

@@ -135,6 +135,40 @@ class FrozenReviewAudioAdmissionTests(unittest.TestCase):
         finally:
             path.write_bytes(original)
 
+    def test_public_receipt_and_private_evidence_bind_same_manifest_and_schema(self):
+        # Otherwise a displayed pack receipt can claim a different source
+        # manifest from the private identity still used for pack-id hashing.
+        receipt_path = self.pack / "receipt.json"
+        evidence_path = self.pack / "private" / "evidence.json"
+        receipt_raw, evidence_raw = receipt_path.read_bytes(), evidence_path.read_bytes()
+        try:
+            receipt = json.loads(receipt_raw)
+            evidence = json.loads(evidence_raw)
+            invalid = (
+                (receipt_path, {**receipt, "manifest_sha256": "f" * 64}),
+                (receipt_path, {**receipt, "schema_version": True}),
+                (receipt_path, {**receipt, "schema_version": 1.0}),
+                (evidence_path, {**evidence, "schema_version": "1"}),
+                (evidence_path, {**evidence, "schema_version": False}),
+            )
+            for target, value in invalid:
+                with self.subTest(file=target.name, payload=str(value.get("schema_version"))):
+                    target.write_text(json.dumps(value), encoding="utf-8")
+                    try:
+                        with mock.patch(
+                            "mixlab.evaluation.inspect_wav_and_digest",
+                            side_effect=AssertionError("WAV opened")
+                        ) as inspect:
+                            with self.assertRaisesRegex(ValueError, "identity|schema|manifest"):
+                                verify_pack(self.pack)
+                            inspect.assert_not_called()
+                    finally:
+                        target.write_bytes(receipt_raw if target == receipt_path
+                                           else evidence_raw)
+        finally:
+            receipt_path.write_bytes(receipt_raw)
+            evidence_path.write_bytes(evidence_raw)
+
     def test_pack_trials_and_render_lists_obey_registered_pair_budget(self):
         # Library ingest admits at most 10 pairs; the renderer emits up to
         # 3 blind candidates + baseline per pair. Prevent thousands of
