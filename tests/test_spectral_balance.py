@@ -52,6 +52,22 @@ def make_segmented_wav(path, freqs, *, rate=48000, channels=1, gain=8000):
         output.writeframes(samples.tobytes())
 
 
+def make_stereo_split_wav(path, *, left_hz, right_hz, gain=8000, rate=48000):
+    samples = array("h")
+    for index in range(12000):
+        samples.extend((
+            int(gain * math.sin(2 * math.pi * left_hz * index / rate)),
+            int(gain * math.sin(2 * math.pi * right_hz * index / rate)),
+        ))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(rate)
+        output.writeframes(samples.tobytes())
+
+
 class SpectralBalanceTests(unittest.TestCase):
     def setUp(self):
         root = tempfile.TemporaryDirectory()
@@ -121,6 +137,36 @@ class SpectralBalanceTests(unittest.TestCase):
         make_wav(self.other, freq=4000, channels=2)
         row = self.report()["candidates"][0]
         self.assertIn("high_spectral_balance_shift_inspect", row["warnings"])
+
+    def test_channel_swapped_stereo_can_hide_all_global_spectral_changes(self):
+        make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
+        make_stereo_split_wav(self.other, left_hz=5000, right_hz=100)
+        report = self.report()
+        row = report["candidates"][0]
+        # Overall stereo energies are the same despite different placement.
+        for name in ("low", "mid", "high"):
+            self.assertAlmostEqual(0.0, row[name + "_proxy_delta_db"], delta=0.01)
+        self.assertTrue(row["stereo_channel_low_spectral_shift_risk"])
+        self.assertTrue(row["stereo_channel_high_spectral_shift_risk"])
+        self.assertIn("stereo_channel_low_spectral_shift_inspect", row["warnings"])
+        self.assertIn("stereo_channel_high_spectral_shift_inspect", row["warnings"])
+        anonymous = json.dumps(report)
+        self.assertNotIn(str(self.dir), anonymous)
+        self.assertNotIn("_channels", anonymous)
+        self.assertNotIn("left_hz", anonymous)
+
+    def test_stereo_gain_change_does_not_create_channel_spectral_alarm(self):
+        make_stereo_split_wav(self.base, left_hz=100, right_hz=5000)
+        make_stereo_split_wav(self.other, left_hz=100, right_hz=5000, gain=6000)
+        row = self.report()["candidates"][0]
+        for name in ("low", "mid", "high"):
+            self.assertFalse(row["stereo_channel_" + name + "_spectral_shift_risk"])
+        self.assertFalse(any("stereo_channel_" in item for item in row["warnings"]))
+
+    def test_mono_report_has_no_implied_stereo_channel_evidence(self):
+        row = self.report()["candidates"][0]
+        for name in ("low", "mid", "high"):
+            self.assertNotIn("stereo_channel_" + name + "_spectral_shift_risk", row)
 
     def test_two_candidates_get_only_opaque_ids(self):
         third = self.dir / "SECRET_THIRD.wav"
