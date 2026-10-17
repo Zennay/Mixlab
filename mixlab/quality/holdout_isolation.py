@@ -142,13 +142,16 @@ def _exact_pcm_excerpt_overlap(development, evaluation) -> bool:
                     track["resolved_path"], start=start, frames=width))
                 if len(pcm) != width * channels * 2:
                     _refuse()
-                values = array("h")
-                values.frombytes(pcm)
-                # Ignore silent / near-silent reusable spacers, avoiding
-                # false leakage from common zeros, padding and quiet tails.
-                if sum(abs(sample) for sample in values) < 512 * len(values):
-                    continue
+                # An audible stereo frame can still contain an entirely
+                # silent/quiet channel. Screen *each projected view* before
+                # adding its fingerprint, otherwise independent recordings
+                # sharing a zero-filled right channel appear contaminated.
                 for _, view_channels, view_pcm in _pcm_channel_views(pcm, channels):
+                    view_samples = array("h")
+                    view_samples.frombytes(view_pcm)
+                    if sum(abs(sample) for sample in view_samples) < (
+                            512 * len(view_samples)):
+                        continue
                     for variant in _pcm_exact_transform_variants(
                             view_pcm, view_channels):
                         by_format.setdefault((rate, view_channels), []).append(
