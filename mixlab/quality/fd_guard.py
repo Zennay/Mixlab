@@ -70,6 +70,27 @@ def _locate_data_chunk(stream, size):
                     or block_align != channels * 2
                     or byte_rate != rate * block_align):
                 raise ValueError(_ERROR)
+            if format_tag == 0xFFFE:
+                # Extensible WAV carries a second statement of sample
+                # precision and a speaker layout. A contradictory declaration
+                # can be silently ignored by wave.Wave_read but interpreted
+                # differently by a DJ/audio playback engine.
+                if chunk_size < 40:
+                    raise ValueError(_ERROR)
+                extension = stream.read(24)
+                if len(extension) != 24:
+                    raise ValueError(_ERROR)
+                cb_size, valid_bits, channel_mask = struct.unpack(
+                    "<HHI", extension[:8]
+                )
+                pcm_subtype = (
+                    b"\\x01\\x00\\x00\\x00\\x00\\x00\\x10\\x00"
+                    b"\\x80\\x00\\x00\\xaa\\x00\\x38\\x9b\\x71"
+                )
+                if (cb_size < 22 or 18 + cb_size > chunk_size
+                        or valid_bits != 16 or extension[8:24] != pcm_subtype
+                        or (channel_mask and channel_mask.bit_count() != channels)):
+                    raise ValueError(_ERROR)
             seen_fmt = True
         if chunk[:4] == b"data":
             if not seen_fmt:
