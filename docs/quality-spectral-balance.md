@@ -6,7 +6,7 @@
 
 This additional **optional, read-only, CPU-only** screening command identifies
 large low/mid/high proxy shifts that equal overall RMS can conceal (for example
-an inadvertently missing bass layer, midrange/vocal energy or high-frequency content). It is
+an inadvertently missing bass layer, midrange/vocal energy or high-frequency content, including changes hidden by a stereo channel swap). It is
 supplemental to the main PCM16 quality, signed-stereo identity, pack, tempo and
 LUFS reviews; it does not edit them or write media. No external packages,
 models, downloads or uploads.
@@ -51,6 +51,19 @@ warrant human inspection; this deliberately conservative persistence
 gate is not a claim of perfect artifact detection. Eight large bins
 are not a time-frequency spectrogram.
 
+For stereo sources, the scanner additionally keeps two private
+per-channel low/mid/high energy summaries. It flags a
+`stereo_channel_<band>_spectral_shift_inspect` when any *audible* L/R
+channel's gain-normalized proxy shifts by the configured threshold
+(default 6 dB) relative to the corresponding baseline channel. This catches
+a bass/treble **channel swap** that has *identical global stereo
+frequency-balance energy*. The report publishes only three band-specific
+booleans, not private channel frequencies, per-channel energies,
+channel positions, or source filenames. Mono sources have no stereo flag.
+Stereo swaps may be creative or intentional; the output is an inspect
+warning, not an acoustic quality verdict, and it supplements (does not
+replace) the main PCM signed-swap and mono-fold-down checks.
+
 These filters are deliberately cheap, have gradual/overlapping responses,
 and are sensitive to DC, onsets and very short excerpts. The numbers are
 **not** disjoint frequency-band percentages, calibrated spectrum, true peak,
@@ -82,7 +95,7 @@ and prints no JSON. Argument errors fail **2** with no JSON.
 signals for RMS-matched bass/high-content shift, gain-only invariance,
 stereo, multiple anonymized candidates, silent comparisons, sample-format
 mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
-non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, matched-RMS midrange depletion,\nmidrange time reordering, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
+non-mutation, whole-file-equal but time-swapped bass/treble, short nonpersistent\nshifts, stereo temporal gain invariance, matched-RMS midrange depletion,\nmidrange time reordering, stereo channel-frequency swaps with\nglobally identical energies, stereo gain invariance, silent spans, strict warning exit\nand CLI canary privacy. It is discovered
 by the existing ML-07 companion pattern `test_[!q]*.py`, run on the
 exact PR source head; no shared workflow modification is required.
 
