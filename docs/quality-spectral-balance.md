@@ -49,6 +49,17 @@ the root-mean-square energy of each filtered proxy is normalized by that
 source's *unfiltered* RMS. A/B reports compute
 `20 log10(candidate_proxy_ratio / baseline_proxy_ratio)`. Ratios are
 gain-normalized, but **not** loudness-matched or perceptual loudness.
+Importantly, gain normalization can hide that an A/B candidate is simply
+much louder. The optional spectral scanner therefore independently reports
+the signed whole-file `rms_delta_db_vs_baseline` for two sufficiently audible
+sources and adds `rms_level_mismatch_inspect_not_lufs` if the *unrounded*
+absolute delta is strictly greater than **1.5 dB**. This warning is
+independent of the configurable low/mid/high spectral threshold.
+For silence/insufficient audible power the delta is `null`, not 0 dB.
+A gain-only change can leave all spectral ratios constant **while still
+failing the strict warning gate**. Both sample RMS and these filters are
+distinct from EBU/BS.1770 perceptual loudness; the dedicated loudness
+evaluation and human blind listening remain required.
 
 An additional **eight-span temporal proxy** checks whether the same
 low/mid/high content occurred at the same *time* in both variants.
@@ -143,7 +154,7 @@ mismatch, finite threshold rules, symlink/FIFO admission, truncated PCM,
 same-inode/hardlink reuse, concurrent path replacement/unlink,
 full-comparison early-baseline/candidate mutation and symlink-substitution
 rejection, non-mutation,\nwhole-file-equal but time-swapped bass/treble, short nonpersistent
-shifts, stereo temporal gain invariance, shifted silence and sparse temporal coverage, matched-RMS midrange depletion,
+shifts, stereo temporal gain invariance, shifted silence and sparse temporal coverage, matched-RMS midrange depletion, independent louder/quieter A/B RMS gate,
 midrange time reordering, stereo channel-frequency swaps with
 globally identical energies, stereo gain invariance, single-channel silence from either side,\nstrict CLI failure on a shared channel dropout, silent spans, strict warning exit
 and CLI canary privacy. It is discovered
