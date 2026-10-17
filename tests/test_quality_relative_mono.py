@@ -81,6 +81,8 @@ def _wave(path: Path, *, mode: str, frames: int = 12000, rate: int = 8000) -> No
             elif mode == "delayed-right-125ms":
                 left = v
                 right = 0 if i < rate // 8 else v
+            elif mode == "end-boundary-pop":
+                left = right = 9000 if i == frames - 1 else v
             elif mode == "late-opposed":
                 left, right = (v, -v) if i >= frames // 2 else (v, v)
             elif mode == "even":
@@ -424,6 +426,27 @@ class RelativeMonoTests(unittest.TestCase):
         report = inspect(str(self.base), [str(self.candidate)])
         self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
         self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_candidate_playback_edge_pop_is_not_a_clean_ab(self):
+        _wave(self.base, mode="normal")
+        _wave(self.candidate, mode="end-boundary-pop")
+        from mixlab.quality import compare_wavs
+        row = compare_wavs(self.base, [self.candidate])["candidates"][0]
+        self.assertTrue(row["metrics"]["playback_boundary_pop_risk"])
+        self.assertFalse(row["metrics"]["severe_sample_discontinuity_risk"])
+        self.assertTrue(row["level_comparable_for_blind_ab"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+
+    def test_baseline_playback_edge_pop_is_not_a_clean_ab(self):
+        _wave(self.base, mode="end-boundary-pop")
+        _wave(self.candidate, mode="alternate")
+        from mixlab.quality import compare_wavs
+        row = compare_wavs(self.base, [self.candidate])
+        self.assertTrue(row["baseline"]["playback_boundary_pop_risk"])
+        report = inspect(str(self.base), [str(self.candidate)])
+        self.assertEqual(report["candidates"][0]["status"], "ab_audio_integrity_confound")
+        self.assertFalse(report["milestone_pass"])
 
     def test_baseline_already_inverted_requires_review_not_false_clean(self):
         _wave(self.base, mode="opposed")
