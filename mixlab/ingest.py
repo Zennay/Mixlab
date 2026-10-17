@@ -204,10 +204,59 @@ def _reject_excessive_json_nesting(raw, max_depth=64):
             depth -= 1
 
 
+MAX_MANIFEST_BYTES = 1024 * 1024
+
+
+def _read_bounded_manifest(path):
+    """Read at most 1 MiB from one regular descriptor; never open a FIFO blocking.
+
+    The pathname remains local and no input bytes or private path enter errors.
+    Metadata checks detect ordinary replacements and edits, not adversarial
+    same-metadata rewrites or a transactional filesystem snapshot.
+    """
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns)
+
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        initial = os.lstat(path)
+        if not stat.S_ISREG(initial.st_mode):
+            raise ValueError("Manifest must be a regular file, not a link or pipe")
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("Manifest file unavailable") from exc
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or identity(before) != identity(initial):
+                raise ValueError("Manifest changed before reading")
+            if not 0 < before.st_size <= MAX_MANIFEST_BYTES:
+                raise ValueError("Manifest size must be 1..1048576 bytes")
+            raw = stream.read(MAX_MANIFEST_BYTES + 1)
+            if len(raw) > MAX_MANIFEST_BYTES:
+                raise ValueError("Manifest exceeds 1 MiB during reading")
+            after = os.fstat(stream.fileno())
+    except OSError as exc:
+        raise ValueError("Manifest read failed") from exc
+    try:
+        final = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("Manifest changed during reading") from exc
+    if (not stat.S_ISREG(final.st_mode) or
+            identity(initial) != identity(after) or identity(initial) != identity(final)):
+        raise ValueError("Manifest changed during reading")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeError as exc:
+        raise ValueError("Manifest is not UTF-8 text") from exc
+
+
 def validate_library(manifest_path):
-    source = Path(manifest_path).resolve()
-    if source.stat().st_size > 1024 * 1024:
-        raise ValueError("Manifest exceeds 1 MiB")
+    # Preserve the lexical final component so O_NOFOLLOW/lstat can reject
+    # a manifest symlink, rather than resolving it before secure admission.
+    source = Path(manifest_path).absolute()
+    raw = _read_bounded_manifest(source)
     def reject_constant(value):
         raise ValueError("Non-finite JSON constant")
     def unique_keys(items):
@@ -217,7 +266,6 @@ def validate_library(manifest_path):
                 raise ValueError("Duplicate JSON key")
             result[key] = value
         return result
-    raw = source.read_text()
     _reject_excessive_json_nesting(raw)
     try:
         parsed = json.loads(raw, parse_constant=reject_constant,
