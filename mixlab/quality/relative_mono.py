@@ -71,10 +71,19 @@ def assess(
             # numbers appear clean. Never echo the private match identifier.
             status = "non_independent_ab_audio"
             delta = None
+        elif any(row.get(field) is True for field in (
+                "short_window_level_mismatch_risk",
+                "edge_silence_mismatch_risk",
+                "prominent_onset_mismatch_risk")):
+            # Equal duration/global RMS do not establish an equivalent
+            # listening comparison: large localized gain changes or a
+            # shifted audible entry/end can leak the variant to listeners.
+            # The canonical detector already computed these flags from
+            # bounded PCM. Do not disclose the onset time or RMS envelope.
+            status = "ab_timing_or_dynamics_confound"
+            delta = None
         elif row.get("level_comparable_for_blind_ab") is not True:
-            # A large RMS difference invalidates a blinded comparison
-            # *before* the costly aligned scan. Do not collapse this
-            # explicit HOLD into "insufficient stereo evidence".
+            # A large RMS difference invalidates a blinded comparison.
             status = "rms_level_confound"
             delta = None
         else:
