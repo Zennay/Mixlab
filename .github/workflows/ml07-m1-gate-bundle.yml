@@ -1,0 +1,58 @@
+name: MixLab ML-07 one-command M1 QA bundle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/m1_gate_bundle.py"
+      - "tests/test_quality_m1_gate_bundle.py"
+      - "docs/quality-m1-gate-bundle.md"
+      - ".github/workflows/ml07-m1-gate-bundle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ml07-m1-bundle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-frozen-pcm:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Exact SHA bundled technical QA (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout exact current PR head without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert revision and configure Python
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Set up stdlib Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Execute synthetic private-free orchestrator and canonical composition tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/m1_gate_bundle.py tests/test_quality_m1_gate_bundle.py
+          for pattern in test_quality_m1_gate_bundle.py test_quality_composed_m1_gates.py; do
+            /usr/bin/time -v python -m unittest discover -s tests -p "$pattern" -v
+          done
