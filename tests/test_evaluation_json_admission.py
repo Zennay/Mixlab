@@ -150,6 +150,9 @@ class EvaluationJsonAdmissionTests(unittest.TestCase):
                 for secret in secrets:
                     self.assertNotIn(secret, diagnostic)
                 self.assertNotIsInstance(caught.exception, json.JSONDecodeError)
+                # Merely using "from None" suppresses formatting but keeps
+                # JSONDecodeError.doc reachable via __context__.
+                self.assertIsNone(caught.exception.__context__)
 
     def test_reject_deep_parser_recursion_as_validation_error(self):
         self.source.write_text("[" * 1500 + "0" + "]" * 1500,
