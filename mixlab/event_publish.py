@@ -18,6 +18,7 @@ from .playlist_studio import build_playlist_studio
 from .show_runbook import create_runbook
 from .event_dashboard import create_dashboard
 from .event_bundle import export_bundle
+from .event_rehearsal import create_rehearsal
 from .studio import FAMILY_NAMES
 
 ROOT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}\Z")
@@ -126,12 +127,19 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         # incomplete because the optional operator companion cannot publish.
         warnings.append("Full WAV exists; optional event runbook unavailable: " + str(exc))
 
+    rehearsal = None
+    try:
+        rehearsal = create_rehearsal(session, wav, target / "final-set.rehearsal.private.html")
+    except (ValueError, TypeError, OSError, KeyError) as exc:
+        warnings.append("Full WAV exists; optional offline rehearsal page unavailable: " + str(exc))
+
     dashboard = None
     try:
         dashboard = create_dashboard(
             session, wav, target / "index.html",
             compressed=set_data.get("compressed_delivery"),
-            runbook=runbook, player=set_data.get("offline_player")
+            runbook=runbook, player=set_data.get("offline_player"),
+            rehearsal=rehearsal
         )
     except (ValueError, TypeError, OSError, KeyError) as exc:
         warnings.append("Full WAV exists; optional private event landing page unavailable: " + str(exc))
@@ -142,7 +150,8 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
             bundle_result = export_bundle(
                 session, wav, target / "final-set.private.zip",
                 player=set_data.get("offline_player"), dashboard=dashboard,
-                runbook=runbook, compressed=set_data.get("compressed_delivery")
+                runbook=runbook, rehearsal=rehearsal,
+                compressed=set_data.get("compressed_delivery")
             )
         except (ValueError, TypeError, OSError, KeyError) as exc:
             # Optional packaging must not undo the existing real WAV or the
@@ -158,6 +167,7 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         "full_set_wav": str(wav),
         "offline_full_set_player": set_data.get("offline_player"),
         "offline_show_runbook": str(runbook) if runbook else None,
+        "offline_event_rehearsal": str(rehearsal) if rehearsal else None,
         "offline_event_dashboard": str(dashboard) if dashboard else None,
         "private_portable_bundle": bundle_result,
         "compressed_delivery": set_data.get("compressed_delivery"),
