@@ -50,6 +50,11 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 .audition button:hover{background:#416b79}
 .audition button:disabled{opacity:.3;cursor:not-allowed}
 .file-note{font-size:12px;color:var(--dim)}
+.rehearsal{border:1px solid #457b74;border-radius:13px;background:#102a2b;margin-top:16px;padding:16px}
+.rehearsal .buttons{display:flex;gap:10px;flex-wrap:wrap}
+.rehearsal button{padding:10px 13px;font-size:13px}
+.rehearsal button+button{background:#314654;color:white;border:1px solid #66899b}
+
 
 @media(max-width:650px){.row{grid-template-columns:1fr}.card{padding:16px}}
 </style>
@@ -89,6 +94,113 @@ function field(label,kind,attributes){
 }
 const rights=["synthetic","licensed","user-permitted","public-domain"];
 const inputs=[],pairs=[];
+
+// Equal-power PRELISTEN from manually verified A/B cues. This browser-only
+// audition is deliberately not a MixLab rendered DSP candidate or benchmark.
+const auditions=[];
+let activeRehearsal=null;
+function stopRehearsal(message){
+ const state=activeRehearsal;
+ if(!state)return;
+ activeRehearsal=null;
+ if(state.frame!==null)cancelAnimationFrame(state.frame);
+ for(const media of [state.a,state.b]){
+  media.pause();media.removeAttribute("src");media.load();
+ }
+ if(message)state.status.textContent=message;
+}
+function mediaMetadata(audio,seconds){
+ return new Promise((resolve,reject)=>{
+  let done=false;
+  const cleanup=()=>{
+   audio.removeEventListener("loadedmetadata",ok);
+   audio.removeEventListener("error",failed);
+   clearTimeout(timer);
+  };
+  const ok=()=>{
+   if(done)return;done=true;cleanup();
+   if(!Number.isFinite(audio.duration)||seconds+0.02>=audio.duration){
+    reject(new Error("A cue is beyond the playable audio duration."));return;
+   }
+   try{audio.currentTime=seconds;resolve()}
+   catch(_){reject(new Error("Unable to seek this browser audio format."))}
+  };
+  const failed=()=>{if(done)return;done=true;cleanup();reject(new Error("Browser could not decode one selected file."))};
+  const timer=setTimeout(()=>{if(done)return;done=true;cleanup();reject(new Error("Audio metadata was not available."))},12000);
+  audio.addEventListener("loadedmetadata",ok);audio.addEventListener("error",failed);
+  audio.load();
+  if(audio.readyState>=1)ok();
+ });
+}
+async function rehearsePair(index,status){
+ stopRehearsal();
+ const left=auditions[index],right=auditions[index+1];
+ if(!left||!right||!left.getUrl()||!right.getUrl()){
+  status.textContent="Choose the matching local music files for BOTH tracks first.";
+  return;
+ }
+ if(!rights.includes(inputs[index].select.value)||
+    !rights.includes(inputs[index+1].select.value)||
+    !inputs[index].provenance.value.trim()||
+    !inputs[index+1].provenance.value.trim()){
+  status.textContent="Enter the permission declaration and provenance for both local tracks first.";
+  return;
+ }
+ const numberOfBeats=Number(el("beats").value);
+ if(!Number.isInteger(numberOfBeats)||numberOfBeats<1||numberOfBeats>64){
+  status.textContent="Choose a valid 1–64 beat length first.";return;
+ }
+ let outgoing,incoming;
+ try{
+  outgoing=numeric(pairs[index].a);
+  incoming=numeric(pairs[index].b);
+ }catch(_){status.textContent="Set manually checked outgoing A and incoming B cue seconds first.";return}
+ const length=numberOfBeats*60/bundle.bpm;
+ const a=new Audio(),b=new Audio();
+ a.preload="metadata";b.preload="metadata";
+ a.src=left.getUrl();b.src=right.getUrl();
+ a.volume=1;b.volume=0;
+ const state={a,b,frame:null,status};
+ activeRehearsal=state;
+ status.textContent="Preparing local two-deck cue rehearsal…";
+ try{
+  await Promise.all([mediaMetadata(a,outgoing),mediaMetadata(b,incoming)]);
+  if(activeRehearsal!==state)return;
+  if(outgoing+length>a.duration+.01||incoming+length>b.duration+.01)
+   throw new Error("Selected transition extends past the end of a local source. Move the cues earlier.");
+  // Single-song playbacks must not compete with the two-deck preview.
+  left.player.pause();right.player.pause();
+  await Promise.all([a.play(),b.play()]);
+  if(activeRehearsal!==state){a.pause();b.pause();return}
+  // The browser provides a rough creative equal-power prelisten, not the
+  // offline canonical PCM renderer. Use both local playback positions so
+  // buffering never causes a silent clock to run ahead of real audio.
+  function update(){
+   if(activeRehearsal!==state)return;
+   const elapsed=Math.max(0,Math.min(a.currentTime-outgoing,b.currentTime-incoming));
+   const fraction=Math.max(0,Math.min(1,elapsed/length));
+   a.volume=Math.max(0,Math.min(1,Math.cos(fraction*Math.PI/2)));
+   b.volume=Math.max(0,Math.min(1,Math.sin(fraction*Math.PI/2)));
+   status.textContent="Local rehearsal: "+Math.round(fraction*100)+"% · "+
+     elapsed.toFixed(1)+" / "+length.toFixed(1)+
+     " s. Browser approximation, not the actual MixLab DSP.";
+   if(fraction>=1||a.ended||b.ended){
+    stopRehearsal("Local cue rehearsal finished. Adjust cue seconds or export the manually approved choices.");
+    return;
+   }
+   state.frame=requestAnimationFrame(update);
+  }
+  state.frame=requestAnimationFrame(update);
+ }catch(error){
+  if(activeRehearsal===state){
+   stopRehearsal("Cannot prelisten: "+(error.message||"browser audio unavailable"));
+  }else{a.pause();b.pause()}
+ }
+}
+window.addEventListener("pagehide",()=>{stopRehearsal();auditions.forEach(x=>{
+ if(x&&x.getUrl())URL.revokeObjectURL(x.getUrl());
+})});
+
 function auditionFor(track,index,downbeatInput){
  const panel=node("div","audition");
  const label=node("label","");
@@ -102,6 +214,7 @@ function auditionFor(track,index,downbeatInput){
  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
  let previousUrl=null;
  file.onchange=()=>{
+  stopRehearsal("Preview stopped because a local source was changed.");
   const selected=file.files&&file.files[0];
   player.pause();player.removeAttribute("src");player.load();
   if(previousUrl){URL.revokeObjectURL(previousUrl);previousUrl=null}
@@ -137,7 +250,9 @@ function auditionFor(track,index,downbeatInput){
   const length=Number.isFinite(player.duration)?player.duration:900;
   player.currentTime=Math.min(length,player.currentTime+4*60/track.bpm);
  });
- panel.append(buttons,status);return panel;
+ panel.append(buttons,status);
+ auditions[index]={player,getUrl:()=>previousUrl};
+ return panel;
 }
 function build(){
  el("bpm").textContent=String(bundle.bpm)+" BPM";
@@ -169,8 +284,21 @@ function build(){
    {min:0,max:900,step:0.001,required:"required",placeholder:"Exact verified cue"});
   const b=field("Incoming B cue: seconds","number",
    {min:0,max:900,step:0.001,required:"required",placeholder:"Exact verified cue"});
-  row.append(a.wrap,b.wrap);box.append(row);el("pairs").append(box);
+  row.append(a.wrap,b.wrap);box.append(row);
   pairs.push({a:a.input,b:b.input});
+  const audition=node("div","rehearsal");
+  const note=node("p","meta","Local two-deck equal-power prelisten. This approximates a baseline crossfade; it is NOT a renderer output, stem swap or musical quality claim.");
+  const buttons=node("div","buttons");
+  const play=node("button","","▶ Rehearse A→B transition");
+  play.type="button";
+  const stop=node("button","","■ Stop rehearsal");
+  stop.type="button";
+  const status=node("p","file-note","Select local files for both tracks and enter source permissions and exact A/B cues.");
+  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  play.onclick=()=>{rehearsePair(index,status)};
+  stop.onclick=()=>{stopRehearsal("Rehearsal stopped by operator.")};
+  buttons.append(play,stop);audition.append(note,buttons,status);
+  box.append(audition);el("pairs").append(box);
  });
 }
 function numeric(input,optional=false){
