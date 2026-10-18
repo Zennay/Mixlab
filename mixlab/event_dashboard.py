@@ -114,8 +114,9 @@ function render(){
  }
  const event=byId("event-links");
  if(set.runbook)event.append(localLink(set.runbook,"Open show runbook",true));
+ if(set.rehearsal)event.append(localLink(set.rehearsal,"Rehearse transitions offline"));
  if(set.compressedPlayer)event.append(localLink(set.compressedPlayer,"Portable audio player"));
- if(!set.runbook&&!set.compressedPlayer)event.append(n("p","","Use your original offline WAV and chapter player; no optional companion was published."));
+ if(!set.runbook&&!set.compressedPlayer&&!set.rehearsal)event.append(n("p","","Use your original offline WAV and chapter player; no optional companion was published."));
  const sample=set.waveform;
  const cols=64;
  for(let i=0;i<cols;i++){
@@ -156,7 +157,7 @@ def _local_optional(audio_parent, source, suffixes, *, required=False):
 
 
 def create_dashboard(private_session, complete_wav, new_html, *,
-                     compressed=None, runbook=None, player=None):
+                     compressed=None, runbook=None, player=None, rehearsal=None):
     wav = Path(complete_wav).absolute()
     target = Path(new_html).absolute()
     if (target.parent != wav.parent or target.suffix.lower() != ".html" or
@@ -184,6 +185,7 @@ def create_dashboard(private_session, complete_wav, new_html, *,
         compressed_player = _local_optional(parent, compressed.get("offline_player"), (".html",))
     player = _local_optional(parent, player, (".html",))
     runbook = _local_optional(parent, runbook, (".html",))
+    rehearsal = _local_optional(parent, rehearsal, (".html",))
 
     blob = json.dumps({
         "wav_name": metadata["wav_name"],
@@ -193,6 +195,7 @@ def create_dashboard(private_session, complete_wav, new_html, *,
         "chapters": metadata["chapters"],
         "player": player.name if player else None,
         "runbook": runbook.name if runbook else None,
+        "rehearsal": rehearsal.name if rehearsal else None,
         "compressed": companion.name if companion else None,
         "compressedPlayer": compressed_player.name if compressed_player else None,
     }, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
@@ -214,6 +217,7 @@ def main():
     parser.add_argument("new_dashboard_html")
     parser.add_argument("--player")
     parser.add_argument("--runbook")
+    parser.add_argument("--rehearsal")
     parser.add_argument("--compressed")
     parser.add_argument("--compressed-receipt")
     parser.add_argument("--compressed-player")
@@ -228,7 +232,8 @@ def main():
     try:
         result = create_dashboard(args.private_session, args.complete_wav,
                                   args.new_dashboard_html, compressed=delivery,
-                                  runbook=args.runbook, player=args.player)
+                                  runbook=args.runbook, player=args.player,
+                                  rehearsal=args.rehearsal)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Event Dashboard: " + str(exc) + "\n")
     print(json.dumps({"private_dashboard": str(result), "offline": True,
