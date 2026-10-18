@@ -47,3 +47,39 @@ are browser/operator observations, not measured sound-system output or
 venue-clock time. No actual independent listener ratings, model research,
 beat/key/stem proof, licence certification or automatic DJ selection is
 produced. M1 remains OPEN.
+
+## Turn your human-selected take into a private DJ cuebook
+
+Once the local review page has downloaded
+`mixlab-rehearsal-take-selection.private.json`, produce a completely
+new, private, printable cuebook:
+
+```bash
+python3 -m mixlab.show_rehearsal_cuebook \
+  /private/rehearsal-review/mixlab-selected-cues.html \
+  /private/rehearsal-review/mixlab-rehearsal-take-selection.private.json \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --journal /private/rehearsals/take-01/mixlab-show-rehearsal.private.json \
+  --journal /private/rehearsals/take-02/mixlab-show-rehearsal.private.json
+```
+
+Keep the **same original source/session pairs and the same journal order**
+from the comparison. Before writing anything, MixLab rechecks complete
+original WAV and source receipt SHA-256s, every journal's original event
+contract and canonical JSON SHA, and the explicitly downloaded human
+selection's exact flags and selected index. If a source, journal, list order
+or selection is changed, it refuses the new cuebook. Output is a new
+permission-restricted file in a separate private directory, never written
+inside the music, original session or journal folders.
+
+The cuebook lists each set's actual WAV duration and SHA, manual mark
+positions in WAV time, nearby real source chapters and signed offsets,
+and **only** annotations written by the DJ in the chosen take. Its
+full source chapter list is available for reference. A take with no marked
+cues has an honest empty entry rather than invented DJ decisions.
+
+This is a handoff/printing aid: an exported selection and SHA-bound receipt
+do not prove music licensing, independently measured playback timing,
+acoustic output, listener satisfaction, or musical ranking. No WAVs are
+embedded, played, modified or uploaded.
