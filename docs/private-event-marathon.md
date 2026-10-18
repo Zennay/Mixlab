@@ -26,6 +26,49 @@ After successful publication:
 
 The offline page lets you play the whole actual WAV, jump between sets, skip to the next event, seek, download the WAV and export a standard cue sheet of the original event boundaries. It does not embed, upload or duplicate the original source songs. The output WAV itself **contains copyrighted rendered material** from the approved private sets and must remain private unless separately licensed for the intended use.
 
+## Optional portable private USB ZIP
+
+Add `--bundle` to the same `python3 -m mixlab.event_marathon` invocation.
+After the real continuous PCM16 WAV, receipt and offline player are produced,
+MixLab optionally creates `marathon.private.zip` beside the master. The
+original audio is never deleted if packaging cannot complete.
+
+You can also package an existing completed Marathon later without re-rendering:
+
+~~~bash
+python3 -m mixlab.marathon_bundle \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon/another-new-marathon.private.zip
+~~~
+
+The bounded, Zip64, `ZIP_STORED` archive includes **only** the actual
+`marathon.wav`, its exact original SHA-256 receipt, private `index.html`
+and an internal file/hash inventory. Original music, underlying full event
+sources, rights manifests, local absolute paths and Studio state are absent.
+The exporter checks the original Marathon's entire WAV hash and frame/section
+receipt before packaging.
+
+On a second trusted offline machine, use the **existing Event Restore**
+command (now also supports Marathon ZIPs):
+
+~~~bash
+python3 -m mixlab.event_restore \
+  /media/usb/marathon.private.zip \
+  /home/dj/restored-marathon
+~~~
+
+This creates a **new** private directory and streams SHA checks against all
+package members. The extractor independently checks the original Marathon
+receipt, joined-frame sequence and PCM16 WAV header before final publication.
+Open the extracted `index.html` to play and navigate between sets, or
+include the restored folder in the [private Event Vault](private-event-vault.md).
+
+**Trust boundary:** the internal ZIP SHA manifest is not cryptographically
+signed. Someone could modify and rehash a forged file set. Transfer only
+a private archive you made or received from a trusted source; don't launch
+untrusted embedded HTML. The actual joined WAV may still contain copyrighted
+recordings and cannot be distributed without applicable permissions.
+
 ## Audio boundaries
 
 Only original event masters whose **entire source/render/WAV receipts** are verified by the existing canonical `build_chapters` reader are admitted. An unsigned USB package alone does not provide the original private Studio receipt chain, so restored packages **are intentionally not accepted** as Marathon sources.
