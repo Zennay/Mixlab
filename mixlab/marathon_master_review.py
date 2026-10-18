@@ -6,6 +6,7 @@ provenance; the browser never uploads audio or purports to certify preference.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 from pathlib import Path
@@ -333,6 +334,92 @@ def bound_choice_for_master(approved_master_wav, private_choice_json):
             "private_only": True}
 
 
+def create_master_brief(selected_master_wav, private_choice_json, new_private_html):
+    """Build a printable private human-only handoff from one exact WAV/receipt.
+
+    All text is escaped; the output contains private annotations, but no music.
+    A destination can be newly created beside the chosen WAV (via an opt-in
+    packager), or in an existing private showbook directory.
+    """
+    selected = bound_choice_for_master(selected_master_wav, private_choice_json)
+    master = Path(selected_master_wav).absolute()
+    choice = _read_plan(private_choice_json)
+    receipt = _read_small_json(master.parent / "marathon.receipt.private.json")
+    target = Path(new_private_html).absolute()
+    if (target.name not in ("marathon.master-choice.private.html",
+                            "marathon.master-choice.check.private.html") or
+            target.is_symlink() or target.exists() or not target.parent.is_dir()):
+        raise ValueError("Use a NEW private Marathon master-choice HTML sheet")
+    if any(part.is_symlink() or (part / ".git").exists()
+           for part in (target, *target.parents)):
+        raise ValueError("Private operator sheet cannot enter Git or a symlinked folder")
+    h = lambda text: html.escape(str(text), quote=True)
+    selected_name = "BLENDED CROSSFADE MASTER" if selected["selected_master"] == "blend" else "ORIGINAL UNBLENDED MASTER"
+    reason = choice["operator_reason"] or "No overall operator comment"
+    fades = (receipt.get("fade_seconds_by_join") or
+             ([receipt.get("fade_seconds", 0)] * (len(receipt["sections"]) - 1)
+              if selected["selected_master"] == "blend" else
+              [0] * (len(receipt["sections"]) - 1)))
+    rows = []
+    for i, sec in enumerate(receipt["sections"][1:], start=1):
+        note = choice["join_notes"][i - 1] or "No operator note"
+        rows.append(
+            "<tr><td>" + str(i) + "</td><td>" +
+            h(receipt["sections"][i - 1]["label"]) + " → " + h(sec["label"]) +
+            "</td><td>" + h(round(sec["start_frame"] / receipt["rate"], 2)) +
+            "s</td><td>" + h(fades[i-1]) + "s</td><td>" + h(note) + "</td></tr>"
+        )
+    page = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; connect-src 'none'">
+<title>MixLab · Private Selected Master Brief</title><style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f5f6;color:#12222b;font:14px/1.5 system-ui,sans-serif}
+main{max-width:1000px;margin:30px auto;background:white;border-radius:18px;padding:44px;box-shadow:0 15px 40px #0002}
+header{border-bottom:3px solid #1e6660;padding-bottom:15px}h1{font-size:37px;line-height:1.1;margin:5px 0}
+h2{font-size:20px}.tag{font-weight:900;letter-spacing:.12em;color:#176158}
+p,td{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{text-align:left;background:#d8ebe7}td,th{padding:10px;border:1px solid #9eb7b3;vertical-align:top}
+td:last-child,th:last-child{width:35%}.foot{font-size:12px;color:#53656c;margin-top:26px}
+button{background:#176158;color:white;border:0;border-radius:9px;padding:11px 18px;font:inherit;font-weight:800;cursor:pointer}
+@media print{body{background:white}main{margin:0;box-shadow:none;padding:0}button{display:none}table{break-inside:auto}tr{break-inside:avoid}}
+</style></head><body><main><header><div class="tag">MIXLAB · PRIVATE DJ HANDOFF</div>
+<h1>Selected final master</h1><p><strong>__SELECTED__</strong> · __COUNT__ approved existing event sections</p></header>
+<p><strong>Human decision:</strong> __REASON__</p>
+<p><strong>WAV SHA-256:</strong><br><code>__HASH__</code></p>
+<p><strong>Real WAV runtime:</strong> __DURATION__ seconds · <strong>Rate:</strong> __RATE__ Hz
+· <strong>Audio:</strong> real stereo PCM16</p>
+<h2>Actual source-receipt handoffs and private DJ notes</h2>
+<table><thead><tr><th>#</th><th>Real source sets</th><th>WAV position</th><th>Fade</th><th>Private operator annotation</th></tr></thead>
+<tbody>__ROWS__</tbody></table><p><button type="button" onclick="window.print()">Print / Save as PDF</button></p>
+<p class="foot">PRIVATE LOCAL OPERATOR RECORD · source hashes and section times are internal receipt evidence,
+not an authenticated external reviewer, proof of music licensing, professional audio suitability,
+or a completed blind preference study. Does not embed, upload or distribute any music.
+The actual `marathon.wav` and companion receipt must be carried separately.</p>
+</main></body></html>"""
+    for key, value in {
+        "__SELECTED__": h(selected_name),
+        "__COUNT__": str(len(receipt["sections"])),
+        "__REASON__": h(reason),
+        "__HASH__": h(selected["sha256"]),
+        "__DURATION__": h(round(receipt["frames"] / receipt["rate"], 2)),
+        "__RATE__": str(receipt["rate"]),
+        "__ROWS__": "".join(rows),
+    }.items():
+        page = page.replace(key, value)
+    payload = page.encode("utf-8")
+    if not 0 < len(payload) <= MAX_HTML:
+        raise ValueError("Private selected-master print sheet exceeds local limit")
+    with target.open("xb") as stream:
+        try:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload)
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+    return {"private_master_brief": str(target), "selected_wav_sha256": selected["sha256"],
+            "notes_private": True, "music_embedded": False, "external_authenticity_proven": False}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Review two actual private MixLab Marathon WAVs offline, choose one and hand it off safely")
@@ -341,6 +428,10 @@ def main():
     review.add_argument("original_marathon_wav")
     review.add_argument("blended_marathon_wav")
     review.add_argument("new_private_html")
+    brief = sub.add_parser("brief", help="Generate printable private selected-master show handoff")
+    brief.add_argument("selected_marathon_wav")
+    brief.add_argument("private_choice_json")
+    brief.add_argument("new_private_html")
     deliver = sub.add_parser("publish", help="Publish only the receipt-bound human-selected actual master")
     deliver.add_argument("private_choice_json")
     deliver.add_argument("original_marathon_wav")
@@ -353,6 +444,9 @@ def main():
         if args.command == "prepare":
             result = create_review(args.original_marathon_wav, args.blended_marathon_wav,
                                    args.new_private_html)
+        elif args.command == "brief":
+            result = create_master_brief(args.selected_marathon_wav, args.private_choice_json,
+                                         args.new_private_html)
         else:
             result = publish_choice(args.private_choice_json, args.original_marathon_wav,
                                     args.blended_marathon_wav, bundle=args.bundle,
