@@ -24,6 +24,14 @@ You may combine `--reels-output` with `--review-output` in one command: the form
 
 See [Real Marathon Join Reels](marathon-real-join-reels.md) for the standalone command, actual frame boundaries, offline player, private note export and important rights/research limitations.
 
+## One-command portable handoff of the real short transition clips
+
+After setting `--reels-output /private/new-short-listening-folder`, you may also add `--reels-usb`. This **explicitly requests** the new self-contained `join-reels.private.zip` in that same short-listening folder, ready to move between private offline computers.
+
+The order is: first approve the canonical original full WAV; second approve the actual blended full WAV; third approve copies of short real PCM16 join fragments. Only after all those existing human gates does the optional ZIP pack those already verified short fragments, their SHA-bound private receipt and their own offline player. It **does not** include full Marathon masters, source songs, or a music license. If optional packaging fails, MixLab keeps the real original/blended full WAVs and existing short reel folder and reports `join_reels_usb_warning` without claiming the portable archive exists.
+
+`--reels-usb` without `--reels-output` is rejected before any render. Standalone pack/restore instructions are in [Real Join Reels](marathon-real-join-reels.md).
+
 ## Optional: listen to your original local WAVs before choosing the order
 
 The new **Audition original local audio** area of the offline Sequence Studio lets you manually attach the *actual local WAV files* for the finished events:
