@@ -109,6 +109,25 @@ If ZIP creation fails, the already produced audio and pages remain.
 [Private portable bundle manual](private-portable-event-bundle.md).
 [Offline Rehearsal Desk manual](offline-rehearsal-desk.md).
 
+## Organise several events in a private offline vault
+
+After publishing or restoring more than one private set, create an
+**offline searchable event library** alongside their event folders:
+
+~~~bash
+python3 -m mixlab.event_vault \
+  /private/all-mixes/my-vault.private.html \
+  /private/all-mixes/party-01 \
+  /private/all-mixes/party-02
+~~~
+
+Open the resulting local HTML to find sets, preview actual exported WAVs,
+and jump into each event's private dashboard. Original event folders use
+their canonical Studio/WAV receipts; restored event folders use their
+original unsigned bundle manifest and streamed WAV SHA instead.
+The vault is private, opt-in, and never uploads music.
+[Private Event Vault guide](private-event-vault.md).
+
 ## Permissions and recovery
 
 - All input files, outputs and source media stay on your **local
