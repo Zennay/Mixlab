@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import wave
+import subprocess
 
 from .cueprep import _read_spec
 from .set_composer import _session_catalog
@@ -67,7 +68,8 @@ def _choose_transitions(session, family, overrides):
     return root, result
 
 
-def render_instant_set(session, new_wav, *, family="bass_swap", styles=()):
+def render_instant_set(session, new_wav, *, family="bass_swap", styles=(),
+                       delivery=None, bitrate_kbps=192):
     """Render a complete user-selected family pattern from official audio."""
     root, selected = _choose_transitions(session, family, styles)
     wav = export_set(root, new_wav, selected)
@@ -83,6 +85,14 @@ def render_instant_set(session, new_wav, *, family="bass_swap", styles=()):
         response["offline_player"] = str(publish_player(root, wav))
     except (OSError, ValueError, KeyError, TypeError, wave.Error) as exc:
         response["player_warning"] = "Completed WAV exists; optional HTML player unavailable: " + str(exc)
+    if delivery is not None:
+        try:
+            from .delivery import export_delivery
+            response["compressed_delivery"] = export_delivery(
+                root, wav, delivery, bitrate_kbps=bitrate_kbps)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            response["delivery_warning"] = (
+                "Completed PCM16 WAV exists; optional MP3/FLAC delivery unavailable: " + str(exc))
     return response
 
 
@@ -95,10 +105,14 @@ def main():
                         help="Explicit transition family for all pairs unless overridden")
     parser.add_argument("--style", action="append", default=[], metavar="PAIR:FAMILY",
                         help="Override the transition family for one registered pair; repeatable")
+    parser.add_argument("--delivery", help="Optional NEW local .mp3 or .flac with bound private receipt")
+    parser.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320),
+                        default=192, help="MP3 encoding bitrate; FLAC is lossless")
     args = parser.parse_args()
     try:
         result = render_instant_set(args.session, args.new_wav,
-                                    family=args.family, styles=args.style)
+                                    family=args.family, styles=args.style,
+                                    delivery=args.delivery, bitrate_kbps=args.bitrate_kbps)
     except (ValueError, KeyError, TypeError, OSError, wave.Error) as exc:
         parser.exit(2, "MixLab Instant Set: " + str(exc) + "\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))

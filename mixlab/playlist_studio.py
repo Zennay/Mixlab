@@ -143,7 +143,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           *, read=input, write=print, beats=16,
                           timeout_seconds=600, partition="development",
                           resume=False, manifest_only=False, ideas=False,
-                          full_set_wav=None, family="bass_swap", styles=()):
+                          full_set_wav=None, family="bass_swap", styles=(),
+                          delivery=None, bitrate_kbps=192):
     """Run the complete local product workflow after explicit human annotation."""
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
@@ -153,6 +154,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         raise ValueError("--full-set-wav requires rendering and cannot use --manifest-only")
     if full_set_wav is None and styles:
         raise ValueError("--style requires --full-set-wav; no set is exported otherwise")
+    if full_set_wav is None and delivery is not None:
+        raise ValueError("--delivery requires --full-set-wav so the completed PCM master is preserved")
     source, manifest, destination = _check_paths(
         music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
@@ -227,7 +230,9 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
             # chapter player; never masquerade a suggested style as AI ranking.
             from .instant_set import render_instant_set
             instant_set = render_instant_set(destination, full_set_wav,
-                                              family=family, styles=styles)
+                                              family=family, styles=styles,
+                                              delivery=delivery,
+                                              bitrate_kbps=bitrate_kbps)
         except (ValueError, OSError, TypeError, KeyError) as exc:
             warnings.append("Private Studio exists, but optional complete-set WAV failed: " + str(exc))
     with manifest.open("r", encoding="utf-8") as reader:
@@ -269,6 +274,10 @@ def main():
                         help="Manually chosen style for all complete-set transitions")
     parser.add_argument("--style", action="append", default=[], metavar="PAIR:FAMILY",
                         help="Per-transition override for instant complete-set export; repeatable")
+    parser.add_argument("--delivery",
+                        help="Optional NEW .mp3 or .flac output, encoded locally from completed PCM master")
+    parser.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320),
+                        default=192, help="MP3 encoding bitrate; FLAC is lossless")
     args = parser.parse_args()
     try:
         result = build_playlist_studio(
@@ -277,7 +286,8 @@ def main():
             timeout_seconds=args.timeout_seconds,
             resume=args.resume, manifest_only=args.manifest_only,
             ideas=args.ideas, full_set_wav=args.full_set_wav,
-            family=args.family, styles=args.style)
+            family=args.family, styles=args.style,
+            delivery=args.delivery, bitrate_kbps=args.bitrate_kbps)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))

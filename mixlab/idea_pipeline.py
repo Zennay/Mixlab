@@ -75,8 +75,10 @@ def start_ideas(session, *, prefix="idea", phrase_bars=8, max_cues=5):
 
 def finish_ideas(session, downloaded_approval, new_session, *,
                  prefix="idea", timeout_seconds=600, full_set_wav=None,
-                 family="bass_swap"):
+                 family="bass_swap", delivery=None, bitrate_kbps=192):
     """Apply every human choice and build real Studio/Composer in new workspace."""
+    if delivery is not None and full_set_wav is None:
+        raise ValueError("--delivery needs a complete PCM master: add --full-set-wav")
     root, manifest, suggestions, _board, approved = _paths(session, prefix)
     _admit_manual_grid(manifest)
     if not suggestions.is_file() or suggestions.is_symlink():
@@ -123,7 +125,8 @@ def finish_ideas(session, downloaded_approval, new_session, *,
         try:
             from .instant_set import render_instant_set
             result["full_set"] = render_instant_set(
-                destination, full_set_wav, family=family)
+                destination, full_set_wav, family=family,
+                delivery=delivery, bitrate_kbps=bitrate_kbps)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             warnings.append("Private Studio completed, but optional full-set export failed: " + str(exc))
     return result
@@ -150,6 +153,9 @@ def main():
     finish.add_argument("--family", choices=("bass_swap", "echo_exit", "hard_cut", "baseline"),
                         default="bass_swap",
                         help="Explicit family for every transition when --full-set-wav is used")
+    finish.add_argument("--delivery", help="Optional NEW private MP3 or lossless FLAC after full WAV export")
+    finish.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320),
+                        default=192, help="MP3 bitrate; FLAC is lossless")
     args = parser.parse_args()
     try:
         if args.command == "start":
@@ -160,7 +166,8 @@ def main():
                                   args.new_session, prefix=args.prefix,
                                   timeout_seconds=args.timeout_seconds,
                                   full_set_wav=args.full_set_wav,
-                                  family=args.family)
+                                  family=args.family, delivery=args.delivery,
+                                  bitrate_kbps=args.bitrate_kbps)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Idea Pipeline: " + str(exc) + "\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))

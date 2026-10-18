@@ -11,6 +11,44 @@ automatische download of installatie). Je blijft zelf verantwoordelijk
 voor muziekrechten; rechten om privé te mixen zijn niet automatisch
 rechten om een opname publiek te verspreiden.
 
+## Eén opdracht van muziekbibliotheek tot MP3/FLAC
+
+Je hoeft niet eerst afzonderlijk een complete set of een exportbestand
+te publiceren. De bestaande `playlist_studio` en `instant_set`
+leveren optioneel een MP3 of FLAC naast hun verplichte originele WAV:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --beats 16 \
+  --full-set-wav /private/mixlab-party.wav \
+  --family bass_swap \
+  --delivery /private/mixlab-party.mp3 \
+  --bitrate-kbps 192
+~~~
+
+Vanuit een bestaande Studio kan het ook zo:
+
+~~~bash
+python3 -m mixlab.instant_set \
+  /private/mixlab-playlist-01 \
+  /private/mixlab-party.wav \
+  --family echo_exit \
+  --delivery /private/mixlab-party.flac
+~~~
+
+Na expliciete handmatige goedkeuring van nieuwe energiecue-ideeën
+kan `mixlab.idea_pipeline finish` hetzelfde doen via
+`--full-set-wav ... --delivery ...mp3 --bitrate-kbps 192`.
+
+Wanneer FFmpeg niet is geïnstalleerd of een optionele codec/export
+faalt, blijft de **echte complete PCM-WAV** met de bestaande private
+Studio en hoofdstukspeler intact. Het commandresultaat bevat dan een
+expliciete `delivery_warning`; er wordt geen gecomprimeerde export
+voorgewend.
+
 ## MP3 192 kbps
 
 ~~~bash
