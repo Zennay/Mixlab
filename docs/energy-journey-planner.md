@@ -90,3 +90,25 @@ The comparison never loads audio or claims learned musical compatibility.
 Each option is deterministic, independently source-hash-bound, and
 requires same manually confirmed BPM for all selected songs. No existing
 files or private audio are modified. M1 listening gates remain open.
+
+## Event-specific controls: must-play opener, closer and exclusions
+
+When a particular song **must** open or close your event, preserve those
+choices while asking the planner to build the energy arc in between.
+Use **exact local filenames** (quotes are important when names have spaces):
+
+~~~bash
+python3 -m mixlab.journey plan   /private/music /private/music/energy-notes.private.json   /private/music/wedding-journey.private.json   --tracks 6 --shape late-peak   --opening "Welcome Track.wav"   --closing "Last Dance.wav"   --exclude-track "Not Tonight.wav"
+~~~
+
+The same flags work on mixlab.journey_compare, so all four curve options
+honour the same opener/closer and omitted-song choices. Exclusions are
+repeatable. The requested source files must exist in the pinned manual
+notes; opening and closing must be **different** and belong to a compatible
+same-BPM group. No automatic tempo changes are performed.
+
+Constraints apply to **generated suggestions**; the creative offline
+Journey Board can later rearrange a plan by explicit DJ action. Reordering
+is a new human decision, not an attempt to enforce immutable anchors.
+The final approved order is displayed by Playlist Studio before rendering,
+with its existing manual rights and cue checks intact.

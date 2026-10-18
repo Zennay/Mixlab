@@ -70,6 +70,10 @@ function render(){
  const card=el("section","card");card.setAttribute("aria-selected",String(i===chosen));
  card.append(el("h2","",titles[v.shape]||v.shape));
  card.append(el("p","",v.entries.length+" tracks · "+v.bpm+" BPM (manual) · "+v.shape+" curve"));
+ if(v.requested_opening||v.requested_closing||v.excluded_tracks.length){
+  card.append(el("p","","Requested opening: "+(v.requested_opening||"free")+
+   " · closing: "+(v.requested_closing||"free")+" · omitted: "+v.excluded_tracks.length));
+ }
  card.append(makeSvg(v));
  const list=el("ol","");
  v.entries.forEach((t,j)=>{
@@ -96,7 +100,7 @@ render();
 
 
 def compare_journeys(music_folder, private_notes, new_html, *, tracks=5,
-                     tempo=None, prefer_tag=None):
+                     tempo=None, prefer_tag=None, opening=None, closing=None, excluded=()):
     """Compile independent build/peak/late-peak/release suggestions into one page."""
     root = _source_root(music_folder)
     notes = _private_json_path(root, private_notes, existing=True)
@@ -120,12 +124,15 @@ def compare_journeys(music_folder, private_notes, new_html, *, tracks=5,
     options = []
     for shape in SHAPES:
         bpm, chosen, targets, score = _choose(records, tracks, shape,
-                                             prefer_tag=prefer_tag, tempo=tempo)
+                                             prefer_tag=prefer_tag, tempo=tempo,
+                                             opening=opening, closing=closing, excluded=excluded)
         options.append({"kind": PLAN_KIND, "shape": shape,
                         "bpm": bpm, "source_notes_sha256": notes_sha,
                         "preference_proven": False, "automatic_tempo_matching": False,
                         "selection_method": "bounded-human-metadata-heuristic-v1",
                         "objective_cost": score,
+                        "requested_opening": opening, "requested_closing": closing,
+                        "excluded_tracks": list(excluded),
                         "entries": [{**row, "target_energy": targets[i]}
                                     for i, row in enumerate(chosen)]})
     embedded = json.dumps(options, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
@@ -147,11 +154,17 @@ def main():
     parser.add_argument("--tracks", type=int, default=5)
     parser.add_argument("--tempo", type=float)
     parser.add_argument("--prefer-tag")
+    parser.add_argument("--opening", help="Exact annotated local opener filename")
+    parser.add_argument("--closing", help="Exact annotated local closing song filename")
+    parser.add_argument("--exclude-track", action="append", default=[],
+                        help="Exclude an annotated local song; repeatable")
     args = parser.parse_args()
     try:
         result = compare_journeys(args.music_directory, args.private_notes_json,
                                   args.new_comparison_html, tracks=args.tracks,
-                                  tempo=args.tempo, prefer_tag=args.prefer_tag)
+                                  tempo=args.tempo, prefer_tag=args.prefer_tag,
+                                  opening=args.opening, closing=args.closing,
+                                  excluded=args.exclude_track)
     except (ValueError, TypeError, OSError) as exc:
         parser.exit(2, f"MixLab compare: {exc}\n")
     print(json.dumps({"private_comparison": str(result), "offline": True,

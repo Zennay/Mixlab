@@ -173,15 +173,28 @@ def _targets(shape, count):
     return result
 
 
-def _choose(records, count, shape, prefer_tag=None, tempo=None):
+def _choose(records, count, shape, prefer_tag=None, tempo=None,
+            opening=None, closing=None, excluded=()):
     targets = _targets(shape, count)
+    known = {row["path"] for row in records}
+    if not isinstance(excluded, (list, tuple)) or len(excluded) > MAX_CANDIDATES:
+        raise ValueError("Invalid excluded-track list")
+    if (any(not isinstance(name, str) or name not in known for name in excluded)
+            or len(excluded) != len(set(excluded))
+            or (opening is not None and opening not in known)
+            or (closing is not None and closing not in known)
+            or (opening is not None and opening == closing)
+            or opening in excluded or closing in excluded):
+        raise ValueError("Opening/closing/excluded songs must be distinct annotated local filenames")
     groups = {}
     for row in records:
-        if tempo is None or row["bpm"] == tempo:
+        if row["path"] not in excluded and (tempo is None or row["bpm"] == tempo):
             groups.setdefault(row["bpm"], []).append(row)
     best = None
     for bpm, group in sorted(groups.items()):
-        if len(group) < count:
+        if (len(group) < count or
+                (opening is not None and not any(row["path"] == opening for row in group)) or
+                (closing is not None and not any(row["path"] == closing for row in group))):
             continue
         group.sort(key=lambda row: row["path"].casefold())
         states = [(0., (), 0)]  # score, ordered indexes, selection bit mask
@@ -190,6 +203,11 @@ def _choose(records, count, shape, prefer_tag=None, tempo=None):
             for score, sequence, mask in states:
                 for idx, row in enumerate(group):
                     if mask & (1 << idx):
+                        continue
+                    if ((position == 0 and opening is not None and row["path"] != opening) or
+                            (position > 0 and row["path"] == opening) or
+                            (position == count - 1 and closing is not None and row["path"] != closing) or
+                            (position < count - 1 and row["path"] == closing)):
                         continue
                     deviation = 1.5 * (row["energy"] - target) ** 2
                     pace = 0.
@@ -215,7 +233,7 @@ def _choose(records, count, shape, prefer_tag=None, tempo=None):
 
 
 def plan_journey(music_folder, notes, new_plan, *, tracks=5, shape="build",
-                 tempo=None, prefer_tag=None):
+                 tempo=None, prefer_tag=None, opening=None, closing=None, excluded=()):
     """Produce a private, pinned and inspectable suggestion; never render."""
     root = _source_root(music_folder)
     source = _private_json_path(root, notes, existing=True)
@@ -234,11 +252,14 @@ def plan_journey(music_folder, notes, new_plan, *, tracks=5, shape="build",
     if prefer_tag is not None and _tags(prefer_tag) != [prefer_tag]:
         raise ValueError("Use one lowercase genre/mood tag")
     bpm, chosen, targets, score = _choose(records, tracks, shape,
-                                         prefer_tag=prefer_tag, tempo=tempo)
+                                         prefer_tag=prefer_tag, tempo=tempo,
+                                         opening=opening, closing=closing, excluded=excluded)
     data = {"kind": PLAN_KIND, "shape": shape, "source_notes_sha256": notes_sha,
             "bpm": bpm, "preference_proven": False, "automatic_tempo_matching": False,
             "selection_method": "bounded-human-metadata-heuristic-v1",
             "objective_cost": score,
+            "requested_opening": opening, "requested_closing": closing,
+            "excluded_tracks": list(excluded),
             "entries": [{**row, "target_energy": targets[i]} for i, row in enumerate(chosen)]}
     return _write_json(target, data)
 
@@ -280,6 +301,10 @@ def main():
     plan.add_argument("--shape", choices=SHAPES, default="build")
     plan.add_argument("--tempo", type=float)
     plan.add_argument("--prefer-tag")
+    plan.add_argument("--opening", help="Exact local filename to play first")
+    plan.add_argument("--closing", help="Exact local filename to play last")
+    plan.add_argument("--exclude-track", action="append", default=[],
+                      help="Exact local filename to omit; repeatable")
     args = parser.parse_args()
     try:
         if args.action == "notes":
@@ -288,7 +313,9 @@ def main():
         else:
             path = plan_journey(args.music_directory, args.notes_json, args.new_plan_json,
                                 tracks=args.tracks, shape=args.shape,
-                                tempo=args.tempo, prefer_tag=args.prefer_tag)
+                                tempo=args.tempo, prefer_tag=args.prefer_tag,
+                                opening=args.opening, closing=args.closing,
+                                excluded=args.exclude_track)
             result = {"stage": "suggested-journey", "private_plan": str(path),
                       "accepted": False, "automatic_music_analysis": False}
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
