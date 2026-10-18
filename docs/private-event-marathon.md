@@ -26,6 +26,43 @@ After successful publication:
 
 The offline page lets you play the whole actual WAV, jump between sets, skip to the next event, seek, download the WAV and export a standard cue sheet of the original event boundaries. It does not embed, upload or duplicate the original source songs. The output WAV itself **contains copyrighted rendered material** from the approved private sets and must remain private unless separately licensed for the intended use.
 
+## Optional: render real crossfades between finished events
+
+The default Marathon is still **sample-exact hard joins**, preserving
+every frame. To create an *independent, new audio version* with actual
+gain-crossfaded transitions between previously approved full sets:
+
+~~~bash
+python3 -m mixlab.marathon_blend \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon-soft \
+  --fade-seconds 8 --start 20:30 --bundle
+~~~
+
+The new command requires the SHA-verified **original** hard-join Marathon
+receipt, checks its entire PCM16 master, then asks for a fresh human
+`yes`. Choose exactly 2, 4, 8 or 16 seconds of overlap. Every original
+event must be longer than twice that length. No render ever overwrites the
+existing master, source tracks or original Studio sessions.
+
+MixLab actually reads the **end of one event and the start of the next**
+from the original completed WAV and streams one complementary-gain PCM16
+crossfade per boundary. All untouched passage frames are copied unmodified.
+The result is a NEW `marathon.wav` and original-source-bound
+`marathon.receipt.private.json`, with exact **shorter** sample frame count,
+new event entry offsets, own offline player and optional operator runbook
+and private USB ZIP. The Event Vault, Marathon showbook, USB exporter and
+Event Restore understand this distinct rendered-join receipt.
+
+This is a manually configured stereo fade, **not beat detection,
+harmonic matching, pitch preservation, actual cue intelligence or evidence
+that the result sounds good**. Both originals and the edited version remain
+private; use the offline player to hear every boundary, especially
+music with dense vocals, percussion or radically different BPMs. The
+crossfade uses non-amplifying complementary linear gains (unlike claims
+of an equal-power or mastering-quality algorithm). No source rights can
+be inferred from an output SHA.
+
 ## Operator runbook for the entire Marathon
 
 The normal Marathon command now also creates
