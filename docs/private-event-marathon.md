@@ -166,6 +166,54 @@ exists and is regular and bounded; private Event Restore also restores it
 and reports the path. Optional showbook/ZIP publication failure never
 deletes a successfully published continuous WAV.
 
+## Mobile audio: private MP3 / FLAC without rebuilding your mix
+
+The finished Marathon can now optionally be encoded into a **real MP3 or
+FLAC file** using MixLab's **existing** installed local FFmpeg/FFprobe
+backend. The original WAV's full SHA, frame count and joined-event
+receipt are checked before encoding. Nothing is uploaded or re-mixed.
+
+For the original hard-join `event_marathon` or the later editable
+`marathon_blend`, add `--delivery mp3` (or `--delivery flac`).
+The MP3 bitrate defaults to 192 kbps; use `--bitrate-kbps 256` or
+320, 128, etc., if desired. Example for an approved original Marathon:
+
+~~~bash
+python3 -m mixlab.event_marathon \
+  /private/mixlab-marathon \
+  /private/event-1/studio-session /private/event-1/final-set.wav \
+  /private/event-2/studio-session /private/event-2/final-set.wav \
+  --delivery mp3 --bitrate-kbps 256 --bundle
+~~~
+
+To create a NEW portable copy later from the same original full WAV:
+
+~~~bash
+python3 -m mixlab.marathon_delivery \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon/marathon.mp3 \
+  --bitrate-kbps 256
+~~~
+
+The encoder creates `marathon.mp3` or `marathon.flac`, a separate
+`.receipt.private.json` bound to the actual source-WAV SHA and the
+actual encoded-output SHA, and an offline portable-audio player with
+original set boundaries. **Compressed seeking and cue positions are
+approximate** because codecs can add encoder delay. The source PCM16
+master is the exact reference and is never overwritten.
+
+If `--bundle` is also selected, the existing USB ZIP exporter will
+include one verified portable codec, its receipt and offline player if
+the whole private package fits its original 896 MiB total limit.
+You cannot silently pack both MP3 and FLAC in the same ZIP. The existing
+Event Restore recognizes a correctly bound portable companion in that
+trusted private ZIP. Mobile encoding is optional: an FFmpeg error does
+not delete the already completed real WAV.
+
+**Rights boundary:** MP3/FLAC are new private copies of potentially
+copyrighted music, not a license or authorization to distribute.
+Audio never leaves your private machine or trusted removable storage.
+
 ## Optional portable private USB ZIP
 
 Add `--bundle` to the same `python3 -m mixlab.event_marathon` invocation.

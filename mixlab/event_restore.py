@@ -121,7 +121,19 @@ def _inspect(archive):
     masters = [row for row in entries if row["file"].lower().endswith(".wav")]
     if is_marathon:
         required = {"marathon.wav", "marathon.receipt.private.json", "index.html"}
-        optional = {"marathon.runbook.private.html", "marathon.join-studio.private.html"}
+        optional = {"marathon.runbook.private.html", "marathon.join-studio.private.html",
+                    "marathon.mp3", "marathon.mp3.receipt.private.json", "marathon.mp3.player.html",
+                    "marathon.flac", "marathon.flac.receipt.private.json", "marathon.flac.player.html"}
+        packed_codecs = [codec for codec in ("mp3", "flac")
+                         if ("marathon." + codec) in file_map]
+        if len(packed_codecs) > 1:
+            raise ValueError("Portable Marathon cannot include two codecs")
+        for codec in ("mp3", "flac"):
+            companions = {"marathon." + codec,
+                          "marathon." + codec + ".receipt.private.json",
+                          "marathon." + codec + ".player.html"}
+            if (set(file_map) & companions) and not companions.issubset(file_map):
+                raise ValueError("Portable Marathon codec must include audio, receipt and player")
         if (not required.issubset(file_map) or not set(file_map).issubset(required | optional) or
                 len(masters) != 1 or masters[0]["file"] != "marathon.wav" or
                 masters[0]["sha256"] != manifest["wav_sha256"]):
@@ -188,6 +200,21 @@ def restore_bundle(private_zip, new_private_folder):
                     # Check the actual joined WAV against its ORIGINAL continuous
                     # output receipt after extraction, not just the ZIP inventory.
                     _marathon_duration(output, output / master)
+                    for codec in ("mp3", "flac"):
+                        name = "marathon." + codec
+                        if name not in files:
+                            continue
+                        from .event_vault import _read_small_json
+                        compressed = _read_small_json(
+                            output / (name + ".receipt.private.json"))
+                        if (not isinstance(compressed, dict) or
+                                compressed.get("kind") != "mixlab-private-marathon-mobile-v1" or
+                                compressed.get("source_wav_sha256") != files[master]["sha256"] or
+                                compressed.get("output_sha256") != files[name]["sha256"] or
+                                compressed.get("format") != codec or
+                                compressed.get("private_local_use_only") is not True or
+                                compressed.get("automatic_licensing") is not False):
+                            raise ValueError("Portable compressed audio does not belong to the joined WAV")
                 after = os.fstat(stream.fileno())
                 if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
                         after.st_ctime_ns) != (
@@ -206,6 +233,8 @@ def restore_bundle(private_zip, new_private_folder):
                     "continuous_marathon": master == "marathon.wav",
                     "offline_join_studio": str(output / "marathon.join-studio.private.html")
                         if master == "marathon.wav" and "marathon.join-studio.private.html" in files else None,
+                    "private_mobile_audio": next((str(output / name)
+                        for name in ("marathon.mp3", "marathon.flac") if name in files), None),
                     "offline_marathon_runbook": str(output / "marathon.runbook.private.html")
                         if master == "marathon.wav" and "marathon.runbook.private.html" in files else None,
                     "private": True, "network_uploads": False,

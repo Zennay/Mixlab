@@ -52,6 +52,27 @@ def export_marathon_bundle(original_marathon_wav, new_zip):
         files.append(_source(folder, "marathon.join-studio.private.html", PAGE_LIMIT))
     if (folder / "marathon.runbook.private.html").exists():
         files.append(_source(folder, "marathon.runbook.private.html", PAGE_LIMIT))
+    portable = [name for name in ("marathon.mp3", "marathon.flac")
+                if (folder / name).exists() or (folder / name).is_symlink()]
+    if len(portable) > 1:
+        raise ValueError("Only one official portable audio codec can enter one private Marathon ZIP")
+    if portable:
+        name = portable[0]
+        receipt_name = name + ".receipt.private.json"
+        player_name = name + ".player.html"
+        audio, audio_meta = _source(folder, name, 512 * 1024 * 1024)
+        portable_receipt, receipt_meta = _source(folder, receipt_name, RECEIPT_LIMIT)
+        page, page_meta = _source(folder, player_name, PAGE_LIMIT)
+        details = _read_small_json(portable_receipt)
+        if (not isinstance(details, dict) or
+                details.get("kind") != "mixlab-private-marathon-mobile-v1" or
+                details.get("source_wav_sha256") != receipt["wav_sha256"] or
+                details.get("format") != audio.suffix.lower()[1:] or
+                details.get("private_local_use_only") is not True or
+                details.get("automatic_licensing") is not False or
+                not isinstance(details.get("output_sha256"), str)):
+            raise ValueError("Portable audio does not match the original private Marathon receipt")
+        files.extend([(audio, audio_meta), (portable_receipt, receipt_meta), (page, page_meta)])
     if sum(meta.st_size for _, meta in files) > MAX_TOTAL:
         raise ValueError("Private Marathon package exceeds the existing ZIP memory/disk budget")
     created = False
@@ -64,7 +85,8 @@ def export_marathon_bundle(original_marathon_wav, new_zip):
                                  allowZip64=True) as archive:
                 records = [
                     _copy_entry(archive, item, meta,
-                                expected_hash=receipt["wav_sha256"] if item == wav else None)
+                                expected_hash=(receipt["wav_sha256"] if item == wav else
+                                               details["output_sha256"] if portable and item == audio else None))
                     for item, meta in files
                 ]
                 manifest = {

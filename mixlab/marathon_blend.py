@@ -15,6 +15,7 @@ import stat
 import sys
 import wave
 import zipfile
+import subprocess
 
 from .event_marathon import (_PAGE, _digest_file, _meta_key, _new_folder,
                              BLOCK_FRAMES, MAX_BYTES, MAX_HTML)
@@ -77,6 +78,7 @@ def _overlap(reader, writer, last_frame_start, next_frame_start, fade_frames):
 
 def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
                              fade_seconds=8, join_fades=None, join_plan=None, start=None, bundle=False,
+                             delivery=None, bitrate_kbps=192,
                              read=input, write=print):
     """Create a new continuous WAV with actual manually chosen crossfades.
 
@@ -92,6 +94,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
         raise ValueError("Choose a common fade OR a per-boundary sequence, not both")
     if type(bundle) is not bool:
         raise ValueError("Portable bundle option must be boolean")
+    if delivery not in (None, "mp3", "flac") or type(bitrate_kbps) is not int or bitrate_kbps not in (128,192,256,320):
+        raise ValueError("Choose optional private MP3/FLAC and allowed bitrate")
     original = Path(approved_marathon_wav).absolute()
     if original.name != "marathon.wav" or original.is_symlink():
         raise ValueError("Choose the original exact Marathon WAV")
@@ -287,6 +291,13 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
     }
     if warning:
         result["showbook_warning"] = warning
+    if delivery:
+        try:
+            from .marathon_delivery import export_mobile_marathon
+            result["mobile_delivery"] = export_mobile_marathon(
+                wav_path, dest / ("marathon." + delivery), bitrate_kbps=bitrate_kbps)
+        except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
+            result["mobile_warning"] = "Actual blended WAV exists; optional portable encoding unavailable"
     if bundle:
         try:
             from .marathon_bundle import export_marathon_bundle
@@ -309,12 +320,15 @@ def main():
     fades.add_argument("--join-plan", help="Original SHA-locked private JSON exported by Join Studio")
     parser.add_argument("--start", help="Optional local show start HH:MM")
     parser.add_argument("--bundle", action="store_true", help="Also create optional private USB ZIP")
+    parser.add_argument("--delivery",choices=("mp3","flac"),help="Optional private mobile audio copy")
+    parser.add_argument("--bitrate-kbps",type=int,choices=(128,192,256,320),default=192)
     args = parser.parse_args()
     try:
         per_join = tuple(int(item.strip()) for item in args.join_fades.split(",")) if args.join_fades is not None else None
         result = publish_blended_marathon(args.original_marathon_wav, args.new_private_folder,
                                          fade_seconds=args.fade_seconds, join_fades=per_join, join_plan=args.join_plan,
-                                         start=args.start, bundle=args.bundle)
+                                         start=args.start, bundle=args.bundle,
+                                         delivery=args.delivery, bitrate_kbps=args.bitrate_kbps)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab blend: source or explicit approval failed; no blended output was published.\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))
