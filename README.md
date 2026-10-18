@@ -520,6 +520,17 @@ luistermap en besloten USB-ZIP. Privékeuzes gaan
 niet automatisch mee in een ZIP, en vormen geen geblindeerd bewijs.
 [Human-selected Hybrid Master](docs/marathon-human-hybrid-master.md).
 
+Voor een tweede offline podiumapparaat is nu ook een strikt opt-in
+**kleine ZIP met uitsluitend besloten DJ-notities** beschikbaar:
+`--operator-notes-usb` vraagt pas na de goedgekeurde echte hybride WAV
+nog een afzonderlijke `yes`. Met
+`python3 -m mixlab.marathon_operator_transfer pack|restore` neem je de
+keuzes veilig mee naar een **reeds apart ontvangen, SHA-geverifieerde**
+hybride audiomaster. Restore genereert daarop de printbare cue-sheet en
+offline stagepagina opnieuw. Geen muziek in de notitie-ZIP; geen privénotities
+automatisch in de reguliere muziekexport.
+
+
 
 ## Implemented
 

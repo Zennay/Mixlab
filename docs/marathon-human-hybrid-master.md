@@ -84,3 +84,50 @@ full masters or private operator notes are silently included in the short
 clip ZIP.
 
 The hybrid can be opened in the ordinary private Marathon player/showbook and, if the local music permissions allow, re-excerpted as genuine WAV handoffs for further listening. A receipt verifies **internal file consistency**, not that a third party is the legitimate copyright holder or that a hybrid is musically better. Independently consented, frozen blind listening evidence and verified audio-usage rights remain open M1 requirements.
+
+
+## 5. Transfer private stage notes to a second already-authorised offline master
+
+The full audio ZIP intentionally **does not** carry your private operator notes.
+If you want a second offline device to show the identical human-selected
+cue sheet, use a **separate, explicitly consented, small notes-only ZIP**.
+
+After creating an actual hybrid master with a complete
+`master-picks.private.json`, optionally add `--operator-notes-usb` to the
+hybrid render command. **After the real WAV and operator cues exist**, MixLab
+asks for another typed `yes` to release the human private notes. This creates
+`master-operator-notes.private.zip` beside the actual finished hybrid master;
+the ZIP contains *no* `marathon.wav`, music excerpts, source media paths,
+download URLs or whole-show audio. If only the optional notes transfer fails,
+the approved hybrid WAV and local notes remain intact.
+
+You can also package an already completed set independently:
+
+```bash
+python3 -m mixlab.marathon_operator_transfer pack \
+  /private/hybrid-event/marathon.wav \
+  /private/hybrid-event/master-operator-notes.private.zip
+```
+
+On a second machine, first transfer or restore the **real original hybrid
+Marathon WAV** by its existing approved, private source path, with its
+`marathon.receipt.private.json` intact. Do **not** assume that a cue-only ZIP
+provides or licenses music. For an existing verified hybrid master with no
+operator files:
+
+```bash
+python3 -m mixlab.marathon_operator_transfer restore \
+  /private/usb/master-operator-notes.private.zip \
+  /private/restored-hybrid-event/marathon.wav
+```
+
+Restore refuses mismatched full-master SHA, altered source-provenance SHA,
+missing/inconsistent join labels or fade selections, symlinked ancestors,
+unexpected ZIP members, compressed/oversized/archive-traversal entries and
+any pre-existing decision/stage/print file. After typed `yes`, it restores
+the **private notes** and regenerates printable
+`master-picks.private.html` and live offline `master-picks.stage.html`
+against the actual recovered local WAV and verified receipt, not by trusting
+copied HTML. A failure rolls back only newly created notes/pages, **never the
+approved audio**. This small ZIP is **unsigned**: SHA proves self-consistency
+with the local WAV but not the sender's identity, music rights or DJ preference.

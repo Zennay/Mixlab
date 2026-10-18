@@ -93,7 +93,8 @@ def _write_private(path, data):
 
 def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
                      *, start=None, bundle=False, delivery=None,
-                     bitrate_kbps=192, reels_output=None, reels_usb=False, read=input, write=print):
+                     bitrate_kbps=192, reels_output=None, reels_usb=False, operator_notes_usb=False,
+                     read=input, write=print):
     if type(reels_usb) is not bool or (reels_usb and reels_output is None):
         raise ValueError("Optional real hybrid handoff ZIP requires --reels-output")
     source, blend, choices = _validated_choices(plan_path, original_wav, blended_wav)
@@ -142,6 +143,18 @@ def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
     except (OSError, ValueError, UnicodeError):
         result["cue_sheet_warning"] = ("Approved actual hybrid WAV remains intact; "
               "the optional local operator-notes handoff could not be completed.")
+    if operator_notes_usb:
+        try:
+            from .marathon_operator_transfer import pack
+            result["private_operator_notes_usb"] = pack(
+                result["continuous_wav"], folder / "master-operator-notes.private.zip",
+                read=read, write=write)
+        except (ValueError, TypeError, KeyError, OSError, EOFError,
+                UnicodeError, wave.Error):
+            result["operator_notes_usb_warning"] = (
+                "Approved real hybrid WAV and private local operator notes "
+                "remain intact; the optional separate private-notes ZIP "
+                "was not released.")
     if reels_output is not None:
         try:
             from .marathon_join_reels import create_join_reels
@@ -179,6 +192,8 @@ def main():
     parser.add_argument("--reels-output", help="Optional NEW private real PCM16 original-versus-hybrid short WAV listening folder; extra typed approval")
     parser.add_argument("--reels-usb", action="store_true",
                         help="Also create opt-in private short PCM16 ZIP; requires --reels-output")
+    parser.add_argument("--operator-notes-usb", action="store_true",
+                        help="Opt-in SEPARATE USB ZIP of private human cue notes ONLY; another typed yes, never music")
     parser.add_argument("--bundle", action="store_true",
                         help="Optional private WAV package (operator notes are NOT included)")
     parser.add_argument("--delivery", choices=("mp3", "flac"),
@@ -191,7 +206,8 @@ def main():
             args.blended_marathon_wav, args.new_private_folder,
             start=args.start, bundle=args.bundle, delivery=args.delivery,
             bitrate_kbps=args.bitrate_kbps,
-            reels_output=args.reels_output, reels_usb=args.reels_usb)
+            reels_output=args.reels_output, reels_usb=args.reels_usb,
+            operator_notes_usb=args.operator_notes_usb)
     except (ValueError, TypeError, KeyError, OSError, UnicodeError,
             EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab hybrid: plan, approved real WAVs, explicit consent or new private destination invalid.\n")
