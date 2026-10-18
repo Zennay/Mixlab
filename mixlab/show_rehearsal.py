@@ -10,17 +10,41 @@ import html
 import json
 import math
 import os
+import stat
 from pathlib import Path
 import wave
 
-from .marathon_sequence import _private_html_destination, _read_plan
+from .marathon_sequence import _private_html_destination
 from .show_conductor import _sources
 
 KIND = "mixlab-private-show-rehearsal-v1"
 EVENT_KINDS = frozenset({"arm", "play", "mark", "stop", "ended"})
 MAX_EVENTS = 256
 MAX_REPORT_BYTES = 192 * 1024
+MAX_JOURNAL_BYTES = 192 * 1024
 MAX_ELAPSED_MS = 48 * 60 * 60 * 1000
+
+
+
+def _read_journal(path: str) -> object:
+    source = Path(path).absolute()
+    if (source.suffix.lower() != ".json" or source.is_symlink() or
+            any(parent.is_symlink() for parent in source.parents)):
+        raise ValueError("Choose a regular private, non-symlink JSON journal")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(source, flags)
+    with os.fdopen(fd, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or not 2 <= before.st_size <= MAX_JOURNAL_BYTES:
+            raise ValueError("Private rehearsal journal is oversized or not regular")
+        body = stream.read(MAX_JOURNAL_BYTES + 1)
+        after = os.fstat(stream.fileno())
+        keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if len(body) != before.st_size or any(
+            getattr(before, key) != getattr(after, key) for key in keys
+        ):
+            raise ValueError("Private rehearsal journal changed during reading")
+    return json.loads(body.decode("utf-8"))
 
 
 def _validate(raw: object, sources: list[dict]) -> list[dict]:
@@ -40,9 +64,12 @@ def _validate(raw: object, sources: list[dict]) -> list[dict]:
         raise ValueError("Rehearsal journal requires 1-256 operator entries")
     last_elapsed = -1
     for n, event in enumerate(events, start=1):
-        if not isinstance(event, dict) or set(event) != {
-            "seq", "kind", "set_index", "wav_position_seconds", "elapsed_ms"
-        } or type(event["seq"]) is not int or event["seq"] != n or (
+        required = {"seq", "kind", "set_index", "wav_position_seconds", "elapsed_ms"}
+        if (not isinstance(event, dict) or
+            (set(event) != required and not (
+                event.get("kind") == "mark" and set(event) == required | {"note"}
+            ))
+        ) or type(event["seq"]) is not int or event["seq"] != n or (
             not isinstance(event["kind"], str) or event["kind"] not in EVENT_KINDS
         ) or type(event["set_index"]) is not int or not (
             0 <= event["set_index"] < len(sources)
@@ -55,13 +82,18 @@ def _validate(raw: object, sources: list[dict]) -> list[dict]:
             0 <= seconds <= sources[event["set_index"]]["duration_seconds"] + .5
         ):
             raise ValueError("Rehearsal event position exceeds original verified WAV")
+        if "note" in event:
+            note = event["note"]
+            if (not isinstance(note, str) or not 1 <= len(note) <= 120 or
+                    any(ord(c) < 32 and c not in "\n\t" for c in note)):
+                raise ValueError("Invalid private manual cue annotation")
         last_elapsed = event["elapsed_ms"]
     return events
 
 
 def print_rehearsal(journal_json: str, private_report_html: str, *source_pairs: str) -> dict:
     sources = _sources(source_pairs)
-    data = _read_plan(journal_json)
+    data = _read_journal(journal_json)
     events = _validate(data, sources)
     out = _private_html_destination(private_report_html)
     if any(out.is_relative_to(Path(raw).absolute().parent) or
@@ -94,7 +126,8 @@ def print_rehearsal(journal_json: str, private_report_html: str, *source_pairs: 
             str(index + 1) + " · " + html.escape(track["label"], quote=True) +
             "</td><td>" + f"{wavpos:.2f}s" + "</td><td>" +
             html.escape(cue_text, quote=True) + "</td><td>" +
-            html.escape(delta_text, quote=True) + "</td></tr>"
+            html.escape(delta_text, quote=True) + "</td><td class='annotation'>" +
+            html.escape(e.get("note", "—"), quote=True) + "</td></tr>"
         )
     set_summaries = []
     for i, src in enumerate(sources):
@@ -125,15 +158,18 @@ def print_rehearsal(journal_json: str, private_report_html: str, *source_pairs: 
 <style>body{max-width:1040px;margin:auto;padding:28px;font:15px/1.5 system-ui;color:#1a333c}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #889da5;padding:8px;text-align:left}
 tr:nth-child(even){background:#e7f1f3}code{overflow-wrap:anywhere}
+.annotation{white-space:pre-wrap;overflow-wrap:anywhere}
 .warn{background:#f4f0e2;padding:16px}@media print{body{padding:0}tr{break-inside:avoid}}
 </style><h1>Private Show Conductor rehearsal journal</h1>
 <p class="warn">Operator/browser actions and page-relative monotonic times only.
 Not independently measured playback, wall clock, audible output, venue performance,
 music rights, DJ quality, or blind listening evidence.</p>
-<p>No audio, full file path, private operator note or web request is stored in this report.</p>
+<p>No audio, full file path, set-level operator note or web request is stored.
+Only optional cue annotations explicitly entered when marking are included here.</p>
 <table><thead><tr><th>Entry</th><th>Page elapsed</th><th>Action</th>
 <th>Approved set</th><th>WAV seek position</th>
-<th>Closest source chapter (marks)</th><th>WAV-position delta</th></tr></thead><tbody>"""
+<th>Closest source chapter (marks)</th><th>WAV-position delta</th>
+<th>Private operator cue annotation</th></tr></thead><tbody>"""
             + "".join(rows) + "</tbody></table>" + summary_html +
             "<h2>Exact source-verified completed WAVs</h2><ol>"
             + receipt_lines + "</ol></html>").encode("utf-8")

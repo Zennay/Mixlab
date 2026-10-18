@@ -88,6 +88,9 @@ No folder paths, music or files are uploaded; individual pickers remain availabl
 <button id="mark" type="button">Mark local WAV cue position</button>
 <button id="full" type="button">Fullscreen</button></div>
 <p id="player-status" role="status">Select an approved set and attach its WAV. Sets never auto-start or advance.</p>
+<label>Optional private note for the next manual cue mark (up to 120 characters)
+<textarea id="cue-note" maxlength="120"
+placeholder="Lighting cue, transition intent, timing note…"></textarea></label>
 <ol id="chapters"></ol></div>
 <div class="panel"><h2>3 / Operator run-of-show</h2>
 <label>Planned show start (local clock) <input type="time" id="start"></label>
@@ -126,8 +129,14 @@ function recordRehearsal(kind){
  }
  const pos=Number.isFinite(audio.currentTime)?Math.max(0,Math.min(
   audio.currentTime,data.sets[active].duration_seconds)):0;
- rehearsal.push({seq:rehearsal.length+1,kind,set_index:active,
-  wav_position_seconds:Math.round(pos*1000)/1000,elapsed_ms:elapsed});
+ const event={seq:rehearsal.length+1,kind,set_index:active,
+  wav_position_seconds:Math.round(pos*1000)/1000,elapsed_ms:elapsed};
+ if(kind==="mark"){
+  const note=$("cue-note").value.trim();
+  if(note)event.note=note;
+  $("cue-note").value="";
+ }
+ rehearsal.push(event);
  $("journal-status").textContent=rehearsal.length+
   " private manual playback/cue records (not exported until requested).";
 }

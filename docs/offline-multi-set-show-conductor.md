@@ -136,7 +136,12 @@ then use that exact revision with `show_conductor print` or
 During the **offline manual** multi-set stage, MixLab records only local browser
 operator actions after an approved set has been SHA-verified and armed:
 arm, playback start, manually marked WAV cue position, Stop, and WAV end.
-Press **Mark local WAV cue position** at the moment you want to note a cue.
+Write an optional
+**private 120-character cue annotation** next to the player (for example
+lighting, speech, or handoff context) before pressing **Mark local WAV cue
+position**. That annotation is intentionally included in the explicitly
+exported private journal and its rendered private report, never in public
+music delivery ZIPs or set-level plan exports.
 Entries carry the exact source set index, native browser seek position and a
 page-relative monotonic elapsed time. They do **not** prove what speakers,
 attendees, a venue clock or a human DJ actually heard. Nothing is stored
@@ -163,7 +168,8 @@ shows the closest real source-receipt chapter within 60 WAV seconds and
 the signed WAV-position difference; marks farther away stay unpaired.
 A per-set browser-event overview counts play actions, manual marks and
 ended events. None of those counts prove audible performance or chapter timing. It includes **no audio bytes, local file
-paths or private operator notes**. Handle the exported JSON and report as
+paths or unrelated set-level operator notes**; **your deliberately entered
+per-cue annotations are included** in this private document. Handle the exported JSON and report as
 private operational materials. This is a rehearsal annotation workflow, not
 independent human blind listening, real-world venue evidence, playback timing
 certification or permission to use the music.
