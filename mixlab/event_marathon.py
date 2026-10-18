@@ -67,6 +67,16 @@ button:hover,a:hover{background:#3b6684}
 .stage .stage-notes{font-size:13px;padding-left:22px;max-height:220px;overflow-y:auto}
 .stage .stage-notes li{margin:7px 0;overflow-wrap:anywhere}
 .stage .stage-meta{font-size:13px;color:#c0d9e1}
+.stage-cue{background:#0b2026;border:1px solid #619783;padding:17px 21px;border-radius:18px}
+.stage-cue strong{display:block;font-size:clamp(20px,3vw,32px);overflow-wrap:anywhere}
+.stage-cue .stage-queue-clock{color:#bdffe0;font-size:clamp(27px,4vw,49px);font-weight:900;font-variant-numeric:tabular-nums}
+.stage .stage-notes li{display:flex;align-items:start;gap:12px;justify-content:space-between;border-bottom:1px solid #43616c;padding-bottom:8px}
+.stage .stage-notes li span{overflow-wrap:anywhere;flex:1}
+.stage .stage-notes button{padding:5px 9px;font-size:12px}
+.stage .stage-notes li[data-passed=true]{opacity:.55}
+.stage .stage-actions label.action{background:#2c5069;padding:11px 16px;border:1px solid #668ba0;border-radius:12px;font-weight:800}
+.stage .stage-actions input[type=file]{max-width:280px}
+
 .stage:fullscreen{overflow:auto;padding:clamp(18px,3vw,54px);border:none;border-radius:0;background:#081923}
 .stage:fullscreen .stage-counter{font-size:clamp(65px,10vw,180px)}
 @media(max-width:700px){.stage-grid{grid-template-columns:1fr}.stage-actions>*{min-width:120px}}
@@ -98,8 +108,14 @@ button:hover,a:hover{background:#3b6684}
    <div id="stage-join" class="stage-meta">Source-receipt chapter boundaries, not automatic DJ beatmatching.</div>
   </div>
  </div>
+ <div class="stage-cue" aria-label="Upcoming manual operator cues">
+ <div class="stage-kicker">NEXT OPERATOR CUE · TIMED TO THIS MASTER</div>
+ <strong id="stage-next-cue">No operator markers loaded</strong>
+ <div class="stage-queue-clock" id="stage-cue-countdown">--:--:--</div>
+ <div class="stage-meta" id="stage-cue-detail">Import an exact-master cue log or mark a cue at the current playhead.</div>
+ </div>
  <div class="stage-actions"><button id="stage-play" type="button">Play WAV / Space</button><button id="stage-fullscreen" type="button">Full screen / F</button>
- <button id="stage-add" type="button">Mark cue / M</button><button id="stage-export" type="button">Export cue log</button></div>
+ <button id="stage-add" type="button">Mark cue / M</button><button id="stage-cancel-edit" type="button" hidden>Cancel edit</button><button id="stage-export" type="button">Export cue log</button></div>
  <label for="stage-note" class="stage-kicker">Operator cue (stored in this page only; max 300 characters)</label>
  <textarea id="stage-note" maxlength="300" placeholder="Crowd request, handoff cue, mix observation…"></textarea>
  <div class="stage-actions"><label for="stage-import" class="action">Import a SHA-matched cue log</label>
@@ -170,6 +186,8 @@ update();
 
 /* Live operator view is a read-only projection of the one existing player. */
 const cueNotes=[];
+let cueEditingIndex=-1;
+let cueDirty=false;
 const stageClock=seconds=>clock(Math.max(0,seconds));
 const cueMessage=text=>{$("stage-message").textContent=text;};
 let stageIndex=0;
@@ -192,27 +210,91 @@ function stageUpdate(){
  $("stage-join").textContent=next?(fade?("Next handoff: "+fade+"s already-rendered audio crossfade. Listen before event use."):"Next handoff: hard boundary. No automatic DJ transition."):"Final section. Master ends when the actual WAV ends.";
  $("stage-state").textContent=audio.ended?"MASTER ENDED":audio.paused?"PAUSED / READY":"WAV PLAYING";
  $("stage-play").textContent=audio.paused?"Play WAV / Space":"Pause WAV / Space";
+ cueUpdateNext(pos);
 }
 function stagePlayback(){
  if(!audio.paused){audio.pause();return;}
  const result=audio.play();
  if(result)result.catch(()=>cueMessage("Playback unavailable here. Open the verified WAV in an independent local player."));
 }
+
+function cueOrder(){
+ return cueNotes.map((cue,i)=>({cue,i})).sort((a,b)=>
+  a.cue.time_seconds-b.cue.time_seconds||a.i-b.i);
+}
+function cueUpdateNext(pos){
+ const item=cueOrder().find(x=>x.cue.time_seconds>=pos-0.5);
+ if(!item){
+  $("stage-next-cue").textContent=cueNotes.length?"All operator cues have passed":"No operator markers loaded";
+  $("stage-cue-countdown").textContent="--:--:--";
+  $("stage-cue-detail").textContent=cueNotes.length?
+   "No more markers ahead. Playback remains controlled by the master WAV.":
+   "Import an exact-master cue log or mark a cue at the current playhead.";
+  return;
+ }
+ const cue=item.cue,remaining=Math.max(0,cue.time_seconds-pos);
+ $("stage-next-cue").textContent=cue.note||"Unlabelled manual cue";
+ $("stage-cue-countdown").textContent=remaining<0.5?"CUE NOW":stageClock(remaining);
+ $("stage-cue-detail").textContent=cue.event_label+" · "+stageClock(cue.time_seconds)+
+  " in the original WAV"+(cueDirty?" · unpublished edits — export again":"");
+}
+function cueEdit(index){
+ const cue=cueNotes[index];if(!cue)return;
+ cueEditingIndex=index;
+ $("stage-note").value=cue.note;
+ $("stage-add").textContent="Save edited cue";
+ $("stage-cancel-edit").hidden=false;
+ $("stage-note").focus();
+ cueMessage("Editing cue "+(index+1)+". Its exact WAV time is preserved.");
+}
+function cueCancel(){
+ cueEditingIndex=-1;
+ $("stage-note").value="";
+ $("stage-add").textContent="Mark cue / M";
+ $("stage-cancel-edit").hidden=true;
+}
+function cueRemove(index){
+ if(!cueNotes[index]||!window.confirm("Remove this cue from the private browser log?"))return;
+ cueNotes.splice(index,1);cueCancel();cueDirty=true;cueShow();
+ cueMessage("Cue deleted locally; export again to preserve changes.");
+}
+
 function cueShow(){
  const out=$("stage-notes");out.replaceChildren();
- cueNotes.forEach((cue,i)=>{
+ cueOrder().forEach(({cue,i})=>{
   const row=document.createElement("li");
-  row.textContent=String(i+1)+". "+stageClock(cue.time_seconds)+" · "+cue.event_label+(cue.note?" · "+cue.note:"");
-  out.append(row);
+  row.dataset.passed=String(cue.time_seconds<(Number(audio.currentTime)||0));
+  const label=document.createElement("span");
+  label.textContent=String(i+1)+". "+stageClock(cue.time_seconds)+" · "+cue.event_label+
+   (cue.note?" · "+cue.note:" · Manual marker");
+  const seek=document.createElement("button");seek.type="button";seek.textContent="Seek";
+  seek.title="Rehearsal only: seek to this cue while the master is paused";
+  seek.disabled=!audio.paused;
+  seek.addEventListener("click",()=>{
+   if(!audio.paused){cueMessage("Pause the master before seeking to an operator cue.");return;}
+   audio.currentTime=cue.time_seconds;stageUpdate();
+  });
+  const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";
+  edit.addEventListener("click",()=>cueEdit(i));
+  const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
+  remove.addEventListener("click",()=>cueRemove(i));
+  row.append(label,seek,edit,remove);out.append(row);
  });
+ cueUpdateNext(Math.max(0,Number(audio.currentTime)||0));
 }
 function cueAdd(){
- if(cueNotes.length>=200){cueMessage("Maximum 200 local cue markers. Export the existing log.");return;}
  const note=$("stage-note").value.trim();
+ if(cueEditingIndex>=0){
+  cueNotes[cueEditingIndex].note=note;
+  cueCancel();cueDirty=true;cueShow();
+  cueMessage("Cue text changed locally. Export again to preserve edits.");
+  return;
+ }
+ if(cueNotes.length>=200){cueMessage("Maximum 200 local cue markers. Export the existing log.");return;}
  const pos=Math.max(0,Math.min(data.duration_seconds,Number(audio.currentTime)||0));
  cueNotes.push({time_seconds:Math.round(pos*100)/100,event_index:stageIndex,event_label:secs[stageIndex].label,note});
  $("stage-note").value="";
- cueShow();
+ cueDirty=true;cueShow();
  cueMessage("Cue added to this browser session. Export to preserve it; no automatic storage.");
 }
 function cueSave(){
@@ -223,6 +305,7 @@ function cueSave(){
  const u=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=u;a.download="mixlab-marathon-cues.private.json";document.body.append(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(u),1000);
+ cueDirty=false;cueUpdateNext(Math.max(0,Number(audio.currentTime)||0));
  cueMessage("Private cues exported. They are SHA-bound to this exact master; keep alongside your offline WAV.");
 }
 async function cueLoad(file){
@@ -240,7 +323,7 @@ async function cueLoad(file){
     (c.time_seconds+0.05>=secs[c.event_index].start_seconds)&&(c.event_index===secs.length-1||c.time_seconds<secs[c.event_index+1].start_seconds+0.05));
  if(!valid)throw Error("Cue log contains invalid markers.");
  cueNotes.splice(0,cueNotes.length,...obj.cues.map(c=>({time_seconds:c.time_seconds,event_index:c.event_index,event_label:c.event_label,note:c.note})));
- cueShow();cueMessage("Exact-master cue log restored locally. No uploads performed.");
+ cueCancel();cueDirty=false;cueShow();cueMessage("Exact-master cue log restored locally. No uploads performed.");
 }
 $("stage-play").addEventListener("click",stagePlayback);
 $("stage-fullscreen").addEventListener("click",async()=>{
@@ -248,6 +331,9 @@ $("stage-fullscreen").addEventListener("click",async()=>{
  catch(_){cueMessage("Full-screen display is unavailable in this browser.");}
 });
 $("stage-add").addEventListener("click",cueAdd);
+$("stage-cancel-edit").addEventListener("click",cueCancel);
+audio.addEventListener("play",cueShow);
+audio.addEventListener("pause",cueShow);
 $("stage-export").addEventListener("click",cueSave);
 $("stage-import").addEventListener("change",async e=>{
  try{await cueLoad(e.target.files&&e.target.files[0]);}
