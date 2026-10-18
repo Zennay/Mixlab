@@ -74,7 +74,8 @@ def start_ideas(session, *, prefix="idea", phrase_bars=8, max_cues=5):
 
 
 def finish_ideas(session, downloaded_approval, new_session, *,
-                 prefix="idea", timeout_seconds=600):
+                 prefix="idea", timeout_seconds=600, full_set_wav=None,
+                 family="bass_swap"):
     """Apply every human choice and build real Studio/Composer in new workspace."""
     root, manifest, suggestions, _board, approved = _paths(session, prefix)
     _admit_manual_grid(manifest)
@@ -110,12 +111,22 @@ def finish_ideas(session, downloaded_approval, new_session, *,
         composer = create_composer(destination)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         warnings.append("Optional Set Composer unavailable: " + str(exc))
-    return {"stage": "rendered-studio-ready", "private_studio": str(studio_index),
-            "private_composer": str(composer) if composer else None,
-            "visual_cue_editor": str(cue_editor) if cue_editor else None,
-            "approved_source_manifest": str(approved),
-            "new_session": str(destination), "warnings": warnings,
-            "original_session_unchanged": True, "automatic_musical_quality_claim": False}
+    result = {"stage": "rendered-studio-ready", "private_studio": str(studio_index),
+              "private_composer": str(composer) if composer else None,
+              "visual_cue_editor": str(cue_editor) if cue_editor else None,
+              "approved_source_manifest": str(approved),
+              "new_session": str(destination), "warnings": warnings,
+              "original_session_unchanged": True, "automatic_musical_quality_claim": False}
+    if full_set_wav is not None:
+        # Optional instant full-set export is a separate publication stage.
+        # Preserve the valid newly rendered Studio on any output failure.
+        try:
+            from .instant_set import render_instant_set
+            result["full_set"] = render_instant_set(
+                destination, full_set_wav, family=family)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            warnings.append("Private Studio completed, but optional full-set export failed: " + str(exc))
+    return result
 
 
 def main():
@@ -134,6 +145,11 @@ def main():
     finish.add_argument("new_session", help="NEW project folder outside original music/session/Git")
     finish.add_argument("--prefix", default="idea")
     finish.add_argument("--timeout-seconds", type=int, default=600)
+    finish.add_argument("--full-set-wav",
+                        help="Optional NEW private WAV to render full approved route immediately")
+    finish.add_argument("--family", choices=("bass_swap", "echo_exit", "hard_cut", "baseline"),
+                        default="bass_swap",
+                        help="Explicit family for every transition when --full-set-wav is used")
     args = parser.parse_args()
     try:
         if args.command == "start":
@@ -142,7 +158,9 @@ def main():
         else:
             result = finish_ideas(args.session, args.approved_choices,
                                   args.new_session, prefix=args.prefix,
-                                  timeout_seconds=args.timeout_seconds)
+                                  timeout_seconds=args.timeout_seconds,
+                                  full_set_wav=args.full_set_wav,
+                                  family=args.family)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Idea Pipeline: " + str(exc) + "\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))
