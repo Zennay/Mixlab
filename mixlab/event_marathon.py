@@ -14,6 +14,7 @@ import re
 import stat
 import wave
 import zipfile
+import subprocess
 
 from .set_player import build_chapters
 
@@ -188,7 +189,10 @@ def _digest_file(path):
     return h.hexdigest()
 
 
-def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False, start=None):
+def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False,
+                    start=None, delivery=None, bitrate_kbps=192):
+    if delivery not in (None, "mp3", "flac") or type(bitrate_kbps) is not int or bitrate_kbps not in (128, 192, 256, 320):
+        raise ValueError("Choose local MP3/FLAC and an allowed bitrate")
     if not 2 <= len(set_pairs) <= MAX_EVENTS:
         raise ValueError("Choose 2 to 8 completed private events")
     items=[_admit(session,wav) for session,wav in set_pairs]
@@ -311,6 +315,13 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
         result["showbook_warning"] = showbook_warning
     if join_studio_warning:
         result["join_studio_warning"] = join_studio_warning
+    if delivery:
+        try:
+            from .marathon_delivery import export_mobile_marathon
+            result["mobile_delivery"] = export_mobile_marathon(
+                wav, destination / ("marathon." + delivery), bitrate_kbps=bitrate_kbps)
+        except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
+            result["mobile_warning"] = "Real Marathon WAV exists; optional mobile encoding was unavailable"
     if bundle:
         # Packaging is optional; never remove the already completed WAV if
         # the USB archive exceeds disk or file limits.
@@ -331,12 +342,15 @@ def main():
     parser.add_argument("session_wav_pairs",nargs="+",help="Alternating Studio SESSION and original completed WAV")
     parser.add_argument("--bundle",action="store_true",help="Also create an optional trusted private USB ZIP")
     parser.add_argument("--start",help="Optional planned local show start HH:MM")
+    parser.add_argument("--delivery",choices=("mp3","flac"),help="Also make a private portable mobile encoding")
+    parser.add_argument("--bitrate-kbps",type=int,choices=(128,192,256,320),default=192)
     args=parser.parse_args()
     if not 4<=len(args.session_wav_pairs)<=MAX_EVENTS*2 or len(args.session_wav_pairs)%2:
         parser.exit(2,"Provide 2–8 SESSION WAV pairs after the new output folder\n")
     pairs=list(zip(args.session_wav_pairs[0::2],args.session_wav_pairs[1::2]))
     try:
-        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle,start=args.start)
+        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle,start=args.start,
+                            delivery=args.delivery,bitrate_kbps=args.bitrate_kbps)
     except (ValueError,TypeError,KeyError,OSError,EOFError,KeyboardInterrupt,wave.Error):
         parser.exit(2,"MixLab event marathon: source admission, approval or private export failed; "
                        "no completed new event was published.\n")
