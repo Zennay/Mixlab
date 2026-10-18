@@ -16,6 +16,7 @@ from .journey import _source_root, _private_json_path, _read_json
 from .playlist_approval import KIND as APPROVAL_KIND, load_approval
 from .playlist_studio import build_playlist_studio
 from .show_runbook import create_runbook
+from .event_dashboard import create_dashboard
 from .studio import FAMILY_NAMES
 
 ROOT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}\Z")
@@ -122,6 +123,16 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         # incomplete because the optional operator companion cannot publish.
         warnings.append("Full WAV exists; optional event runbook unavailable: " + str(exc))
 
+    dashboard = None
+    try:
+        dashboard = create_dashboard(
+            session, wav, target / "index.html",
+            compressed=set_data.get("compressed_delivery"),
+            runbook=runbook, player=set_data.get("offline_player")
+        )
+    except (ValueError, TypeError, OSError, KeyError) as exc:
+        warnings.append("Full WAV exists; optional private event landing page unavailable: " + str(exc))
+
     return {
         "ready": True,
         "kind": "mixlab-private-approved-full-event",
@@ -131,6 +142,7 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         "full_set_wav": str(wav),
         "offline_full_set_player": set_data.get("offline_player"),
         "offline_show_runbook": str(runbook) if runbook else None,
+        "offline_event_dashboard": str(dashboard) if dashboard else None,
         "compressed_delivery": set_data.get("compressed_delivery"),
         "selected_transitions": set_data.get("transitions"),
         "warnings": warnings,

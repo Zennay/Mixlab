@@ -64,11 +64,17 @@ The Publisher:
    local start time (`--start HH:MM`). The paper/CSV cue sheet is
    complementary to the audio player, not a live audio mixer.
 
+8. Builds \`index.html\` as a private offline **event landing page**
+   linking the actual WAV/chapter player, optional portable audio and
+   runbook. The waveform/timeline are derived from the verified output
+   receipt and contain no original private source paths.
+
 Example private package:
 
 ~~~text
 /private/music/mixlab-mixlab-party-01.sources.private.json
 /private/mixlab-party-01/
+    index.html                                 # private offline event homepage
     studio-session/                            # original source/Studio/receipt data
     final-set.wav                              # real canonical mixed PCM16
     final-set.wav.receipt.private.json         # exact WAV / source binding
@@ -78,7 +84,7 @@ Example private package:
 ~~~
 
 A published `final-set.wav` is never deleted just because optional
-MP3/FLAC delivery or a show runbook failed. Such errors are returned
+MP3/FLAC delivery, an event dashboard or a show runbook failed. Such errors are returned
 explicitly in `warnings`. Conversely, if no actual full-set WAV was
 published, this wrapper reports a failure even if the initial private
 Studio exists; it never reports a complete event based only on HTML or
