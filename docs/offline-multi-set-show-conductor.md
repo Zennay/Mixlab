@@ -41,9 +41,14 @@ Open the HTML locally on the machine with permission to play your recordings.
    an adjustable planned changeover break (0–120 minutes). Change the local
    start clock to preview planned show timing.
 2. Attach each set's **actual** `final-set.wav` using its own local file picker.
-   The browser checks only filename, file byte size and decoded duration,
-   **not the SHA**. Never substitute an unauthorised or unknown audio file.
-3. Click **Arm set**, then use the native audio controls to start it yourself.
+   The browser now checks **filename, exact byte length and complete SHA-256**
+   against the original exported source receipt **before enabling playback**.
+   WAV content is read in bounded 1 MiB pieces, not uploaded or cached.
+   Watch the verification progress. A wrong file with the same name, duration
+   and byte length is rejected; a file-read failure also leaves playback
+   locked. Use the original approved recording, never a substitute.
+3. Wait until **Verified full SHA-256** appears for that local WAV.
+   Click **Arm set**, then use the native audio controls to start it yourself.
    Chapter buttons seek to **receipt-verified** positions. The Show Conductor
    never automatically crossfades, starts the next file or plays a cue on a
    timed schedule.
