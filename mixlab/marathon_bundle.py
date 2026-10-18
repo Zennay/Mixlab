@@ -85,6 +85,14 @@ def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None, master_
                 raise ValueError("Chosen master differs from actual private WAV")
             private_plan = Path(master_choice).absolute()
             files.append(_source(private_plan.parent, private_plan.name, RECEIPT_LIMIT))
+            # Generate human-readable notes only on explicit operator
+            # inclusion and only from the SHA-verified selected master.
+            from .marathon_master_review import create_master_brief
+            brief_dir = Path(stack.enter_context(
+                tempfile.TemporaryDirectory(prefix=".mixlab-marathon-review-", dir=folder)))
+            brief_path = brief_dir / "marathon.master-choice.private.html"
+            create_master_brief(wav, private_plan, brief_path)
+            files.append(_source(brief_dir, brief_path.name, PAGE_LIMIT))
         if cues is not None:
             # Only an explicit opt-in can package human notes. The printed
             # sheet is rebuilt from receipt-bound JSON (not arbitrary HTML).
