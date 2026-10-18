@@ -73,16 +73,21 @@ const board=JSON.parse(document.getElementById("board").textContent);
 const pairs=document.getElementById("pairs"), message=document.getElementById("message");
 let playing=null;
 function previewSong(track,start,duration){
- if(playing){playing.pause();playing.src="";playing=null;}
+ if(playing){playing.pause();playing.removeAttribute("src");playing.load();playing=null;}
  const audio=new Audio("audio/"+encodeURIComponent(track)+".wav");
  playing=audio;audio.preload="metadata";
  const end=start+duration;
  audio.addEventListener("loadedmetadata",()=>{
    if(playing!==audio)return;
-   if(start>=audio.duration){message.textContent="Dit fragment valt buiten de track.";return;}
+   if(start>=audio.duration){audio.pause();message.textContent="Dit fragment valt buiten de track.";return;}
    audio.currentTime=start;
-   audio.play().catch(()=>{message.textContent="Kan lokale WAV niet beluisteren. Controleer het bronbestand.";});
  },{once:true});
+ // Begin playback inside the explicit button event, not from an asynchronous
+ // metadata callback that browsers may reject as unprompted autoplay.
+ const startPlayback=audio.play();
+ if(startPlayback)startPlayback.catch(()=>{
+   if(playing===audio)message.textContent="Kan lokale WAV niet beluisteren. Controleer het bronbestand.";
+ });
  audio.addEventListener("timeupdate",()=>{
    if(audio.currentTime>=end){audio.pause();if(playing===audio)playing=null;}
  });
