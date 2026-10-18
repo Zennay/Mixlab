@@ -34,8 +34,9 @@ The same `mixlab.event_restore` command also accepts a trusted
 or `python3 -m mixlab.event_marathon --bundle ...`.
 
 A restored Marathon contains `marathon.wav`,
-`marathon.receipt.private.json`, and `index.html`, rather than an
-original Playlist Studio session. The restore command checks the
+`marathon.receipt.private.json`, and `index.html`, plus the optional
+`marathon.runbook.private.html` operator showbook when included in the
+original trusted package, rather than an original Playlist Studio session. The restore command checks the
 three expected members, private archive SHA inventory, the exact joined
 WAV SHA, PCM16 stereo frame count, sample rate and contiguous 2–8
 subevent frame boundaries before admitting the new output folder.
