@@ -98,6 +98,36 @@ De originele track- en sessiebestanden blijven ongewijzigd.
 worden de eerder gecontroleerde downbeats uit je bestaande manifest
 opnieuw gebruikt; er wordt niets stilzwijgend geïnterpreteerd.
 
+## Direct een complete WAV uit de muziekwizard
+
+De Playlist Studio kan **in dezelfde eerste opdracht** ook meteen
+een volledige mix en offline hoofdstukspeler exporteren. Kies daarbij
+zelf de transitiestijl — er is geen automatische muzikale beoordeling.
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --beats 16 \
+  --full-set-wav /private/party-ready.wav \
+  --family bass_swap \
+  --style pair-002:echo_exit
+~~~
+
+Hiermee maak je de echte lokale Studio, de visuele cue-editor, Set
+Composer, alle reeds gerenderde A/B-overgangen en één continue
+`party-ready.wav` met chaptered `party-ready.wav.player.html`.
+De tweede overgang krijgt expliciet een eigen stijl; alle andere
+paren gebruiken `bass_swap`.
+
+Bij `--resume` mag je `--full-set-wav` ook gebruiken, zodat een
+eerder opgeslagen manifest later in één keer het complete resultaat
+oplevert. `--manifest-only` kan vanzelfsprekend geen WAV maken.
+Als de optionele setexport mislukt, blijft je nieuwe, bruikbare Studio
+bestaan. Exporteer dan opnieuw naar een **nieuwe** WAV-naam met
+[Instant Set](instant-private-full-set.md).
+
 ## Plannen bewaren en later verder renderen
 
 Je kunt de handmatige songvolgorde, bronrechten, BPM en overgangscues eerst
