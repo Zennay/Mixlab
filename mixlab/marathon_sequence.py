@@ -115,6 +115,7 @@ const previewStatus=message=>{$("audition-message").textContent=message;};
 function stopPreview(){
  if(previewAnimation!==null){cancelAnimationFrame(previewAnimation);previewAnimation=null;}
  previewOut.pause();previewIn.pause();
+ previewOut.ontimeupdate=null;previewIn.ontimeupdate=null;
  previewOut.volume=1;previewIn.volume=1;
 }
 function unloadMedia(index){
