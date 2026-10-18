@@ -128,6 +128,18 @@ original unsigned bundle manifest and streamed WAV SHA instead.
 The vault is private, opt-in, and never uploads music.
 [Private Event Vault guide](private-event-vault.md).
 
+## Compile multiple approved events into one sample-exact programme
+
+To join **2–8 original completed sets** into a continuous local WAV, use
+`python3 -m mixlab.event_marathon NEW_FOLDER SESSION_A WAV_A SESSION_B WAV_B [MORE PAIRS]`.
+Each source uses its full canonical Studio and complete WAV receipts; rates and
+PCM16 format must match. The command asks for fresh explicit operator approval,
+writes a newly created `marathon.wav` with SHA-bound private receipt, and
+generates a local programme player with event jumps and exportable CUE marks.
+There is **no crossfade or automatic beatmatch at the boundaries**; preview
+the joins and check intended playback rights.
+[Private Event Marathon guide](private-event-marathon.md).
+
 ## Permissions and recovery
 
 - All input files, outputs and source media stay on your **local
