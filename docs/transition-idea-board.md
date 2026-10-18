@@ -37,7 +37,19 @@ python3 -m mixlab.idea_board create \
   /private/session-01/sources/transition-ideas.html
 ~~~
 
-Open `transition-ideas.html` op je eigen computer.
+Open `transition-ideas.html` op je eigen computer. **Nieuw:** bij
+ieder voorstel kun je nu op **Beluister uitgaand** of **Beluister inkomend**
+klikken. De browser leest daarvoor uitsluitend de reeds geïmporteerde
+lokale PCM16-songs vanuit de privé Studio en speelt een fragment af vanaf
+het gekozen cuepunt, gedurende de ingestelde overgangsbeats. Zodra je
+een ander fragment kiest, stopt de vorige speler. Je hoort dus echte
+lokale audio, maar nog **geen gerenderde combinatie van beide nummers**.
+De afspeelknoppen selecteren ook meteen het bijbehorende idee;
+de keuze blijft jouw verantwoordelijkheid.
+
+Het keuzescherm verhindert bij het downloaden eveneens een afspeelroute
+die achteruit springt in een nummer. De CLI controleert dit daarna
+nogmaals tegen de hashgebonden broninformatie.
 
 Elke voorgestelde cue heeft nu **▶ Beluister uitgaand** en **▶ Beluister
 inkomend**. De Idea Board leest het bijbehorende lokale genormaliseerde
