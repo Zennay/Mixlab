@@ -387,6 +387,14 @@ opnieuw gecontroleerd; handmatige toestemming voor de uiteindelijke nieuwe
 WAV blijft verplicht. Muzikale kwaliteit en rechten voor openbaar gebruik
 blijven apart te beoordelen. [Sequence Studio-handleiding](docs/marathon-sequence-studio.md).
 
+Als je bij `marathon_sequence render` óók `--review-output
+/private/review/mixlab-master-review.private.html` opgeeft, maakt MixLab na
+de twee afzonderlijk goedgekeurde echte WAV-renders meteen een nieuwe offline
+**Master Review** aan. Zo kun je beide WAVs direct vergelijken en daarna
+uitsluitend de menselijke definitieve keuze naar privé-MP3/FLAC of USB
+exporteren; de bron-WAVs blijven onveranderd. De doelmap voor de nieuwe
+HTML moet vooraf bestaan. [Master Review](docs/marathon-master-review.md).
+
 ### Luister naar de twee échte Marathon-masters en lever alleen je keuze op
 
 Na een handmatig gerenderde crossfade bestaat naast het oorspronkelijke WAV
