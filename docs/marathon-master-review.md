@@ -55,6 +55,27 @@ The restore path verifies the ZIP member SHA and **again** validates the carried
 
 Privacy: handwritten notes are **not** included in unrelated USB packages. If the notes contain private information, omit `--master-choice` from direct bundle exports and protect your selected-master ZIP.
 
+## Print the chosen master's real-WAV show handoff
+
+The private Master Review now also creates a **printable selected-master briefing** for an actual original or approved crossfade master, with:
+- The actual SHA-256 of the *selected* master and real PCM16 runtime/rate.
+- Each verified source-event handoff at that selected WAV's frame-exact receipt time (not an estimated song length).
+- The actual per-join fade duration (zero for the original hard cuts).
+- Only the operator's privately entered overall decision and per-join annotations.
+
+Generate this print-friendly static HTML in an **existing private directory** without creating an archive:
+
+```bash
+python3 -m mixlab.marathon_master_review brief \
+  /private/marathon-blend/marathon.wav \
+  /private/review/mixlab-marathon-master-choice.private.json \
+  /private/review/marathon.master-choice.private.html
+```
+
+Open the new HTML offline and use **Print / Save as PDF** in the browser. The file contains **no actual music**, uploaded recordings or authenticated licensing statements. It is created with exclusive `0600` permissions and escaped operator text.
+
+When the operator explicitly includes the choice JSON in a private Marathon ZIP (`--master-choice` or `marathon_master_review publish --bundle`), the ZIP now includes **both** the JSON **and** an automatically generated `marathon.master-choice.private.html`. New archive extraction rejects missing or inconsistent pairs and recreates the brief from the actual restored WAV, its receipt and JSON before comparing its hash to the packed HTML. The restored path is surfaced as `offline_marathon_master_brief`. A normal bundle without `--master-choice` includes **neither** private artifact.
+
 ## Important gates
 
 - Use only privately allowed music and actual completed MixLab Event Publisher/Marathon masters. The receipt hashes verify internal consistency, **not a recording's licensing or authentic authorship**.
