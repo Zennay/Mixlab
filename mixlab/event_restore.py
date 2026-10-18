@@ -16,7 +16,7 @@ import stat
 import zipfile
 
 from .event_bundle import BLOCK, MAX_FILE, MAX_ITEMS, MAX_TOTAL
-from .event_vault import MAX_MARATHON
+from .event_vault import MAX_MARATHON, _marathon_duration
 
 MANIFEST = "mixlab-bundle-manifest.private.json"
 MAX_MANIFEST = 65536
@@ -93,7 +93,7 @@ def _inspect(archive):
         manifest.get("source_media_included") is not False or
         manifest.get("private_local_use_only") is not True or
         type(manifest.get("chapters")) is not int or
-        not 1 <= manifest["chapters"] <= (8 if is_marathon else 200) or
+        not (2 if is_marathon else 1) <= manifest["chapters"] <= (8 if is_marathon else 200) or
         not isinstance(manifest.get("wav_sha256"), str) or
         not SHA.fullmatch(manifest["wav_sha256"])
     ):
@@ -182,6 +182,10 @@ def restore_bundle(private_zip, new_private_folder):
                                 dst.write(chunk)
                 finally:
                     os.close(dfd)
+                if master == "marathon.wav":
+                    # Check the actual joined WAV against its ORIGINAL continuous
+                    # output receipt after extraction, not just the ZIP inventory.
+                    _marathon_duration(output, output / master)
                 after = os.fstat(stream.fileno())
                 if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
                         after.st_ctime_ns) != (
