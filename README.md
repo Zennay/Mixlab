@@ -164,6 +164,20 @@ vanuit één overzichtelijk dashboard te openen. De pagina
 is offline en gebouwd op de hashgecontroleerde master-WAV.
 [Handleiding](docs/private-event-dashboard.md).
 
+### Neem een complete privésessie mee als één ZIP
+
+Voor een eigen USB-drive of offline backup kun je in dezelfde
+\`python3 -m mixlab.event_publish ...\` opdracht de optionele
+\`--bundle\` vlag toevoegen. MixLab bouwt dan een nieuw
+\`final-set.private.zip\` uit de **werkelijk gerenderde**
+WAV/receipts, beschikbare MP3/FLAC, spelers, eventdashboard
+en draaiboek. In het ZIP zitten géén originele muzieksources
+of interne rechten-/cue-manifests. Alles blijft lokaal;
+de rechten om een mix te delen moet je zelf hebben.
+De bundel is optioneel zodat grote WAV-bestanden niet
+onnodig extra opslag vragen.
+[Handleiding](docs/private-portable-event-bundle.md).
+
 ### Offline eventdraaiboek uit je échte, complete DJ-set
 
 Heb je een volledige MixLab-WAV mét originele Studio en privéreceipt

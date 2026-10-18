@@ -90,6 +90,20 @@ published, this wrapper reports a failure even if the initial private
 Studio exists; it never reports a complete event based only on HTML or
 generated manifests.
 
+## Optional one-file ZIP for a private USB/backup handoff
+
+Add \`--bundle\` to the event-publish command to stream all existing
+verified event outputs into a **new**, private
+\`/private/mixlab-party-01/final-set.private.zip\`.
+The bundle contains the real WAV and its private receipt, chapter
+player, local event homepage, optional independently receipt-bound
+MP3/FLAC and operator runbook. It **never contains original source
+music or source-rights manifests**. This opt-in export uses bounded
+64 KiB streaming blocks and a strict total file budget; it will not
+overwrite existing ZIPs or accidentally upload to a service.
+If ZIP creation fails, the already produced audio and pages remain.
+[Private portable bundle manual](private-portable-event-bundle.md).
+
 ## Permissions and recovery
 
 - All input files, outputs and source media stay on your **local

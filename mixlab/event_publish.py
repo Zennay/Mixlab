@@ -17,6 +17,7 @@ from .playlist_approval import KIND as APPROVAL_KIND, load_approval
 from .playlist_studio import build_playlist_studio
 from .show_runbook import create_runbook
 from .event_dashboard import create_dashboard
+from .event_bundle import export_bundle
 from .studio import FAMILY_NAMES
 
 ROOT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}\Z")
@@ -42,7 +43,7 @@ def _check_output_root(private_music, new_root):
 
 def publish_event(music_folder, private_plan, private_approval, new_output_root,
                   *, family="bass_swap", delivery=None, bitrate_kbps=192,
-                  start=None, timeout_seconds=600, read=input, write=print):
+                  start=None, timeout_seconds=600, bundle=False, read=input, write=print):
     """Compile one human-approved DJ event into a single NEW private folder.
 
     The source manifest must remain in the music folder because the canonical
@@ -66,6 +67,8 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         raise ValueError("Planned start time must be HH:MM in your local timezone")
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
         raise ValueError("Local audio decoder timeout must be 30–900 seconds")
+    if type(bundle) is not bool:
+        raise ValueError("Portable ZIP switch must be boolean")
 
     data, _ = _read_json(approval)
     beats = data.get("beats")
@@ -133,6 +136,19 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
     except (ValueError, TypeError, OSError, KeyError) as exc:
         warnings.append("Full WAV exists; optional private event landing page unavailable: " + str(exc))
 
+    bundle_result = None
+    if bundle:
+        try:
+            bundle_result = export_bundle(
+                session, wav, target / "final-set.private.zip",
+                player=set_data.get("offline_player"), dashboard=dashboard,
+                runbook=runbook, compressed=set_data.get("compressed_delivery")
+            )
+        except (ValueError, TypeError, OSError, KeyError) as exc:
+            # Optional packaging must not undo the existing real WAV or the
+            # verified local event players and paper showbook.
+            warnings.append("Completed WAV exists; optional portable ZIP unavailable: " + str(exc))
+
     return {
         "ready": True,
         "kind": "mixlab-private-approved-full-event",
@@ -143,6 +159,7 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         "offline_full_set_player": set_data.get("offline_player"),
         "offline_show_runbook": str(runbook) if runbook else None,
         "offline_event_dashboard": str(dashboard) if dashboard else None,
+        "private_portable_bundle": bundle_result,
         "compressed_delivery": set_data.get("compressed_delivery"),
         "selected_transitions": set_data.get("transitions"),
         "warnings": warnings,
@@ -167,6 +184,8 @@ def main():
                         help="Optional additional portable output from the completed WAV; needs installed FFmpeg")
     parser.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320), default=192)
     parser.add_argument("--start", help="Optional HH:MM local show start for the offline runbook")
+    parser.add_argument("--bundle", action="store_true",
+                        help="Optional bounded private streaming ZIP with the already rendered event files")
     parser.add_argument("--timeout-seconds", type=int, default=600)
     args = parser.parse_args()
     try:
@@ -175,7 +194,7 @@ def main():
             args.private_cue_approval, args.new_output_folder,
             family=args.family, delivery=args.delivery,
             bitrate_kbps=args.bitrate_kbps, start=args.start,
-            timeout_seconds=args.timeout_seconds,
+            timeout_seconds=args.timeout_seconds, bundle=args.bundle,
         )
     except (ValueError, TypeError, KeyError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, "MixLab event production: " + str(exc) + "\n")
