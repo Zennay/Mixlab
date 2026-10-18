@@ -38,8 +38,11 @@ met hun handmatig geverifieerde BPM en private bronbinding.
 **Lokaal beluisteren in hetzelfde formulier:** kies per track de originele
 muziekfile via de browser. De ingesloten afspeelknoppen gebruiken een
 tijdelijke lokale blob-URL: er gaat geen audio naar een server. De browser
-controleert de exacte bestandsnaam en een bestandsgrootte van maximaal
-512 MiB. Zet de afspeelkop op een door jou gecontroleerde positie en klik
+controleert nu de bestandsnaam, de limiet van 512 MiB én de
+**volledige SHA-256 van het originele nummer uit het brongebonden plan**.
+Dit gebeurt in lokale 1 MiB-blokken en toont voortgang. Verkeerde of
+gewijzigde nummers krijgen geen audio-URL en kunnen ook niet in de
+twee-deck repetitie worden gebruikt. Zet pas na volledige verificatie de afspeelkop op een door jou gecontroleerde positie en klik
 **Set first downbeat**, **Mark outgoing A cue** of **Mark incoming B cue**.
 De knop **4 beats vooruit/achteruit** springt op basis van jouw al
 handmatig geverifieerde BPM, niet van een automatisch gevonden beat.
@@ -70,10 +73,16 @@ DSP- en normalisatieverschillen. De offline Studio rendert
 de definitieve bronhashgebonden overgangen; de voorluisterknop geeft
 **geen** rechtenbewijs of muzikale voorkeursmeting.
 
-De browser controleert bewust **niet zelf** het volledige audiobestand
-op SHA-256 (dit kan honderden MiB browsergeheugen vereisen). De bestaande
-serverloze Playlist Studio doet wél opnieuw de verplichte, echte lokale
-source-hashcontrole voordat import en render starten.
+De browser voert nu **wel** een volledige lokale SHA-256-controle uit,
+zonder het gehele audiobestand tegelijk in geheugen te laden. Een naam- of
+grootte-match alleen geeft nooit toestemming voor afspelen. Een fout,
+ongeldig bestand of verschil in SHA laat zowel de individuele audio- als
+twee-deck voorluisterfunctie vergrendeld. Dit bewijst alleen byte-identiteit
+met je oorspronkelijke notities, geen muziekrechten. De serverloze Playlist
+Studio voert later **opnieuw zelfstandig** de bron- en rechtencontrole uit
+voordat import of render starten. Handmatige seconden blijven mogelijk
+wanneer de browser een formaat niet ondersteunt; dit verleent geen toestemming
+om de originele broncontrole over te slaan.
 
 Vul vervolgens in:
 

@@ -16,6 +16,7 @@ from .journey import (
     PLAN_KIND, _private_json_path, _read_json, _source_root, load_journey,
 )
 from .project_wizard import _nonblank
+from .browser_sha256 import SHA256_BROWSER_JS
 
 KIND = "mixlab-private-approved-playlist-v1"
 MAX_FORM = 1024 * 1024
@@ -63,7 +64,7 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 <div class="eyebrow">MIXLAB / HUMAN CUE APPROVAL</div>
 <h1>Approve your set, on one screen.</h1>
 <p>Provide the actual usage-rights basis and exact checked audio cue seconds for each transition. This is a private local form, **not** automatic downbeat detection or an online licensing check.</p>
-<div class="notice"><strong>Before you begin:</strong> you can now select each permitted audio file from your device and audition it directly in this offline form (nothing is uploaded), or use your own player. Capture the playhead as the first sample of a transition, then confirm every cue yourself. BPM and rights must be based on real information, not guessed. The browser checks the selected filename; the Studio later checks the actual source SHA.</div>
+<div class="notice"><strong>Before you begin:</strong> you can now select each permitted audio file from your device and audition it directly in this offline form (nothing is uploaded), or use your own player. Capture the playhead as the first sample of a transition, then confirm every cue yourself. BPM and rights must be based on real information, not guessed. The browser verifies the entire local original SHA-256 before any preview; the Studio independently checks the source again.</div>
 <section class="card"><h2>Set settings</h2>
 <div class="row"><label>Shared manually verified tempo
 <span id="bpm" class="meta"></span></label><label for="beats">Transition length, in beats (1–64)
@@ -83,6 +84,7 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 </main><script id="seed" type="application/json">__SEED__</script>
 <script>
 "use strict";
+__SHA_JS__
 const bundle=JSON.parse(document.getElementById("seed").textContent);
 const tracks=bundle.entries;
 const el=id=>document.getElementById(id);
@@ -210,21 +212,35 @@ function auditionFor(track,index,downbeatInput){
  label.append(file);panel.append(label);
  const player=document.createElement("audio");player.controls=true;
  player.preload="none";panel.append(player);
- const status=node("p","file-note","Select the corresponding local song. The browser checks its filename, not its SHA; the Studio rechecks the actual source later.");
+ const status=node("p","file-note","No full original SHA-256 verified. Local player and two-deck rehearsal stay locked until verification.");
  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
- let previousUrl=null;
- file.onchange=()=>{
+ let previousUrl=null,selectionEpoch=0;
+ file.onchange=async()=>{
+  const epoch=++selectionEpoch;
   stopRehearsal("Preview stopped because a local source was changed.");
   const selected=file.files&&file.files[0];
   player.pause();player.removeAttribute("src");player.load();
   if(previousUrl){URL.revokeObjectURL(previousUrl);previousUrl=null}
   if(!selected)return;
   if(selected.name!==track.path||selected.size<=0||selected.size>512*1024*1024){
-   status.textContent="Choose the exact expected local filename (max 512 MiB), not a renamed or oversized song.";
-   return;
+   status.textContent="Choose the expected local source filename (max 512 MiB).";
+   file.value="";return;
   }
-  previousUrl=URL.createObjectURL(selected);player.src=previousUrl;
-  status.textContent="Local audio selected; press play and confirm cues by listening. No audio was uploaded.";
+  file.disabled=true;
+  try{
+   const observed=await sha256LocalFile(selected,percent=>{
+    status.textContent="Verifying complete original source SHA-256: "+percent+"% · no upload";
+   });
+   if(epoch!==selectionEpoch)return;
+   if(observed!==track.sha256){
+    status.textContent="Rejected: full source SHA-256 differs from the approved plan. Playback stays locked.";
+    return;
+   }
+   previousUrl=URL.createObjectURL(selected);player.src=previousUrl;
+   status.textContent="Verified exact full source SHA-256. Press Play and mark cues yourself.";
+  }catch(_error){
+   status.textContent="Local source could not be SHA-verified. Playback remains locked.";
+  }finally{file.disabled=false;file.value="";}
  };
  player.onerror=()=>{status.textContent="This browser cannot decode that local audio format; use a separate player and type the seconds manually."};
  const buttons=node("div","buttons");
@@ -374,7 +390,7 @@ def prepare_form(music_folder, private_plan, new_html):
                            "plan_sha256": sha},
                           ensure_ascii=True, allow_nan=False, separators=(",", ":"))
     embedded = embedded.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
-    data = _PAGE.replace("__SEED__", embedded).encode("utf-8")
+    data = _PAGE.replace("__SEED__", embedded).replace("__SHA_JS__", SHA256_BROWSER_JS).encode("utf-8")
     if len(data) > MAX_FORM:
         raise ValueError("Offline approval page is too large")
     with html.open("xb") as stream:
