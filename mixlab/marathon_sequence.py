@@ -394,8 +394,11 @@ def prepare_page(new_private_html, *source_pairs):
 
 
 def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
-                     blend_output=None, review_output=None, reels_output=None, bundle=False, delivery=None,
+                     blend_output=None, review_output=None, reels_output=None, reels_usb=False,
+                     bundle=False, delivery=None,
                      bitrate_kbps=192, read=input, write=print):
+    if type(reels_usb) is not bool or (reels_usb and reels_output is None):
+        raise ValueError("Optional short-WAV USB ZIP needs an explicit --reels-output folder")
     pairs, items = _admit_pairs(source_pairs)
     plan = _read_plan(plan_path)
     if (not isinstance(plan, dict) or plan.get("schema_version") != 1 or
@@ -414,7 +417,8 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
     if mode not in ("hard_cuts", "manual_crossfades") or type(fades) is not list:
         raise ValueError("Unsupported manual transition plan")
     if mode == "hard_cuts":
-        if fades or blend_output is not None or review_output is not None or reels_output is not None:
+        if (fades or blend_output is not None or review_output is not None or
+                reels_output is not None or reels_usb):
             raise ValueError("Hard-join plans do not accept a separate blended output")
     else:
         if blend_output is None or len(fades) != len(order) - 1 or any(
@@ -480,6 +484,18 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
                     original["continuous_wav"],
                     result["blended_marathon"]["continuous_wav"],
                     reels_output, read=read, write=write)
+                if reels_usb:
+                    try:
+                        from .marathon_reels_transfer import export_reels
+                        result["join_reels_usb"] = export_reels(
+                            reels_output,
+                            Path(reels_output).absolute() / "join-reels.private.zip")
+                    except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
+                        result["join_reels_usb_warning"] = (
+                            "The original and blended masters and actual short PCM "
+                            "reels were retained. Only the optional compressed-free "
+                            "private ZIP failed; run mixlab.marathon_reels_transfer "
+                            "pack to retry.")
             except (ValueError, TypeError, KeyError, OSError, wave.Error, EOFError):
                 result["join_reels_warning"] = (
                     "Actual original and approved blended WAVs are retained. "
@@ -504,6 +520,7 @@ def main():
     publish.add_argument("--blend-output", help="Mandatory NEW private folder when the exported plan includes actual audio crossfades")
     publish.add_argument("--review-output", help="Optional NEW local mixlab-*.html in an existing private folder; auto-build actual original-versus-blend review after both render approvals")
     publish.add_argument("--reels-output", help="Optional NEW private folder of genuine PCM16 A/B handoff excerpts, after both human-approved real Marathon masters exist")
+    publish.add_argument("--reels-usb", action="store_true", help="Also make an explicitly requested portable ZIP containing ONLY the approved short real Join Reels, requires --reels-output")
     publish.add_argument("--bundle", action="store_true", help="Optional separate private ZIP")
     publish.add_argument("--delivery", choices=("mp3", "flac"), help="Optional installed FFmpeg delivery")
     publish.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320), default=192)
@@ -517,6 +534,7 @@ def main():
                                       blend_output=args.blend_output,
                                       review_output=args.review_output,
                                       reels_output=args.reels_output,
+                                      reels_usb=args.reels_usb,
                                       bundle=args.bundle, delivery=args.delivery,
                                       bitrate_kbps=args.bitrate_kbps)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt,
