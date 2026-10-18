@@ -43,6 +43,34 @@ annotated songs to prefer the chosen energy shape while penalizing abrupt
 jumps. Every selected song is in one **same-BPM** group; the planner cannot
 time-stretch music, derive key from sound or rank actual transition quality.
 
+### Listen to the real local originals before you commit
+
+The same Event Brief Studio now contains a **Listen before choosing**
+section under the suggested set timeline. Choose **Select original audio**
+and explicitly select your own permitted local songs. The browser reads the
+complete selected file in bounded 1 MiB chunks and computes local SHA-256,
+admitting audio only if it exactly matches the **already SHA-pinned manual
+track notes**. Name-only matches, corrupted bytes and unknown sources cannot
+be attached. No source is automatically read without the browser file picker.
+
+Use the new **Listen** button next to a proposed song or the searchable
+crate list to arm the original recording, then press Play yourself on the
+native browser audio controls. **Jump to intro**, **Jump to last 30s** and
+**Stop & detach** let you inspect the original beginning/ending and stop
+before changing your set order. Switching tracks stops playback and revokes
+the earlier local object URL; nothing autoplays or creates any crossfade.
+
+The page never uploads, copies, automatically analyzes or modifies the
+music. It does not infer BPM, key, phrase, downbeat, rights, preferences,
+venue performance or musical quality. Browser decoding support varies,
+especially for M4A/AAC/AIFF and very large media; use a trusted native
+offline audio player when the browser cannot play the original. Full
+original-source SHA verification checks only file-byte consistency with
+your earlier manually prepared notes, not a transferable usage licence.
+The timeline and eventual SHA-bound exported private plan have the same
+schema and remain unapproved until the separate Playlist Studio confirms
+rights, provenance and exact transition cues.
+
 The result includes an energy chart (dashed target, solid annotated energy),
 individual local filenames and each song's difference from the desired
 energy. Move tracks with up/down controls. A fixed requested opening/closing
