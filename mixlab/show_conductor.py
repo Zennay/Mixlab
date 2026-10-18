@@ -85,6 +85,7 @@ No folder paths, music or files are uploaded; individual pickers remain availabl
 <button id="cue-prev" type="button">← Prior chapter</button>
 <button id="cue-next" type="button">Next chapter →</button>
 <button id="stop" type="button">Stop / detach file</button>
+<button id="mark" type="button">Mark local WAV cue position</button>
 <button id="full" type="button">Fullscreen</button></div>
 <p id="player-status" role="status">Select an approved set and attach its WAV. Sets never auto-start or advance.</p>
 <ol id="chapters"></ol></div>
@@ -95,6 +96,10 @@ manually chosen breaks. It is not a wall-clock controller or professional
 playback guarantee. No telemetry or persistent state.</p>
 <div class="controls"><button id="export" type="button" class="accent">Download source-locked run-of-show plan</button></div>
 <p id="export-status" role="status"></p>
+<div class="controls"><button id="journal-export" type="button">
+Download private rehearsal journal</button></div>
+<p id="journal-status" role="status">No rehearsal actions recorded.
+Marks are your own browser audio positions, not venue performance evidence.</p>
 <p class="hash" id="fingerprint"></p>
 </div></section></div>
 </main><script type="application/json" id="mixlab-show-data">__DATA__</script><script>
@@ -108,6 +113,24 @@ const breaks=data.saved_breaks?data.saved_breaks.slice():
 const notes=data.saved_notes?data.saved_notes.slice():
  data.sets.map(()=>""),rows=[],chapterButtons=[];
 let active=-1,attachedURL=null;
+const rehearsal=[],rehearsalOpenedAt=performance.now();
+function recordRehearsal(kind){
+ if(active<0||!attached.get(active)||!audio.src){
+  $("journal-status").textContent="Attach and arm an SHA-verified WAV to record a cue.";
+  return;
+ }
+ const elapsed=Math.max(0,Math.floor(performance.now()-rehearsalOpenedAt));
+ if(rehearsal.length>=256||elapsed>48*3600*1000){
+  $("journal-status").textContent="Private rehearsal log limit reached. Export before continuing.";
+  return;
+ }
+ const pos=Number.isFinite(audio.currentTime)?Math.max(0,Math.min(
+  audio.currentTime,data.sets[active].duration_seconds)):0;
+ rehearsal.push({seq:rehearsal.length+1,kind,set_index:active,
+  wav_position_seconds:Math.round(pos*1000)/1000,elapsed_ms:elapsed});
+ $("journal-status").textContent=rehearsal.length+
+  " private manual playback/cue records (not exported until requested).";
+}
 const time=seconds=>{const n=Math.max(0,Math.floor(seconds));return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(x=>String(x).padStart(2,"0")).join(":");};
 const clock=minutes=>String(Math.floor(minutes/60)%24).padStart(2,"0")+":"+
  String(Math.floor(minutes%60)).padStart(2,"0");
@@ -142,6 +165,7 @@ function select(i){
  if(file){attachedURL=URL.createObjectURL(file);audio.src=attachedURL;audio.load();
   $("player-status").textContent="SHA-256 verified original WAV attached: "+
     data.sets[i].label+". PRESS PLAY manually. No auto-switch or crossfade.";
+  recordRehearsal("arm");
   audio.onloadedmetadata=()=>{
    if(!Number.isFinite(audio.duration)||
        Math.abs(audio.duration-data.sets[i].duration_seconds)>.3){
@@ -268,7 +292,7 @@ $("folder").addEventListener("change",async()=>{
 });
 $("previous").addEventListener("click",()=>select(active-1));
 $("next").addEventListener("click",()=>select(active+1));
-$("stop").addEventListener("click",()=>{drop();$("player-status").textContent="Audio stopped and local file URL detached. Press Arm set to reattach.";info();});
+$("stop").addEventListener("click",()=>{recordRehearsal("stop");drop();$("player-status").textContent="Audio stopped and local file URL detached. Press Arm set to reattach.";info();});
 function chapterJump(direction){
  if(active<0||!audio.src)return;
  const set=data.sets[active],pos=audio.currentTime||0;
@@ -283,7 +307,10 @@ $("full").addEventListener("click",()=>{
  const result=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen?.();
  if(result?.catch)result.catch(()=>{});
 });
+$("mark").addEventListener("click",()=>recordRehearsal("mark"));
+audio.addEventListener("play",()=>recordRehearsal("play"));
 audio.addEventListener("timeupdate",info);audio.addEventListener("ended",()=>{
+ recordRehearsal("ended");
  $("player-status").textContent="Completed current set; NEXT ONE WILL NOT START automatically. Check the room and arm it manually.";
 });
 audio.addEventListener("error",()=>{$("player-status").textContent="Browser failed to decode local WAV. Use a trusted offline native audio player.";});
@@ -304,6 +331,23 @@ $("export").addEventListener("click",()=>{
  document.body.append(link);link.click();link.remove();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
  $("export-status").textContent="Private SHA-bound set schedule downloaded. No audio/notes uploaded or auto-started.";
+});
+$("journal-export").addEventListener("click",()=>{
+ if(!rehearsal.length){
+  $("journal-status").textContent="No verified WAV rehearsal actions to export yet.";
+  return;
+ }
+ const journal={schema_version:1,kind:"mixlab-private-show-rehearsal-v1",
+  source_sha256s:data.sets.map(set=>set.wav_sha256),
+  events:rehearsal.slice(),private_only:true,automatic_playback:false,
+  clock_claim:"browser-monotonic-operator-only"};
+ const blob=new Blob([JSON.stringify(journal,null,2)+"\n"],{type:"application/json"});
+ const link=document.createElement("a"),url=URL.createObjectURL(blob);
+ link.href=url;link.download="mixlab-show-rehearsal.private.json";
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("journal-status").textContent="Private journal exported explicitly; no audio, operator notes, "+
+  "source paths or venue-clock claims included.";
 });
 window.addEventListener("pagehide",drop);timetable();select(0);
 </script></body></html>"""
