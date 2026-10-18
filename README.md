@@ -542,6 +542,30 @@ geen echte podiumtijden, luisterpreferentie of muziekrechten.
 
 
 
+### Nieuw: een volledig evenement bedienen met meerdere echte DJ-sets
+
+Met **Show Conductor** combineer je nu 2–6 onafhankelijke, reeds afgeronde,
+SHA-gecontroleerde privé-DJ-masters in **één offline handmatig showdraaiboek**.
+MixLab leest de bestaande echte WAVs, officiële receipts en hoofdstukcues
+opnieuw; er wordt geen muziek geüpload of verborgen geremixed.
+
+~~~bash
+python3 -m mixlab.show_conductor prepare \
+  /private/event-ops/mixlab-show-control.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --start 19:30 --break-minutes 10
+~~~
+
+Open de HTML lokaal en koppel de complete WAV van elke set handmatig via de
+browser; arm en start de volgende set **alleen zelf**. Je ziet de huidige
+set, geplande pauzes, echte hoofdstukken en operatornotities. Via het
+expliciet gedownloade privé-JSON genereert
+`python3 -m mixlab.show_conductor print ...` na hercontrole van alle
+volledige WAV-SHAs een afdrukbaar evenementdraaiboek. Geen automatische
+crossfade, cloud, browseropslag of garantie voor professioneel livegeluid.
+[Show Conductor-handleiding](docs/offline-multi-set-show-conductor.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.

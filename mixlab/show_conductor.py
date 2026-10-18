@@ -1,0 +1,389 @@
+"""Offline multi-set operator cockpit using real finished, SHA-verified MixLab WAVs.
+
+This is a MANUAL run-of-show, not live beatmixing, playback redundancy,
+timing automation, a rights license, or blind listening evidence.
+"""
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import wave
+
+from .set_player import build_chapters
+from .marathon_sequence import _private_html_destination, _read_plan
+
+KIND = "mixlab-private-multi-set-show-v1"
+MAX_SETS = 6
+MAX_PAGE = 512 * 1024
+MAX_REPORT = 192 * 1024
+CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]\Z")
+_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none';script-src 'unsafe-inline';style-src 'unsafe-inline';media-src blob:;connect-src 'none';img-src 'none';object-src 'none';base-uri 'none';form-action 'none'">
+<title>MixLab · Offline Show Conductor</title><style>
+:root{color-scheme:dark;--bg:#07131e;--card:#152b3b;--line:#506c7e;--mint:#a7ffdc;--muted:#bdd2df}
+*{box-sizing:border-box}body{margin:0;color:#effdff;background:radial-gradient(at 88% 0,#245445,var(--bg) 60%);font:15px/1.55 system-ui}
+main{max-width:1320px;margin:auto;padding:clamp(18px,4vw,56px)}
+h1{font-size:clamp(42px,6vw,79px);line-height:1.02;letter-spacing:-.06em}
+h2{font-size:22px;margin:0 0 12px}.tag{color:var(--mint);font-weight:900;letter-spacing:.18em;font-size:12px}
+p,small{color:var(--muted)}.layout{display:grid;grid-template-columns:minmax(310px,1fr) minmax(320px,1.15fr);gap:20px}
+.panel{border:1px solid var(--line);border-radius:20px;background:var(--card);padding:clamp(16px,2vw,28px);margin:18px 0}
+ol{margin:0;padding:0;list-style:none;display:grid;gap:11px}
+li{border:1px solid var(--line);border-radius:13px;background:#0e2534;padding:15px}
+li.selected{border-color:var(--mint);background:#1e493f}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.row>*{min-width:0}
+.row strong{flex:1;font-size:17px;overflow-wrap:anywhere}.description{font-size:12px}
+input,textarea{background:#0b2031;color:white;border:1px solid #748e9f;border-radius:9px;font:inherit;padding:9px}
+input[type=file]{max-width:100%;font-size:12px}input[type=number]{width:90px}
+textarea{width:100%;min-height:66px;resize:vertical}
+button{color:#fff;background:#28685b;border:1px solid #75a898;border-radius:11px;padding:10px 14px;cursor:pointer;font:inherit;font-weight:750}
+button:hover{background:#378877}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+button:disabled{opacity:.4}.accent{background:#98ffcf;color:#0c291e}
+audio{width:100%;margin:14px 0}.controls{display:flex;gap:9px;flex-wrap:wrap;margin:13px 0}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stat{padding:14px;border-radius:12px;border:1px solid #42796e;background:#10372f}
+.stat strong{display:block;font-size:clamp(19px,3vw,34px);color:var(--mint);overflow-wrap:anywhere}
+.stat small{font-size:11px}.hash{font:11px ui-monospace,monospace;overflow-wrap:anywhere}
+#chapters li{display:flex;gap:12px;align-items:center}#chapters button{flex:1;text-align:left}
+@media(max-width:940px){.layout{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:480px){.stats{grid-template-columns:1fr}}
+@media print{button,audio,input,textarea{display:none!important}body{background:white;color:black}.panel,li{background:white;color:black}}
+</style></head><body><main>
+<div class="tag">MIXLAB · COMPLETE REAL WAV SETS / PRIVATE MANUAL STAGE</div>
+<h1>Run the whole<br>show, not just a mix.</h1>
+<p>Arrange finished, source-verified local WAV sets into a single event.
+Attach each actual file on this computer, set planned gaps and operator
+notes, and manually advance when the room is ready. No automatic mixing,
+fade, timed playback, website requests, or master modifications.</p>
+<div class="stats"><div class="stat"><small>Planned show runtime</small><strong id="total">—</strong></div>
+<div class="stat"><small>Playing now</small><strong id="current">—</strong></div>
+<div class="stat"><small>Next cue</small><strong id="next-cue">—</strong></div></div>
+<div class="layout"><section class="panel"><h2>1 / Your approved WAV setlist</h2>
+<p>Every listed full set was source- and SHA-verified by MixLab at page creation.
+The browser checks attached file name, size and decoded duration, <strong>not SHA</strong>.
+Do not substitute unknown recordings. No music is embedded in this page.</p>
+<ol id="setlist"></ol></section>
+<section><div class="panel"><h2>2 / Playback & manually controlled changeover</h2>
+<audio id="player" controls preload="metadata"></audio>
+<div class="controls"><button id="previous" type="button">← Previous set</button>
+<button id="next" type="button">Arm next set →</button>
+<button id="cue-prev" type="button">← Prior chapter</button>
+<button id="cue-next" type="button">Next chapter →</button>
+<button id="stop" type="button">Stop / detach file</button>
+<button id="full" type="button">Fullscreen</button></div>
+<p id="player-status" role="status">Select an approved set and attach its WAV. Sets never auto-start or advance.</p>
+<ol id="chapters"></ol></div>
+<div class="panel"><h2>3 / Operator run-of-show</h2>
+<label>Planned show start (local clock) <input type="time" id="start"></label>
+<p>This timetable is a planning estimate from real WAV lengths and your
+manually chosen breaks. It is not a wall-clock controller or professional
+playback guarantee. No telemetry or persistent state.</p>
+<div class="controls"><button id="export" type="button" class="accent">Download source-locked run-of-show plan</button></div>
+<p id="export-status" role="status"></p>
+<p class="hash" id="fingerprint"></p>
+</div></section></div>
+</main><script type="application/json" id="mixlab-show-data">__DATA__</script><script>
+"use strict";
+const data=JSON.parse(document.getElementById("mixlab-show-data").textContent);
+const $=id=>document.getElementById(id),audio=$("player");
+const attached=new Map(),breaks=data.sets.map((_,i)=>i===data.sets.length-1?0:data.default_break);
+const notes=data.sets.map(()=>""),rows=[],chapterButtons=[];
+let active=-1,attachedURL=null;
+const time=seconds=>{const n=Math.max(0,Math.floor(seconds));return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(x=>String(x).padStart(2,"0")).join(":");};
+const clock=minutes=>String(Math.floor(minutes/60)%24).padStart(2,"0")+":"+
+ String(Math.floor(minutes%60)).padStart(2,"0");
+function drop(){audio.pause();audio.removeAttribute("src");audio.load();
+ if(attachedURL){URL.revokeObjectURL(attachedURL);attachedURL=null;}}
+function label(set){return set.label+" · "+time(set.duration_seconds);}
+function timetable(){
+ let minutes=Number($("start").value.slice(0,2))*60+Number($("start").value.slice(3));
+ if(!Number.isFinite(minutes))minutes=19*60;
+ const before=minutes;
+ data.sets.forEach((set,i)=>{
+  const start=minutes;minutes+=set.duration_seconds/60;
+  rows[i].schedule.textContent=clock(start)+"–"+clock(minutes)+
+   (i<data.sets.length-1?" · next break "+breaks[i]+" min":" · end");
+  if(i<data.sets.length-1)minutes+=breaks[i];
+ });
+ $("total").textContent=time((minutes-before)*60);
+}
+function info(){
+ const pos=Number.isFinite(audio.currentTime)?audio.currentTime:0;
+ if(active<0){$("current").textContent="No set armed";$("next-cue").textContent="Attach a local WAV";return;}
+ const set=data.sets[active],upcoming=set.chapters.find(ch=>ch.start_seconds>pos+.5);
+ $("current").textContent=set.label;
+ $("next-cue").textContent=upcoming?time(upcoming.start_seconds-pos):
+  active<data.sets.length-1?"Manual set change":"End of show";
+}
+function select(i){
+ if(i<0||i>=data.sets.length)return;
+ drop();active=i;
+ rows.forEach((row,n)=>row.card.classList.toggle("selected",n===i));
+ const file=attached.get(i);
+ if(file){attachedURL=URL.createObjectURL(file);audio.src=attachedURL;audio.load();
+  $("player-status").textContent="Local approved-size WAV attached: "+
+    data.sets[i].label+". PRESS PLAY manually. No auto-switch or crossfade.";
+  audio.onloadedmetadata=()=>{
+   if(!Number.isFinite(audio.duration)||
+       Math.abs(audio.duration-data.sets[i].duration_seconds)>.3){
+    drop();$("player-status").textContent="Decoded duration mismatch; refused this local file.";
+   }
+  };
+ }else $("player-status").textContent="Arm "+data.sets[i].label+
+   ": select its original completed local WAV below. No playback until you press Play.";
+ $("chapters").replaceChildren();chapterButtons.length=0;
+ data.sets[i].chapters.forEach((ch,n)=>{
+  const row=document.createElement("li"),button=document.createElement("button");
+  button.type="button";button.textContent=time(ch.start_seconds)+" · "+ch.kind+" · "+ch.label;
+  button.addEventListener("click",()=>{
+   if(!attached.get(active)||!audio.src){$("player-status").textContent="Attach the real WAV before cueing.";return;}
+   audio.currentTime=ch.start_seconds;info();
+  });row.append(button);$("chapters").append(row);chapterButtons.push(button);
+ });
+ $("previous").disabled=i===0;$("next").disabled=i===data.sets.length-1;info();
+}
+data.sets.forEach((set,i)=>{
+ const card=document.createElement("li"),heading=document.createElement("div");
+ heading.className="row";const name=document.createElement("strong");
+ name.textContent=(i+1)+". "+label(set);
+ const arm=document.createElement("button");arm.type="button";arm.textContent="Arm set";
+ arm.addEventListener("click",()=>select(i));heading.append(name,arm);
+ const schedule=document.createElement("p");schedule.className="description";
+ const fileInput=document.createElement("input");fileInput.type="file";fileInput.accept=".wav,audio/wav";
+ fileInput.setAttribute("aria-label","Attach permitted WAV for "+set.label);
+ const status=document.createElement("p");status.className="description";
+ status.textContent="No full WAV attached. Private WAV hash is reverified by CLI export, not browser.";
+ fileInput.addEventListener("change",()=>{
+  const file=fileInput.files?.[0];
+  if(!file)return;
+  if(file.name!==set.wav_name||file.size!==set.size_bytes){
+   attached.delete(i);
+   status.textContent="Rejected: local WAV filename/byte length does not match.";
+   if(i===active)select(i);
+   return;
+  }
+  attached.set(i,file);
+  status.textContent="Attached local "+file.name+
+   " (filename/bytes only; external SHA NOT checked by browser).";
+  if(i===active)select(i);
+ });
+ const breakline=document.createElement("label");breakline.className="row";
+ if(i<data.sets.length-1){
+  breakline.textContent="Planned changeover break (minutes) ";
+  const input=document.createElement("input");input.type="number";input.min="0";input.max="120";
+  input.step="1";input.value=String(breaks[i]);input.setAttribute("aria-label","Minutes between set "+(i+1)+" and next");
+  input.addEventListener("change",()=>{
+   const val=Number(input.value);if(!Number.isInteger(val)||val<0||val>120){input.value=String(breaks[i]);return;}
+   breaks[i]=val;timetable();
+  });breakline.append(input);
+ }
+ const note=document.createElement("textarea");note.maxLength=300;
+ note.setAttribute("aria-label","Private handoff cue note for "+set.label);
+ note.placeholder="Microphone intro, guest requests, lighting, safety cue (operator-only).";
+ note.addEventListener("input",()=>{notes[i]=note.value;});
+ card.append(heading,schedule,fileInput,status,breakline,note);
+ $("setlist").append(card);rows.push({card,schedule});
+});
+$("previous").addEventListener("click",()=>select(active-1));
+$("next").addEventListener("click",()=>select(active+1));
+$("stop").addEventListener("click",()=>{drop();$("player-status").textContent="Audio stopped and local file URL detached. Press Arm set to reattach.";info();});
+function chapterJump(direction){
+ if(active<0||!audio.src)return;
+ const set=data.sets[active],pos=audio.currentTime||0;
+ const matches=direction<0?set.chapters.filter(ch=>ch.start_seconds<pos-1):
+  set.chapters.filter(ch=>ch.start_seconds>pos+1);
+ const target=direction<0?matches.at(-1):matches[0];
+ if(target){audio.currentTime=target.start_seconds;info();}
+}
+$("cue-prev").addEventListener("click",()=>chapterJump(-1));
+$("cue-next").addEventListener("click",()=>chapterJump(1));
+$("full").addEventListener("click",()=>{
+ const result=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen?.();
+ if(result?.catch)result.catch(()=>{});
+});
+audio.addEventListener("timeupdate",info);audio.addEventListener("ended",()=>{
+ $("player-status").textContent="Completed current set; NEXT ONE WILL NOT START automatically. Check the room and arm it manually.";
+});
+audio.addEventListener("error",()=>{$("player-status").textContent="Browser failed to decode local WAV. Use a trusted offline native audio player.";});
+$("start").value=data.default_start;$("start").addEventListener("change",timetable);
+$("fingerprint").textContent="Source full SHA-256s: "+data.sets.map(s=>s.wav_sha256).join(" · ");
+$("export").addEventListener("click",()=>{
+ const plan={schema_version:1,kind:"mixlab-private-multi-set-show-v1",
+  source_sha256s:data.sets.map(s=>s.wav_sha256),
+  start_local:$("start").value,break_minutes:breaks.slice(),
+  private_notes:notes.slice(),private_only:true,
+  automatic_playback:false,blind_study:false};
+ if(!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(plan.start_local)){
+  $("export-status").textContent="Choose a real HH:MM local start time first.";return;
+ }
+ const blob=new Blob([JSON.stringify(plan,null,2)+"\n"],{type:"application/json"});
+ const url=URL.createObjectURL(blob),link=document.createElement("a");
+ link.href=url;link.download="mixlab-show-conductor.private.json";
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("export-status").textContent="Private SHA-bound set schedule downloaded. No audio/notes uploaded or auto-started.";
+});
+window.addEventListener("pagehide",drop);timetable();select(0);
+</script></body></html>"""
+
+
+def _sources(raw):
+    if len(raw) < 4 or len(raw) > MAX_SETS * 2 or len(raw) % 2:
+        raise ValueError("Supply 2–6 exact pairs SESSION_DIR FINAL_SET.wav in planned order")
+    result, paths = [], []
+    for i in range(0, len(raw), 2):
+        session = Path(raw[i]).absolute()
+        wav = Path(raw[i+1]).absolute()
+        if (wav.is_symlink() or session.is_symlink() or
+                any(p.is_symlink() for p in (wav, *wav.parents, session, *session.parents))):
+            raise ValueError("Actual private WAV/session cannot use symlinked ancestor folders")
+        metadata = build_chapters(session, wav)
+        st = wav.lstat()
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError("Actual finished set must be a regular local WAV")
+        label = wav.parent.name[:60]
+        if not label or any(ord(c)<32 for c in label):
+            raise ValueError("Use a named private finished set folder")
+        result.append({
+            "label": label, "wav_name": wav.name,
+            "wav_sha256": metadata["wav_sha256"],
+            "duration_seconds": metadata["duration_seconds"],
+            "size_bytes": st.st_size,
+            "chapters": [{"kind": c["kind"], "label": c["label"],
+                          "start_seconds": c["start_seconds"]}
+                         for c in metadata["chapters"]]
+        })
+        paths.append(wav)
+    if len(set(paths)) != len(paths) or len({s["wav_sha256"] for s in result}) != len(result):
+        raise ValueError("A real completed set cannot appear twice in the same stage lineup")
+    return result
+
+
+def prepare_show(new_private_html, *source_pairs, start="19:00", break_minutes=10):
+    if not isinstance(start, str) or not CLOCK.fullmatch(start):
+        raise ValueError("Planned show start must be HH:MM")
+    if type(break_minutes) is not int or not 0 <= break_minutes <= 120:
+        raise ValueError("Initial planned changeover break must be 0–120 minutes")
+    sources = _sources(source_pairs)
+    output = _private_html_destination(new_private_html)
+    if any(output.is_relative_to(Path(path).absolute().parent) or
+           output.is_relative_to(Path(path).absolute())
+           for path in source_pairs):
+        raise ValueError("Keep a standalone private show page outside the original WAV/session folders")
+    data = {"sets": sources, "default_start": start, "default_break": break_minutes}
+    json_blob = json.dumps(data, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    json_blob = json_blob.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+    page = _HTML.replace("__DATA__", json_blob).encode("utf-8")
+    if not 0 < len(page) < MAX_PAGE:
+        raise ValueError("Private offline show page is oversized")
+    with output.open("xb") as writer:
+        os.fchmod(writer.fileno(), 0o600)
+        writer.write(page)
+    return {"private_show_conductor": str(output), "completed_actual_sets": len(sources),
+            "actual_total_wav_seconds": round(sum(s["duration_seconds"] for s in sources), 3),
+            "source_sha256s": [s["wav_sha256"] for s in sources],
+            "audio_embedded": False, "automatic_advance": False,
+            "music_rights_proven": False}
+
+
+def print_show(plan_path, new_private_html, *source_pairs):
+    sources = _sources(source_pairs)
+    plan = _read_plan(plan_path)
+    if (not isinstance(plan, dict) or set(plan) !=
+            {"schema_version", "kind", "source_sha256s", "start_local",
+             "break_minutes", "private_notes", "private_only",
+             "automatic_playback", "blind_study"} or
+            type(plan["schema_version"]) is not int or plan["schema_version"] != 1 or
+            plan["kind"] != KIND or
+            plan["source_sha256s"] != [s["wav_sha256"] for s in sources] or
+            plan["private_only"] is not True or
+            plan["automatic_playback"] is not False or
+            plan["blind_study"] is not False or
+            not isinstance(plan["start_local"], str) or not CLOCK.fullmatch(plan["start_local"])):
+        raise ValueError("Operator show plan does not match all real SHA-verified sets")
+    breaks, notes = plan["break_minutes"], plan["private_notes"]
+    if (not isinstance(breaks, list) or len(breaks) != len(sources) or
+            not isinstance(notes, list) or len(notes) != len(sources)):
+        raise ValueError("Each real set requires one planned break and private note")
+    for idx, (b, note) in enumerate(zip(breaks, notes)):
+        if (type(b) is not int or not 0 <= b <= 120 or
+                (idx == len(breaks)-1 and b != 0) or
+                not isinstance(note, str) or len(note) > 300 or
+                any(ord(c)<32 and c not in "\n\t" for c in note)):
+            raise ValueError("Operator break or private note is invalid")
+    out = _private_html_destination(new_private_html)
+    if any(out.is_relative_to(Path(path).absolute().parent) or
+           out.is_relative_to(Path(path).absolute()) for path in source_pairs):
+        raise ValueError("Keep a printable private runbook outside the original music/session folders")
+    minute = int(plan["start_local"][:2])*60+int(plan["start_local"][3:])
+    fmt = lambda m: f"{int(m // 60)%24:02d}:{int(m%60):02d}"
+    body = []
+    for i, (src, b, note) in enumerate(zip(sources, breaks, notes)):
+        begin = minute
+        minute += src["duration_seconds"]/60
+        chapters = "".join(
+            "<li>"+html.escape(str(c["label"]),quote=True)+" · "+
+            html.escape(str(c["kind"]))+" · "+f"{c['start_seconds']:.1f}s"+"</li>"
+            for c in src["chapters"]
+        )
+        body.append(
+            "<section><h2>"+str(i+1)+". "+html.escape(src["label"],quote=True)+
+            "</h2><strong>"+fmt(begin)+"–"+fmt(minute)+"</strong>"+
+            "<p>Actual WAV runtime "+f"{src['duration_seconds']:.1f} s"+"</p>"+
+            "<small>Full WAV SHA-256: "+src["wav_sha256"]+"</small>"+
+            "<p class='note'>"+html.escape(note or "No operator cue",quote=True)+"</p>"+
+            "<ol>"+chapters+"</ol><p>Manual break after set: "+str(b)+" minutes</p></section>"
+        )
+        minute += b
+    page = ("""<!doctype html><html lang="en"><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none';style-src 'unsafe-inline';base-uri 'none';form-action 'none'">
+<title>MixLab · Private printed show</title><style>body{font:15px/1.5 system-ui;max-width:960px;margin:auto;padding:35px;color:#192e37}
+h1{font-size:40px}section{border-top:1px solid #9aa;padding:17px 0;break-inside:avoid}
+small{display:block;overflow-wrap:anywhere;font:11px ui-monospace,monospace}
+.note{white-space:pre-wrap;overflow-wrap:anywhere}
+@media print{body{padding:0}}</style><h1>Your private actual-WAV show</h1>
+<p>Manual planned times, not reliable physical event-clock or auto playback.
+Source rights, music quality and room response are not certified.</p>"""
+            + "".join(body) + "</html>").encode("utf-8")
+    if not 0 < len(page) < MAX_REPORT:
+        raise ValueError("Private printable show plan exceeds its size limit")
+    with out.open("xb") as writer:
+        os.fchmod(writer.fileno(), 0o600)
+        writer.write(page)
+    return {"private_printable_show": str(out), "exact_verified_wav_sets": len(sources),
+            "private_operator_notes": True, "audio_embedded": False,
+            "real_world_show_timing_proven": False}
+
+
+def main():
+    parser=argparse.ArgumentParser(
+        description="Plan and manually run several already finished SHA-verified private MixLab WAV sets")
+    sub=parser.add_subparsers(dest="action",required=True)
+    prepare=sub.add_parser("prepare",help="Create a NEW local manual stage HTML without embedding any audio")
+    prepare.add_argument("new_private_mixlab_html")
+    prepare.add_argument("session_and_wav_pairs",nargs="+")
+    prepare.add_argument("--start",default="19:00",help="Planned local HH:MM event start")
+    prepare.add_argument("--break-minutes",type=int,default=10)
+    printed=sub.add_parser("print",help="Print an exported source-bound operator schedule with private notes")
+    printed.add_argument("exported_private_operator_plan")
+    printed.add_argument("new_private_mixlab_report_html")
+    printed.add_argument("session_and_wav_pairs",nargs="+")
+    args=parser.parse_args()
+    try:
+        result=(prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
+                             start=args.start,break_minutes=args.break_minutes)
+                if args.action=="prepare" else
+                print_show(args.exported_private_operator_plan,
+                           args.new_private_mixlab_report_html,*args.session_and_wav_pairs))
+    except (ValueError, KeyError, TypeError, OSError, UnicodeError, wave.Error):
+        parser.exit(2,"MixLab Show Conductor: existing verified private WAVs, output, or operator schedule invalid.\n")
+    print(json.dumps(result,ensure_ascii=False,allow_nan=False))
+
+
+if __name__=="__main__":
+    main()
