@@ -97,7 +97,7 @@ def _inspect(folder):
     for i,row in enumerate(joins,start=1):
         if (not isinstance(row,dict) or
                 type(row.get("fade_seconds")) is not int or
-                row["fade_seconds"] not in (2,4,8,16) or
+                row["fade_seconds"] not in (0,2,4,8,16) or
                 not isinstance(row.get("from"),str) or
                 not isinstance(row.get("to"),str) or
                 len(row["from"])>60 or len(row["to"])>60):

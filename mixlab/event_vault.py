@@ -208,7 +208,7 @@ def _marathon_duration(folder, wav):
         if joined is not None:
             if (not isinstance(joined, list) or len(joined) != len(sections) - 1 or
                     any(type(v) is not int or v not in (
-                        2 * data["rate"], 4 * data["rate"],
+                        0, 2 * data["rate"], 4 * data["rate"],
                         8 * data["rate"], 16 * data["rate"]) for v in joined) or
                     data.get("fade_seconds_by_join") !=
                     [v // data["rate"] for v in joined]):

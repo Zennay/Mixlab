@@ -33,7 +33,8 @@ h1{font-size:clamp(38px,7vw,80px);letter-spacing:-.065em;line-height:1.04;margin
 h2{font-size:23px;margin:0 0 10px}.eyebrow{font-size:12px;letter-spacing:.17em;color:var(--mint);font-weight:900}
 p,small{color:var(--pale)}.panel{border:1px solid var(--line);border-radius:20px;padding:23px;background:var(--card);margin:22px 0}
 .controls{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}button{font:inherit;font-weight:850;cursor:pointer;color:white;border:1px solid #7399a5;border-radius:11px;background:#2b5967;padding:12px 16px}
-button:hover,button[aria-pressed=true]{background:#2d785c}button:focus-visible,textarea:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+button:hover,button[aria-pressed=true]{background:#2d785c}button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+select{background:#0c202f;color:white;border:1px solid var(--line);border-radius:9px;padding:10px;font:inherit}
 audio{width:100%;margin:16px 0}.counts{display:flex;gap:10px;flex-wrap:wrap}.counts span{border:1px solid var(--line);border-radius:11px;padding:9px 14px;color:var(--mint);font-weight:850}
 ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}li{display:flex;gap:15px;flex-wrap:wrap;align-items:center;border:1px solid #52707a;border-radius:11px;padding:13px}
 li[data-current=true]{border-color:var(--mint);background:#19483c}
@@ -63,13 +64,17 @@ play/pause. A and B are openly labelled, so this is NOT a blinded benchmark.</p>
 <section class="panel"><h2>Private DJ handoff notes</h2><p>Notes stay in this open page until
 you explicitly export them. There is no persistent storage or network access.</p>
 <textarea class="note" maxlength="300" id="note" aria-label="Current handoff operator note" placeholder="Personal energy, mix feel, equipment cue…"></textarea>
-<div class="controls"><button type="button" id="export">Export private rehearsal notes</button></div>
+<div class="controls"><button type="button" id="export">Export private rehearsal notes</button>
+<button type="button" id="export-picks">Export join-by-join master choices</button></div>
+<p id="decision-state" role="status">Make an explicit Original or Blend choice for every join to unlock a hybrid master render plan.</p>
+<p>After downloading your decisions: <code>python3 -m mixlab.marathon_reel_decisions PICKS.json ORIGINAL/marathon.wav BLEND/marathon.wav NEW_PRIVATE_FOLDER</code>. The CLI rechecks both full source WAV hashes, then asks for consent before rendering a new real PCM16 master. All-original choices can use your existing original master without new rendering.</p>
 <p class="hash" id="hashes"></p></section></main>
 <script id="join-data" type="application/json">__DATA__</script><script>
 "use strict";
 const data=JSON.parse(document.getElementById("join-data").textContent);
 const $=key=>document.getElementById(key),audio=$("audio");
 const notes=new Array(data.joins.length).fill("");
+const picks=new Array(data.joins.length).fill("");
 let current=0,version="original";
 $("counter").textContent=data.joins.length+" actual handoffs";
 $("runtime").textContent="up to "+data.window_seconds+"s per clip";
@@ -107,6 +112,15 @@ data.joins.forEach((join,index)=>{
  meta.textContent=join.fade_seconds+"s real fade · "+
    join.original.duration_seconds.toFixed(1)+"s excerpts";
  row.append(name,meta);
+ const selection=document.createElement("label");
+ selection.textContent="Final output at this handoff: ";
+ const select=document.createElement("select");
+ select.setAttribute("aria-label","Final real master decision for "+label(index));
+ for(const [value,title] of [["","Choose after listening"],["original","Keep exact original hard join"],["blend","Use actual approved crossfade"]]){
+  const option=document.createElement("option");option.value=value;option.textContent=title;select.append(option);
+ }
+ select.addEventListener("change",()=>{picks[index]=select.value;updateDecisions();});
+ selection.append(select);row.append(selection);
  for(const option of ["original","blend"]){
   const btn=document.createElement("button");btn.type="button";
   btn.textContent=option==="original"?"Hear original":"Hear actual blend";
@@ -115,6 +129,13 @@ data.joins.forEach((join,index)=>{
  }
  items.append(row);
 });
+function updateDecisions(){
+ const complete=picks.filter(x=>x==="original"||x==="blend").length;
+ $("decision-state").textContent=complete+" / "+data.joins.length+
+ " real-audio decisions selected. Export is only enabled when every handoff has a human choice.";
+ $("export-picks").disabled=complete!==data.joins.length;
+}
+updateDecisions();
 $("prev").addEventListener("click",()=>setPosition(current-1,version));
 $("next").addEventListener("click",()=>setPosition(current+1,version));
 $("original").addEventListener("click",()=>setPosition(current,"original"));
@@ -141,6 +162,27 @@ $("export").addEventListener("click",()=>{
  document.body.append(link);link.click();link.remove();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
  $("status").textContent="Private operator notes downloaded. No music or WAV bytes were exported.";
+});
+$("export-picks").addEventListener("click",()=>{
+ if(picks.some(value=>value!=="original"&&value!=="blend")){
+  updateDecisions();return;
+ }
+ notes[current]=$("note").value;
+ const rows=data.joins.map((join,index)=>({
+  index:index+1,from:join.from,to:join.to,
+  fade_seconds:join.fade_seconds,choice:picks[index],note:notes[index]
+ }));
+ const choices={
+  schema_version:1,kind:"mixlab-private-join-master-picks-v1",
+  original_sha256:data.original_sha256,blend_sha256:data.blend_sha256,
+  private_only:true,blind_study:false,joins:rows
+ };
+ const blob=new Blob([JSON.stringify(choices,null,2)+"\n"],{type:"application/json"});
+ const url=URL.createObjectURL(blob),link=document.createElement("a");
+ link.href=url;link.download="mixlab-marathon-join-master-picks.private.json";
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("decision-state").textContent="Human master decisions saved privately. No WAV bytes uploaded or exported; the real hybrid render requires both approved masters and a separate CLI confirmation.";
 });
 setPosition(0,"original",false);
 </script></body></html>"""
