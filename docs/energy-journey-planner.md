@@ -68,3 +68,25 @@ For staged operation, add `--manifest-only`; later render the exact immutable ap
 - `mixlab/journey.py`: private human notes, same-BPM bounded planner, checksum-bound proposal loading.
 - `mixlab/journey_board.py`: static offline plan editor and private JSON export.
 - `mixlab/playlist_studio.py --journey-plan`: explicit user acceptance and authoritative existing Studio rendering.
+
+## Extra: compare four full set journeys in one private offline screen
+
+If you're unsure whether your evening should slowly build, peak midway,
+peak late or cool down, compare **all four** ideas from the same manually
+annotated, SHA-bound source catalogue:
+
+~~~bash
+python3 -m mixlab.journey_compare /private/music /private/music/energy-notes.private.json /private/music/all-journeys.private.html --tracks 5 --prefer-tag house
+~~~
+
+Open the HTML locally. It shows four song sequences with their selected
+track names, manually annotated energy and the shape target. Select a
+route and press Export selected journey: a NEW private JSON plan is
+downloaded into the browser's Downloads folder. Move it into the music
+folder and pass that path to Playlist Studio with --journey-plan; or
+open it in mixlab.journey_board to reorder songs first.
+
+The comparison never loads audio or claims learned musical compatibility.
+Each option is deterministic, independently source-hash-bound, and
+requires same manually confirmed BPM for all selected songs. No existing
+files or private audio are modified. M1 listening gates remain open.

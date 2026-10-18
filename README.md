@@ -129,6 +129,20 @@ bestaande echte WAV-set. Er wordt **geen BPM of muzikaal oordeel automatisch
 uit muziek afgeleid**: dit is heuristische setplanning op menselijke notities.
 [Volledige handleiding](docs/energy-journey-planner.md).
 
+### Vier setopbouwen vergelijken in een offline browser
+
+Met dezelfde handmatige BPM- en energie-notities kun je vier complete
+trackvolgordes naast elkaar vergelijken, inclusief de voorgestelde
+energiecurve, en één route rechtstreeks exporteren als nieuw privéplan.
+
+~~~bash
+python3 -m mixlab.journey_compare /private/music /private/music/energy-notes.private.json /private/music/all-journeys.private.html --tracks 5
+~~~
+
+Open de HTML lokaal, kies een route en geef het gedownloade plan door
+aan Playlist Studio met --journey-plan. Geen automatische muziekanalyse
+of blind-luisterbewijs; zie de Energy Journey-handleiding.
+
 ### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
