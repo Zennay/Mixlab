@@ -221,8 +221,9 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
             "wav_sha256": digest,
             "showbook": showbook.name if showbook else None,
             "duration_seconds": frames / rate,
-            "sections": [{"label": section["label"], "start_seconds": section["start_seconds"]}
-                         for section in sections],
+            "sections": [{"label": section["label"], "start_seconds": section["start_seconds"],
+                          "fade_in_seconds": seconds_by_join[i - 1] if i else 0}
+                         for i, section in enumerate(sections)],
         }
         blob = json.dumps(viewer, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
         blob = blob.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
@@ -232,6 +233,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
             .replace(
                 "Each joint is an intentional, sample-exact boundary between completed sets. This is not a DJ-quality transition or evidence of listening preference.",
                 "Each new set starts at a real short crossfade in this independently rendered PCM16 WAV. Audition every join yourself; no musical quality or listener preference is proven.")
+            .replace('button.textContent=String(i+1)+". "+section.label;',
+                      'button.textContent=String(i+1)+". "+section.label+(section.fade_in_seconds?" · "+section.fade_in_seconds+"s fade-in":"");')
             .replace("__DATA__", blob)).encode("utf-8")
         if len(page) > MAX_HTML:
             raise ValueError("Private blended event page exceeds the output budget")
