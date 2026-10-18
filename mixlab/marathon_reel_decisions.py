@@ -124,9 +124,12 @@ def _write_private(path, data):
 def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
                      *, start=None, bundle=False, delivery=None,
                      bitrate_kbps=192, reels_output=None, reels_usb=False, operator_notes_usb=False,
-                     previous_hybrid_wav=None, read=input, write=print):
+                     previous_hybrid_wav=None, revision_reels_output=None,
+                     read=input, write=print):
     if type(reels_usb) is not bool or (reels_usb and reels_output is None):
         raise ValueError("Optional real hybrid handoff ZIP requires --reels-output")
+    if revision_reels_output is not None and previous_hybrid_wav is None:
+        raise ValueError("Actual revision comparison clips require a verified --previous-hybrid WAV")
     source, blend, choices, parent_sha = _validated_choices(
         plan_path, original_wav, blended_wav, previous_hybrid_wav)
     fade_choices = tuple(row["fade_seconds"] if row["choice"] == "blend" else 0
@@ -207,6 +210,17 @@ def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
             result["hybrid_reels_warning"] = (
                 "Approved actual hybrid master is retained; optional separate "
                 "short original-versus-hybrid PCM16 excerpts were not created.")
+    if revision_reels_output is not None:
+        try:
+            from .marathon_revision_reels import create_revision_audition
+            result["actual_revision_reels"] = create_revision_audition(
+                previous_hybrid_wav, result["continuous_wav"],
+                revision_reels_output, read=read, write=write)
+        except (ValueError, TypeError, KeyError, OSError, EOFError, wave.Error):
+            result["revision_reels_warning"] = (
+                "The real original, parent and newly completed revised WAV masters "
+                "were retained. Optional short changed-join revision WAV "
+                "comparisons could not be published.")
     result["human_selected_hard_joins"] = fade_choices.count(0)
     result["human_selected_crossfades"] = len(fade_choices) - fade_choices.count(0)
     result["private_operator_preference_only"] = True
@@ -221,6 +235,7 @@ def main():
     parser.add_argument("blended_marathon_wav")
     parser.add_argument("new_private_folder")
     parser.add_argument("--previous-hybrid", help="Required exact completed previous-hybrid WAV when a revision JSON names parent_hybrid_sha256")
+    parser.add_argument("--revision-reels-output", help="Optional NEW private folder with genuine short previous-vs-revision PCM16 WAVs for only changed joins, with another typed approval; requires --previous-hybrid")
     parser.add_argument("--start", help="Optional local HH:MM start")
     parser.add_argument("--reels-output", help="Optional NEW private real PCM16 original-versus-hybrid short WAV listening folder; extra typed approval")
     parser.add_argument("--reels-usb", action="store_true",
@@ -241,7 +256,8 @@ def main():
             bitrate_kbps=args.bitrate_kbps,
             reels_output=args.reels_output, reels_usb=args.reels_usb,
             operator_notes_usb=args.operator_notes_usb,
-            previous_hybrid_wav=args.previous_hybrid)
+            previous_hybrid_wav=args.previous_hybrid,
+            revision_reels_output=args.revision_reels_output)
     except (ValueError, TypeError, KeyError, OSError, UnicodeError,
             EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab hybrid: plan, approved real WAVs, explicit consent or new private destination invalid.\n")

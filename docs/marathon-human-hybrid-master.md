@@ -221,3 +221,44 @@ existing original, blended and parent hybrid masters are never overwritten.
 Print stage/notes and optional approved ZIP workflows remain available. This
 is manual local DJ curation, **not** proof of music rights or blinded
 independent sound quality.
+
+## 8. Audition only the REAL WAV joins changed by your revision
+
+After the new revised hybrid was actually consented and rendered, MixLab can
+compare **true PCM16 frames** from the previous hybrid and its exact
+descendant. Both complete source WAV SHA-256 receipts and private per-join
+decisions must match, including the new receipt's
+`parent_hybrid_sha256`. Unrelated/foreign mixes are refused.
+
+To build one new private review folder:
+
+```bash
+python3 -m mixlab.marathon_revision_reels \
+  /private/current-hybrid/marathon.wav \
+  /private/new-revised-hybrid/marathon.wav \
+  /private/revision-review
+```
+
+The command lists both full-WAV hashes, shows the number of changed
+boundaries, and requires another typed `yes`. It copies **only changed
+joins**: one short previous PCM16 excerpt and one short genuinely revised
+PCM16 excerpt, taken from each respective finished WAV's own frame offsets.
+Clips contain up to 8 seconds before the real boundary, its manually
+selected actual fade duration (which can be 0 for a hard cut), and 8 seconds
+after. Source frame count/rate, clip SHA-256 and revision ancestor hashes
+are recorded in `revision-clips.receipt.private.json`; all copied audio is
+streamed in bounded chunks (maximum 192 MiB). The originals are never
+re-rendered, resampled, modified, or uploaded.
+
+Open the new folder's local `index.html` beside its short WAVs to hear
+previous vs revised per changed boundary; keyboard 1/2 switches real versions
+and arrow keys navigate. This is **unblinded operator audition**, not a
+formal A/B preference experiment, and the source and clip SHA receipts prove
+only internal consistency, not rights, identity or musical quality.
+
+Instead, add `--revision-reels-output /private/revision-review` when
+running `mixlab.marathon_reel_decisions ... --previous-hybrid ...`. The
+same separately approved real full hybrid WAV is rendered first; the clip
+step then requests an **additional typed `yes`**. If it fails, only
+the optional new listening folder is rolled back. The full prior and newly
+approved revised WAV masters remain available.
