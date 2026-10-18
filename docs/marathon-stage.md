@@ -22,10 +22,19 @@ chapter player. It does not remix, analyze or upload music.
    the Stage doesn't automatically jump ahead.
 4. Enter a note and click **Mark cue**. Its position, section number,
    section label and text are stored **in this open browser tab only**.
-   Export `mixlab-marathon-cues.private.json` before leaving the page.
+   The Stage immediately shows the **next manual cue**, its annotated text,
+   parent event and countdown measured from the **actual WAV playhead**.
+   This cue countdown is informational: it never starts a new mix, skips
+   audio or triggers hardware.
+5. The ordered cue list has **Edit**, **Remove** and **Seek** for each marker.
+   Seek is available **only while the master is paused** to prevent
+   accidental timeline jumps during playback. Editing preserves a cue's
+   original WAV time and section. Removal requires browser confirmation.
+   Any local edit means you must export the log again.
+6. Export `mixlab-marathon-cues.private.json` before leaving the page.
    The JSON is bound to the exact master SHA-256, section sequence and duration.
    It contains no original source tracks, audio or file paths.
-5. To resume, import that private JSON using the Stage file picker.
+7. To resume, import that private JSON using the Stage file picker.
    A source or section mismatch is rejected; no network call is made.
 
 To print a stage-ready timecoded show sheet from the notes:
