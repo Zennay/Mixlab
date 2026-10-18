@@ -56,7 +56,7 @@ def _private_page(wav, receipt, encoded):
             .replace("Each joint is an intentional, sample-exact boundary between completed sets. This is not a DJ-quality transition or evidence of listening preference.",
                      "Chapter positions are based on the exact original PCM16 WAV. Encoder delay and browser seeking make compressed-audio cue positions approximate, not frame exact.")
             .replace("Exact continuous WAV SHA-256:", "Portable audio SHA-256:")
-            .replace('+" WAVE"', '+" '+("MP3" if encoded.suffix == ".mp3" else "WAVE")+'"')
+            .replace('<button id="cue" type="button">Download chapter CUE</button>', '')
             .replace("__DATA__", raw)).encode("utf-8")
     if len(page) > PAGE_LIMIT:
         raise ValueError("Private portable event player exceeds its page budget")
