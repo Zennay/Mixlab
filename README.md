@@ -449,6 +449,15 @@ om korte fragmenten rond alle overgangen uit de echte WAVs te kopiëren.
 Daarna is de luistermap meteen klaar. Het optionele luisterpakket faalt
 of wordt geweigerd zonder de twee afgewerkte masters weg te halen.
 
+Wil je de **korte echte PCM-overgangen** meenemen naar een andere computer,
+zonder de volledige originele en gemixte Marathon-WAVs te kopiëren? Maak de
+besloten `join-reels.private.zip` met
+`python3 -m mixlab.marathon_reels_transfer pack REELS_DIR REELS_DIR/join-reels.private.zip`
+en zet deze op de andere computer terug met
+`python3 -m mixlab.marathon_reels_transfer restore ZIP NEW_FOLDER`.
+De originele fragmentreceipts en WAVs worden opnieuw gecontroleerd.
+De ZIP bewijst geen externe identiteit of muziekrechten.
+
 ### Hoor de échte overgang zonder complete urenlange WAV te laden
 
 **Real Join Reels** maakt uit twee al officieel geverifieerde private
