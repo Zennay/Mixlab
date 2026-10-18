@@ -609,7 +609,13 @@ zonder DJ-notities, eventfoldernamen of de privé-aanvangstijd. Het echte
 WAV-bestand blijft onveranderd, brontracks worden niet meegeleverd en er
 wordt niets geüpload. Zonder `--include-encoded` bevat de ZIP alleen
 originele show-WAV plus opgeschoonde metadata/speler.
-[Portable Complete Show](docs/portable-complete-show-delivery.md).
+[Portable Complete Show](docs/portable-complete-show-delivery.md). Een eenmaal toegestaan
+privé-ZIP herstel je op een tweede offline apparaat via
+`python3 -m mixlab.show_restore ZIP NEW_PRIVATE_FOLDER`. De applicatie
+controleert daarna alle echte WAV-/metadata-SHA's opnieuw en accepteert
+alleen de exact opnieuw gegenereerde, opgeschoonde officiële HTML-spelers;
+gewijzigde HTML uit een ZIP wordt niet vertrouwd. Geen automatische
+muziektoestemming of internetverbinding.
 
 ## Implemented
 
