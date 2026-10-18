@@ -266,7 +266,10 @@ def publish_choice(choice_json, original_wav, blend_wav, *,
         raise ValueError("Human approval for this exact private master delivery is required")
     # One post-confirmation admission prevents packaging an accidental changed source
     # after the user reviewed the printed SHA. The downstream producer revalidates too.
-    _pair(original, blend)
+    _, (rechecked_original, rechecked_blend), _, _ = _pair(original, blend)
+    if (rechecked_original["wav_sha256"] != r0["wav_sha256"] or
+            rechecked_blend["wav_sha256"] != r1["wav_sha256"]):
+        raise ValueError("Original reviewed master changed after operator consent")
     result = {"chosen_master": choice["selected_master"], "selected_wav": str(selected),
               "selected_sha256": (r0 if selected == original else r1)["wav_sha256"],
               "private": True, "rights_proven": False, "blind_preference_proven": False}
