@@ -76,3 +76,38 @@ recipient holds the rights to the music.
 Keep this ZIP only on authorized private devices with a suitable player.
 If a compressed format is not installed or optional encoding fails, the
 canonical, independently approved `show.wav` is still available.
+
+## Restore an approved private Show ZIP to a second offline device
+
+After moving the original `show.private.zip` to another authorized offline
+computer, choose an entirely **new** private destination directory outside
+music sources, symlinks and any Git checkout:
+
+```bash
+python3 -m mixlab.show_restore \
+  /private/usb/show.private.zip \
+  /private/restored-complete-show
+```
+
+The restore command admits only the exact official flat WAV/source-receipt/
+offline-player/SHA-manifest inventory and, optionally, one previously
+approved local MP3 or FLAC with its corresponding receipt/player. It rejects
+path traversal, duplicate entries, symlinks, directories, compressed entries,
+extra operator files, oversized individual files, mismatched SHA-256s and
+source mutation while streaming. A typed **`yes`** is needed before any
+files are written into the new private 0700 folder. Original ZIP and sources
+are never modified, and an incomplete restore removes only the new files.
+
+**Executable HTML from the ZIP is not implicitly trusted.** Once the entire
+restored `show.wav` is re-hashed and validated against its official frame
+receipt, MixLab reconstructs the canonical sanitized receipt/player from the
+installed application templates and compares them byte-for-byte against
+what arrived. For the optional encoded audio it also verifies its actual
+SHA-bound receipt and canonical HTML player. Any edited, non-sanitized or
+unexpected browser code is refused before reporting a successful restore.
+
+The restored folder contains the actual complete WAV, a safe offline
+`index.html`, the redacted source receipt and archive manifest, and any
+separately selected portable encoded format. Full WAV hash proves internal
+consistency only: **the archive is unsigned and does not certify who sent it
+or whether the recipient has legal music-use rights.**
