@@ -142,12 +142,17 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
 def build_playlist_studio(music_directory, output_manifest, new_session,
                           *, read=input, write=print, beats=16,
                           timeout_seconds=600, partition="development",
-                          resume=False, manifest_only=False, ideas=False):
+                          resume=False, manifest_only=False, ideas=False,
+                          full_set_wav=None, family="bass_swap", styles=()):
     """Run the complete local product workflow after explicit human annotation."""
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
     if manifest_only and ideas:
         raise ValueError("--ideas needs imported private audio; it cannot run with --manifest-only")
+    if manifest_only and full_set_wav is not None:
+        raise ValueError("--full-set-wav requires rendering and cannot use --manifest-only")
+    if full_set_wav is None and styles:
+        raise ValueError("--style requires --full-set-wav; no set is exported otherwise")
     source, manifest, destination = _check_paths(
         music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
@@ -215,6 +220,16 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 destination / "sources" / "transition-ideas.html")
         except (ValueError, OSError, TypeError, KeyError) as exc:
             warnings.append("Optional cue idea board unavailable: " + str(exc))
+    instant_set = None
+    if full_set_wav is not None:
+        try:
+            # Explicit family selection, canonical WAV exporter, real PCM
+            # chapter player; never masquerade a suggested style as AI ranking.
+            from .instant_set import render_instant_set
+            instant_set = render_instant_set(destination, full_set_wav,
+                                              family=family, styles=styles)
+        except (ValueError, OSError, TypeError, KeyError) as exc:
+            warnings.append("Private Studio exists, but optional complete-set WAV failed: " + str(exc))
     with manifest.open("r", encoding="utf-8") as reader:
         summary = json.load(reader)
     payload = {"ready": True, "private_source_manifest": str(manifest),
@@ -222,6 +237,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                "visual_cue_editor": str(editor) if editor else None,
                "set_composer": str(composer) if composer else None,
                "transition_idea_board": str(idea_page) if idea_page else None,
+               "instant_complete_set": instant_set,
                "tracks": len(summary["tracks"]), "transition_pairs": len(summary["pairs"]),
                "warnings": warnings, "offline": True,
                "automatic_tempo_matching": False, "music_preference_proven": False}
@@ -246,6 +262,13 @@ def main():
                         help="Render a new private session from an existing unchanged source manifest")
     parser.add_argument("--ideas", action="store_true",
                         help="Suggest RMS-based manual-grid cue options and prepare an offline review board")
+    parser.add_argument("--full-set-wav",
+                        help="Optionally publish a complete private WAV and offline player in the same run")
+    parser.add_argument("--family", default="bass_swap",
+                        choices=("baseline", "bass_swap", "echo_exit", "hard_cut"),
+                        help="Manually chosen style for all complete-set transitions")
+    parser.add_argument("--style", action="append", default=[], metavar="PAIR:FAMILY",
+                        help="Per-transition override for instant complete-set export; repeatable")
     args = parser.parse_args()
     try:
         result = build_playlist_studio(
@@ -253,7 +276,8 @@ def main():
             args.new_session_directory, beats=args.beats, partition=args.partition,
             timeout_seconds=args.timeout_seconds,
             resume=args.resume, manifest_only=args.manifest_only,
-            ideas=args.ideas)
+            ideas=args.ideas, full_set_wav=args.full_set_wav,
+            family=args.family, styles=args.style)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
