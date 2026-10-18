@@ -530,6 +530,16 @@ hybride audiomaster. Restore genereert daarop de printbare cue-sheet en
 offline stagepagina opnieuw. Geen muziek in de notitie-ZIP; geen privénotities
 automatisch in de reguliere muziekexport.
 
+Hetzelfde offline podiumscherm kan nu bij een repetitie de **werkelijke
+afspeelpositie markeren** wanneer je een overgang hoort, met het verschil ten
+opzichte van de SHA-/receipt-gebonden join. Expliciete export geeft alleen
+een privaat JSON-journal; met
+`python3 -m mixlab.marathon_stage_journal WAV LOG NEW_REPORT_HTML`
+ontstaat een **printbaar privé-repetitieverslag** naast de reeds geverifieerde
+hybride WAV. Dit meet alleen handmatige browserafspeelposities en claimt
+geen echte podiumtijden, luisterpreferentie of muziekrechten.
+
+
 
 
 ## Implemented
