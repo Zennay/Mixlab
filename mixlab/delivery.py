@@ -111,9 +111,9 @@ def export_delivery(session, verified_wav, new_compressed,
     ffprobe, ffmpeg = _checked_tools()
     ffmpeg_args = [
         ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
-        "-threads", "2", "-i", str(source),
+        "-i", str(source),
         "-map", "0:a:0", "-vn", "-sn", "-dn", "-map_metadata", "-1",
-        "-c:a", codec
+        "-c:a", codec, "-threads", "2"
     ]
     if suffix == ".mp3":
         ffmpeg_args += ["-b:a", f"{bitrate_kbps}k"]
@@ -133,6 +133,9 @@ def export_delivery(session, verified_wav, new_compressed,
         info = encoded.lstat()
         if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_ENCODE_BYTES:
             raise ValueError("Encoded private delivery exceeds 512 MiB or is empty")
+        # FFmpeg commonly creates mode 0644 files according to process umask;
+        # restrict the inode BEFORE hard-linking into the visible output folder.
+        os.chmod(encoded, 0o600)
         format_info = _probe_encoded(
             ffprobe, encoded, expected_codec, chapters["duration_seconds"], timeout_seconds)
         # Refuse publish if the source WAV changed during the external encoder.
