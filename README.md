@@ -366,6 +366,14 @@ python3 -m mixlab.marathon_sequence render /private/mixlab-marathon-sequence.pri
   /private/set-c/session /private/set-c/final.wav --bundle
 ```
 
+Voor **echt gerenderde handmatige crossfades per overgang** kies je in de
+offline editor *Separate manually blended WAV* en de gewenste 2/4/8/16 seconden
+per inkomende set. Voeg bij de bovenstaande `render`-opdracht toe:
+`--blend-output /private/nieuwe-aparte-crossfade-marathon`. MixLab bewaart
+de originele complete WAV, vraagt daarna **opnieuw expliciete goedkeuring**,
+en gebruikt de bestaande PCM16-blendengine om een tweede WAV te schrijven.
+Ook als de extra crossfade-render niet lukt, blijft het origineel behouden.
+
 Geen muziek wordt geüpload. Zowel bronbestanden als sessiereceipts worden
 opnieuw gecontroleerd; handmatige toestemming voor de uiteindelijke nieuwe
 WAV blijft verplicht. Muzikale kwaliteit en rechten voor openbaar gebruik
