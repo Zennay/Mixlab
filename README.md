@@ -564,7 +564,12 @@ expliciet gedownloade privé-JSON genereert
 `python3 -m mixlab.show_conductor print ...` na hercontrole van alle
 volledige WAV-SHAs een afdrukbaar evenementdraaiboek. Geen automatische
 crossfade, cloud, browseropslag of garantie voor professioneel livegeluid.
-[Show Conductor-handleiding](docs/offline-multi-set-show-conductor.md).
+[Show Conductor-handleiding](docs/offline-multi-set-show-conductor.md). Eerder opgeslagen
+showplanning terughalen zonder opnieuw pauzes/notities in te voeren kan nu
+via `mixlab.show_conductor resume OLD_PRIVATE_PLAN NEW_MIXLAB_HTML DEZELFDE_SESSION_WAV_PAREN`:
+volledige WAV- en bron-SHAs worden opnieuw gecontroleerd, alle menselijke
+operator-keuzes ingevuld en het plan blijft lokaal bewerkbaar.
+
 
 ### Één echt showbestand uit meerdere goedgekeurde privé-sets
 

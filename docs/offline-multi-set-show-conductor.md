@@ -91,3 +91,26 @@ recordings, an operator and an appropriate live sound setup. Existing M1
 beat/downbeat, key/stems and independent blinded listening requirements
 remain open; a SHA verifies internal provenance rather than music rights or
 musical superiority.
+
+## Resume a saved show without re-entering operator notes or breaks
+
+To return to a show plan you explicitly downloaded earlier, use:
+
+```bash
+python3 -m mixlab.show_conductor resume \
+  /private/event-operations/mixlab-show-conductor.private.json \
+  /private/event-operations/mixlab-resumed-show.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav
+```
+
+This creates a **new offline stage HTML** with the original human-noted
+planned HH:MM start, per-set 0–120 minute gaps and private cue notes already
+filled in. It does **not** automatically start music or use browser storage.
+The exact original order and complete WAV/source receipt SHA fingerprints are
+fully revalidated against the saved plan, with the same canonical source
+checks as initial creation. A changed/replaced WAV, foreign JSON, missing
+original session, symlinked source or unsafe output path is rejected. You
+can continue editing and explicitly download an updated SHA-bound show plan,
+then use that exact revision with `show_conductor print` or
+`show_master`. The old plan, source sessions and WAVs stay untouched.
