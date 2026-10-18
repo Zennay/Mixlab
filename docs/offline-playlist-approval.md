@@ -35,6 +35,19 @@ Open `/private/music/playlist-approval.private.html` lokaal.
 Je ziet alle geselecteerde tracks in de **reeds voorgestelde volgorde**,
 met hun handmatig geverifieerde BPM en private bronbinding.
 
+**Meerdere originele nummers tegelijk koppelen:** gebruik bovenaan het
+formulier onder *Song rights and human-verified grid* de nieuwe
+**Attach original playlist music in one step**-bestandskiezer. Kies jouw
+originele lokale nummers (maximaal 20 selectie-items; een playlist bevat
+2–11 nummers). MixLab zoekt de exacte bronbestandsnaam en controleert
+**ieder volledig bestand** lokaal tegen de SHA-256 van de gekozen
+playlist. Alleen een geslaagde inhoudscontrole ontgrendelt de
+bijbehorende oorspronkelijke audiospeler en twee-deck-voorluistering.
+De pagina meldt welke bronbestanden wel of niet gekoppeld konden
+worden. Niets wordt automatisch afgespeeld, verzonden of aan
+muziekrechten toegekend. De bestaande bestandskiezer per nummer blijft
+beschikbaar.
+
 **Lokaal beluisteren in hetzelfde formulier:** kies per track de originele
 muziekfile via de browser. De ingesloten afspeelknoppen gebruiken een
 tijdelijke lokale blob-URL: er gaat geen audio naar een server. De browser

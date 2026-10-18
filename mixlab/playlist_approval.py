@@ -70,7 +70,17 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 <span id="bpm" class="meta"></span></label><label for="beats">Transition length, in beats (1–64)
 <input id="beats" type="number" min="1" max="64" step="1" value="16" required></label></div>
 <p class="meta">Use the same --beats value when starting Playlist Studio. Changing this value changes required cue spacing.</p></section>
-<section class="card"><h2>Song rights and human-verified grid</h2><div id="tracks"></div></section>
+<section class="card"><h2>Song rights and human-verified grid</h2>
+<p class="meta">Optional: select up to 11 original songs at once.
+Every full SHA-256 must match the exact planned source before either
+individual cue listening or two-deck rehearsals can use a file.
+You may still choose each source individually.</p>
+<label for="bulk-sources">Attach original playlist music in one step
+<input id="bulk-sources" type="file" multiple
+accept=".wav,.mp3,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff,audio/*"></label>
+<p id="bulk-status" class="feedback" role="status" aria-live="polite">
+No originals attached in bulk.</p>
+<div id="tracks"></div></section>
 <section class="card"><h2>Transitions · exact manual start positions</h2><p>The outgoing cue must not backtrack into the previous incoming transition, whose end is B cue + transition duration.</p><div id="pairs"></div></section>
 <section class="card"><h2>Consent to create a private source manifest</h2>
 <label class="check"><input type="checkbox" id="rights-ack">
@@ -215,33 +225,35 @@ function auditionFor(track,index,downbeatInput){
  const status=node("p","file-note","No full original SHA-256 verified. Local player and two-deck rehearsal stay locked until verification.");
  status.setAttribute("role","status");status.setAttribute("aria-live","polite");
  let previousUrl=null,selectionEpoch=0;
- file.onchange=async()=>{
+ async function attachOriginal(selected){
   const epoch=++selectionEpoch;
   stopRehearsal("Preview stopped because a local source was changed.");
-  const selected=file.files&&file.files[0];
   player.pause();player.removeAttribute("src");player.load();
   if(previousUrl){URL.revokeObjectURL(previousUrl);previousUrl=null}
   if(!selected)return;
   if(selected.name!==track.path||selected.size<=0||selected.size>512*1024*1024){
    status.textContent="Choose the expected local source filename (max 512 MiB).";
-   file.value="";return;
+   return false;
   }
   file.disabled=true;
   try{
    const observed=await sha256LocalFile(selected,percent=>{
     status.textContent="Verifying complete original source SHA-256: "+percent+"% · no upload";
    });
-   if(epoch!==selectionEpoch)return;
+   if(epoch!==selectionEpoch)return false;
    if(observed!==track.sha256){
     status.textContent="Rejected: full source SHA-256 differs from the approved plan. Playback stays locked.";
-    return;
+    return false;
    }
    previousUrl=URL.createObjectURL(selected);player.src=previousUrl;
    status.textContent="Verified exact full source SHA-256. Press Play and mark cues yourself.";
+   return true;
   }catch(_error){
    status.textContent="Local source could not be SHA-verified. Playback remains locked.";
+   return false;
   }finally{file.disabled=false;file.value="";}
- };
+ }
+ file.onchange=()=>attachOriginal(file.files&&file.files[0]);
  player.onerror=()=>{status.textContent="This browser cannot decode that local audio format; use a separate player and type the seconds manually."};
  const buttons=node("div","buttons");
  function action(name,fn){
@@ -267,7 +279,7 @@ function auditionFor(track,index,downbeatInput){
   player.currentTime=Math.min(length,player.currentTime+4*60/track.bpm);
  });
  panel.append(buttons,status);
- auditions[index]={player,getUrl:()=>previousUrl};
+ auditions[index]={player,getUrl:()=>previousUrl,attach:attachOriginal};
  return panel;
 }
 function build(){
@@ -371,7 +383,33 @@ function exportApproval(){
   show("A NEW private approval file was exported. Move it beside the original music and use --approval-file with --journey-plan in Playlist Studio.",false);
  }catch(err){show(err.message||"Check the supplied manual metadata.",true)}
 }
-build();el("save").addEventListener("click",exportApproval);
+build();
+el("bulk-sources").addEventListener("change",async function(){
+ const picker=this,status=el("bulk-status");
+ const files=Array.from(picker.files||[]);
+ if(!files.length)return;
+ if(files.length>20){
+  status.textContent="Select at most 20 files per batch; playlist has at most 11 songs.";
+  picker.value="";return;
+ }
+ picker.disabled=true;let verified=0,rejected=0;
+ const seen=new Set();
+ try{
+  for(const file of files){
+   const index=tracks.findIndex(track=>track.path===file.name);
+   if(index<0||seen.has(file.name)){
+    rejected++;continue;
+   }
+   seen.add(file.name);
+   status.textContent="Checking original "+file.name+" ("+
+    (verified+rejected+1)+"/"+files.length+") locally…";
+   if(await auditions[index].attach(file))verified++;else rejected++;
+  }
+  status.textContent="Verified "+verified+" original song(s), rejected "+
+   rejected+". You can now manually audition and mark cues. No upload.";
+ }finally{picker.disabled=false;picker.value="";}
+});
+el("save").addEventListener("click",exportApproval);
 </script>
 </body></html>
 """
