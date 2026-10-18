@@ -76,7 +76,7 @@ def _overlap(reader, writer, last_frame_start, next_frame_start, fade_frames):
 
 
 def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
-                             fade_seconds=8, start=None, bundle=False,
+                             fade_seconds=8, join_fades=None, start=None, bundle=False,
                              read=input, write=print):
     """Create a new continuous WAV with actual manually chosen crossfades.
 
@@ -86,6 +86,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
     """
     if type(fade_seconds) is not int or fade_seconds not in CHOICES:
         raise ValueError("Choose exactly 2, 4, 8 or 16 seconds of crossfade")
+    if join_fades is not None and fade_seconds != 8:
+        raise ValueError("Choose a common fade OR a per-boundary sequence, not both")
     if type(bundle) is not bool:
         raise ValueError("Portable bundle option must be boolean")
     original = Path(approved_marathon_wav).absolute()
@@ -98,11 +100,22 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
         raise ValueError("Only original sample-preserving Marathon receipts may be blended")
 
     rate = source_receipt["rate"]
-    fade = fade_seconds * rate
     original_sections = source_receipt["sections"]
-    if any(section["frames"] <= fade * 2 for section in original_sections):
-        raise ValueError("Every approved set must be longer than twice the chosen overlap")
-    frames = source_receipt["frames"] - (count - 1) * fade
+    if join_fades is None:
+        seconds_by_join = (fade_seconds,) * (count - 1)
+    else:
+        if (not isinstance(join_fades, (list, tuple)) or
+                len(join_fades) != count - 1 or
+                any(type(v) is not int or v not in CHOICES for v in join_fades)):
+            raise ValueError("Specify exactly one 2, 4, 8 or 16-second fade per actual event boundary")
+        seconds_by_join = tuple(join_fades)
+    overlaps = tuple(seconds * rate for seconds in seconds_by_join)
+    for i, section in enumerate(original_sections):
+        incoming = overlaps[i - 1] if i else 0
+        outgoing = overlaps[i] if i + 1 < count else 0
+        if section["frames"] <= incoming + outgoing:
+            raise ValueError("An approved set is too short for its selected adjacent fades")
+    frames = source_receipt["frames"] - sum(overlaps)
     if frames <= 0 or frames * 4 > MAX_BYTES:
         raise ValueError("The private blended WAV exceeds its bounded duration or size")
     if start is not None:
@@ -111,7 +124,9 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
             raise ValueError("Planned local start must be HH:MM")
     dest = _new_folder(new_private_folder, [original.parent])
     write("MixLab private transition editing: ORIGINAL approved continuous WAV only.")
-    write(f"Real frame-preserving {fade_seconds}-second gain-complementary crossfade at {count - 1} event boundaries.")
+    for i, seconds in enumerate(seconds_by_join):
+        write(f"  Join {i + 1}: {original_sections[i]['label']} -> {original_sections[i+1]['label']}: {seconds} seconds")
+    write("Each join uses a real, bounded gain-complementary PCM16 crossfade.")
     write("No BPM, pitch, phrase, harmonic, loudness or sound-quality certification.")
     write("The separate new WAV still needs a real listening review and appropriate rights.")
     if read("Type yes to render this exact private version: ").strip() != "yes":
@@ -129,9 +144,9 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
                 "index": i + 1,
                 "label": section["label"],
                 "source_sha256": section["source_sha256"],
-                "start_frame": section["start_frame"] - i * fade,
+                "start_frame": section["start_frame"] - sum(overlaps[:i]),
                 "frames": section["frames"],
-                "start_seconds": round((section["start_frame"] - i * fade) / rate, 5),
+                "start_seconds": round((section["start_frame"] - sum(overlaps[:i])) / rate, 5),
             })
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(original, flags)
@@ -151,13 +166,14 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
                         writer.setframerate(rate)
                         writer.setnframes(frames)
                         for i, section in enumerate(original_sections):
-                            from_frame = section["start_frame"] + (fade if i else 0)
-                            to_frame = section["start_frame"] + section["frames"] - (
-                                fade if i + 1 < count else 0)
+                            incoming = overlaps[i - 1] if i else 0
+                            outgoing = overlaps[i] if i + 1 < count else 0
+                            from_frame = section["start_frame"] + incoming
+                            to_frame = section["start_frame"] + section["frames"] - outgoing
                             _copy_exact(src, writer, from_frame, to_frame - from_frame)
                             if i + 1 < count:
                                 _overlap(src, writer, to_frame,
-                                         original_sections[i + 1]["start_frame"], fade)
+                                         original_sections[i + 1]["start_frame"], outgoing)
             if stamp != _meta_key(os.fstat(stream.fileno())):
                 raise ValueError("Source WAV changed during private transition render")
         # Re-read the immutable original after processing so the admitted
@@ -177,8 +193,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
             "frames": frames,
             "duration_seconds": frames / rate,
             "sections": sections,
-            "overlap_frames": fade,
-            "fade_seconds": fade_seconds,
+            "overlap_frames_by_join": list(overlaps),
+            "fade_seconds_by_join": list(seconds_by_join),
             "transition_curve": "complementary-linear-pcm16-v1",
             "no_automatic_tempo_matching": True,
             "sample_preserving_joins": False,
@@ -238,7 +254,7 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
         "source_marathon_sha256": source_receipt["wav_sha256"],
         "wav_sha256": digest,
         "joined_events": count,
-        "fade_seconds": fade_seconds,
+        "fade_seconds_by_join": list(seconds_by_join),
         "duration_seconds": frames / rate,
         "offline": True,
         "new_audio_rendered": True,
@@ -262,14 +278,18 @@ def main():
         description="Actually render manual 2–16s crossfades between original SHA-verified finished event sets")
     parser.add_argument("original_marathon_wav")
     parser.add_argument("new_private_folder")
-    parser.add_argument("--fade-seconds", type=int, choices=CHOICES, default=8)
+    fades = parser.add_mutually_exclusive_group()
+    fades.add_argument("--fade-seconds", type=int, choices=CHOICES, default=8,
+                       help="One duration used at every event boundary")
+    fades.add_argument("--join-fades", help="Comma-separated seconds for EACH join, e.g. 16,4,8")
     parser.add_argument("--start", help="Optional local show start HH:MM")
     parser.add_argument("--bundle", action="store_true", help="Also create optional private USB ZIP")
     args = parser.parse_args()
     try:
+        per_join = tuple(int(item.strip()) for item in args.join_fades.split(",")) if args.join_fades is not None else None
         result = publish_blended_marathon(args.original_marathon_wav, args.new_private_folder,
-                                         fade_seconds=args.fade_seconds, start=args.start,
-                                         bundle=args.bundle)
+                                         fade_seconds=args.fade_seconds, join_fades=per_join,
+                                         start=args.start, bundle=args.bundle)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab blend: source or explicit approval failed; no blended output was published.\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))
