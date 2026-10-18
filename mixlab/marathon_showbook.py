@@ -110,7 +110,7 @@ payload.sections.forEach((sec,i)=>{
  const title=document.createElement("div");title.className="title";
  title.textContent=String(i+1)+". "+sec.label;
  const meta=document.createElement("div");meta.className="meta";
- meta.textContent="Duration "+fmt(sec.duration_seconds)+" • starts at "+fmt(sec.start_seconds);
+ meta.textContent="Duration "+fmt(sec.duration_seconds)+" • starts at "+fmt(sec.start_seconds)+(sec.fade_in_seconds?" • "+sec.fade_in_seconds+"s manually rendered fade-in":"");
  const textarea=document.createElement("textarea");textarea.maxLength=1000;
  textarea.placeholder="Manual cue / handoff notes for this event";textarea.setAttribute("aria-label","Notes for event "+String(i+1));
  notes.push(textarea);center.append(title,meta,textarea);
@@ -160,11 +160,16 @@ def create_runbook(marathon_wav, new_html, *, start=None):
     sections = receipt["sections"]
     if len(sections) != count:
         raise ValueError("Marathon sections differ from actual verified WAV")
+    joined = receipt.get("overlap_frames_by_join")
+    if joined is None:
+        old = receipt.get("overlap_frames", 0)
+        joined = [old] * (len(sections) - 1)
     entries = []
     for i, section in enumerate(sections):
         end = sections[i+1]["start_frame"] if i + 1 < count else receipt["frames"]
         entries.append({"label": section["label"], "start_seconds": section["start_frame"] / receipt["rate"],
-                        "duration_seconds": (end - section["start_frame"]) / receipt["rate"]})
+                        "duration_seconds": (end - section["start_frame"]) / receipt["rate"],
+                        "fade_in_seconds": joined[i - 1] / receipt["rate"] if i else 0})
     record = {"schema_version": 1, "wav_sha256": receipt["wav_sha256"],
               "duration_seconds": duration, "default_start": start, "sections": entries}
     serialized = json.dumps(record, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
