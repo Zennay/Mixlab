@@ -394,7 +394,7 @@ def prepare_page(new_private_html, *source_pairs):
 
 
 def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
-                     blend_output=None, review_output=None, bundle=False, delivery=None,
+                     blend_output=None, review_output=None, reels_output=None, bundle=False, delivery=None,
                      bitrate_kbps=192, read=input, write=print):
     pairs, items = _admit_pairs(source_pairs)
     plan = _read_plan(plan_path)
@@ -414,7 +414,7 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
     if mode not in ("hard_cuts", "manual_crossfades") or type(fades) is not list:
         raise ValueError("Unsupported manual transition plan")
     if mode == "hard_cuts":
-        if fades or blend_output is not None or review_output is not None:
+        if fades or blend_output is not None or review_output is not None or reels_output is not None:
             raise ValueError("Hard-join plans do not accept a separate blended output")
     else:
         if blend_output is None or len(fades) != len(order) - 1 or any(
@@ -468,6 +468,24 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
                     "Both original and blended WAVs remain intact; an optional "
                     "private actual-master review page could not be generated. "
                     "Run mixlab.marathon_master_review prepare manually.")
+    if reels_output is not None:
+        if result["blended_marathon"] is None:
+            result["join_reels_warning"] = (
+                "No separate approved blended WAV was published; the genuine "
+                "original/blend handoff excerpts could not be created.")
+        else:
+            try:
+                from .marathon_join_reels import create_join_reels
+                result["actual_join_reels"] = create_join_reels(
+                    original["continuous_wav"],
+                    result["blended_marathon"]["continuous_wav"],
+                    reels_output, read=read, write=write)
+            except (ValueError, TypeError, KeyError, OSError, wave.Error, EOFError):
+                result["join_reels_warning"] = (
+                    "Actual original and approved blended WAVs are retained. "
+                    "The optional source-bound short WAV listening room was "
+                    "not published; retry independently with "
+                    "python3 -m mixlab.marathon_join_reels.")
     return result
 
 
@@ -485,6 +503,7 @@ def main():
     publish.add_argument("--start", help="Optional planned HH:MM local show start")
     publish.add_argument("--blend-output", help="Mandatory NEW private folder when the exported plan includes actual audio crossfades")
     publish.add_argument("--review-output", help="Optional NEW local mixlab-*.html in an existing private folder; auto-build actual original-versus-blend review after both render approvals")
+    publish.add_argument("--reels-output", help="Optional NEW private folder of genuine PCM16 A/B handoff excerpts, after both human-approved real Marathon masters exist")
     publish.add_argument("--bundle", action="store_true", help="Optional separate private ZIP")
     publish.add_argument("--delivery", choices=("mp3", "flac"), help="Optional installed FFmpeg delivery")
     publish.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320), default=192)
@@ -497,6 +516,7 @@ def main():
                                       *args.session_wav_pairs, start=args.start,
                                       blend_output=args.blend_output,
                                       review_output=args.review_output,
+                                      reels_output=args.reels_output,
                                       bundle=args.bundle, delivery=args.delivery,
                                       bitrate_kbps=args.bitrate_kbps)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt,

@@ -16,6 +16,14 @@ Provide 2–8 **alternating original Studio session and completed WAV** pairs. E
 
 Open `mixlab-sequence.private.html` locally. Use **↑/↓** to reorder completed events, untick any event you don't want, and choose the **output transition style**: default hard joins, or a separately rendered audio crossfade at each incoming event (2, 4, 8 or 16 seconds; an individual choice for each join). Choose **Export exact-source render plan**. The browser downloads `mixlab-marathon-sequence.private.json`; no media or metadata is sent to a server. You must keep **2–8 selected** events and stay within the existing **768 MiB uncompressed master** limit. You can start with a larger inventory and exclude events to fit the budget.
 
+## Optional: generate actual rendered transition excerpts in the same production command
+
+When your browser-exported plan chooses **manually rendered 2/4/8/16-second fades**, you can add `--reels-output /private/NEW_JOIN_REELS_FOLDER` to `marathon_sequence render ... --blend-output ...`. MixLab creates the sample-preserving original Marathon and the independent real blended WAV, each after its normal explicit `yes`. Then it asks for **one more typed `yes`** before copying up to 14 actual short PCM16 WAV handoff excerpts and a local A/B listening room. The originals stay untouched.
+
+You may combine `--reels-output` with `--review-output` in one command: the former gives **exact short audible WAV snippets** and the latter an overview of the two full masters and a human release choice. Both are optional. A hard-cuts-only plan cannot produce two-master comparison reels, and if optional reel generation is denied or fails, the completed originals and any approved blended WAV remain in their own separate folders; `join_reels_warning` explains that the optional listening folder was not produced.
+
+See [Real Marathon Join Reels](marathon-real-join-reels.md) for the standalone command, actual frame boundaries, offline player, private note export and important rights/research limitations.
+
 ## Optional: listen to your original local WAVs before choosing the order
 
 The new **Audition original local audio** area of the offline Sequence Studio lets you manually attach the *actual local WAV files* for the finished events:
