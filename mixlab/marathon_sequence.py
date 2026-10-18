@@ -184,8 +184,8 @@ def _read_plan(path):
 
 def prepare_page(new_private_html, *source_pairs):
     pairs, items = _admit_pairs(source_pairs)
-    if sum(x["frames"] for x in items) * 4 > MAX_BYTES:
-        raise ValueError("Original set inventory exceeds the maximum Marathon budget")
+    # All originals may exceed one WAV; the DJ can exclude events in the editor.
+    # The exact 768 MiB cap is enforced on the *selected* render plan.
     dest = _private_html_destination(new_private_html)
     data = {"kind": PLAN_KIND, "max_pcm_bytes": MAX_BYTES,
             "originals": [{**identity, "label": x["wav"].parent.name}
