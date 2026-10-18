@@ -160,6 +160,10 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
                                          original_sections[i + 1]["start_frame"], fade)
             if stamp != _meta_key(os.fstat(stream.fileno())):
                 raise ValueError("Source WAV changed during private transition render")
+        # Re-read the immutable original after processing so the admitted
+        # source receipt cannot be swapped between validation and rendering.
+        if _digest_file(original) != source_receipt["wav_sha256"]:
+            raise ValueError("Source WAV no longer matches its original SHA-bound receipt")
         digest = _digest_file(wav_path)
         payload = {
             "schema_version": 1,
