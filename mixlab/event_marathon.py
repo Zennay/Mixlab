@@ -61,7 +61,7 @@ button:hover,a:hover{background:#3b6684}
 <div class="controls"><button id="prev" type="button">Previous set</button>
 <button id="next" type="button">Next set</button>
 <a id="download" class="action" download>Save original continuous WAV</a>
-<button id="cue" type="button">Download chapter CUE</button><a id="showbook" class="action" hidden>Open show runbook</a></div>
+<button id="cue" type="button">Download chapter CUE</button><a id="showbook" class="action" hidden>Open show runbook</a><a id="join-studio" class="action" hidden>Arrange transitions</a></div>
 <p id="status" class="muted" role="status">The actual output PCM16 WAV must remain alongside this offline page. Your media player may provide better performance than a browser with large WAV files.</p>
 </section>
 <section class="panel"><h2>Actual event sequence</h2><ol class="list" id="sections"></ol></section>
@@ -82,6 +82,7 @@ const clock=s=>{
 const media="./"+encodeURIComponent(data.wav_name);
 audio.src=media;$("download").href=media;
 if(data.showbook){$("showbook").href="./"+encodeURIComponent(data.showbook);$("showbook").hidden=false;}
+if(data.join_studio){$("join-studio").href="./"+encodeURIComponent(data.join_studio);$("join-studio").hidden=false;}
 $("timeline").max=String(data.duration_seconds);
 const rendered=[];
 secs.forEach((section,i)=>{
@@ -266,6 +267,14 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
         with receipt.open("xb") as output:
             created.append(receipt);os.fchmod(output.fileno(),0o600)
             output.write((json.dumps(payload,sort_keys=True,indent=2,allow_nan=False)+"\n").encode("utf-8"))
+        join_studio = None
+        join_studio_warning = None
+        try:
+            from .marathon_join_studio import create_join_studio
+            join_studio = create_join_studio(wav, destination / "marathon.join-studio.private.html")
+            created.append(join_studio)
+        except (ValueError, TypeError, KeyError, OSError, wave.Error):
+            join_studio_warning = "Completed WAV exists; optional Join Studio could not be generated"
         showbook = None
         showbook_warning = None
         try:
@@ -276,6 +285,7 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
             showbook_warning = "Completed WAV exists; optional private Marathon runbook unavailable"
         viewer={"wav_name":wav.name,"wav_sha256":observed,
                 "showbook":showbook.name if showbook else None,
+                "join_studio":join_studio.name if join_studio else None,
                 "duration_seconds":payload["duration_seconds"],
                 "sections":[{"label":row["label"],"start_seconds":row["start_seconds"]}
                             for row in sections]}
@@ -295,9 +305,12 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
               "private_player":str(player),"events_joined":len(items),
               "duration_seconds":payload["duration_seconds"],"wav_sha256":observed,
               "automatic_tempo_matching":False,"private":True,"rights_proven":False,
-              "private_show_runbook":str(showbook) if showbook else None}
+              "private_show_runbook":str(showbook) if showbook else None,
+              "private_join_studio":str(join_studio) if join_studio else None}
     if showbook_warning:
         result["showbook_warning"] = showbook_warning
+    if join_studio_warning:
+        result["join_studio_warning"] = join_studio_warning
     if bundle:
         # Packaging is optional; never remove the already completed WAV if
         # the USB archive exceeds disk or file limits.

@@ -121,7 +121,7 @@ def _inspect(archive):
     masters = [row for row in entries if row["file"].lower().endswith(".wav")]
     if is_marathon:
         required = {"marathon.wav", "marathon.receipt.private.json", "index.html"}
-        optional = {"marathon.runbook.private.html"}
+        optional = {"marathon.runbook.private.html", "marathon.join-studio.private.html"}
         if (not required.issubset(file_map) or not set(file_map).issubset(required | optional) or
                 len(masters) != 1 or masters[0]["file"] != "marathon.wav" or
                 masters[0]["sha256"] != manifest["wav_sha256"]):
@@ -204,6 +204,8 @@ def restore_bundle(private_zip, new_private_folder):
                     "file_count": len(files),
                     "wav_sha256": files[master]["sha256"],
                     "continuous_marathon": master == "marathon.wav",
+                    "offline_join_studio": str(output / "marathon.join-studio.private.html")
+                        if master == "marathon.wav" and "marathon.join-studio.private.html" in files else None,
                     "offline_marathon_runbook": str(output / "marathon.runbook.private.html")
                         if master == "marathon.wav" and "marathon.runbook.private.html" in files else None,
                     "private": True, "network_uploads": False,
