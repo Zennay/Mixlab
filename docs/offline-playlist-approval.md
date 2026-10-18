@@ -33,7 +33,25 @@ python3 -m mixlab.playlist_approval \
 
 Open `/private/music/playlist-approval.private.html` lokaal.
 Je ziet alle geselecteerde tracks in de **reeds voorgestelde volgorde**,
-met hun handmatig geverifieerde BPM en private bronbinding. Vul in:
+met hun handmatig geverifieerde BPM en private bronbinding.
+
+**Lokaal beluisteren in hetzelfde formulier:** kies per track de originele
+muziekfile via de browser. De ingesloten afspeelknoppen gebruiken een
+tijdelijke lokale blob-URL: er gaat geen audio naar een server. De browser
+controleert de exacte bestandsnaam en een bestandsgrootte van maximaal
+512 MiB. Zet de afspeelkop op een door jou gecontroleerde positie en klik
+**Set first downbeat**, **Mark outgoing A cue** of **Mark incoming B cue**.
+De knop **4 beats vooruit/achteruit** springt op basis van jouw al
+handmatig geverifieerde BPM, niet van een automatisch gevonden beat.
+Kan de browser een bestand niet afspelen, beluister het in je eigen
+muziekspeler en voer de seconden handmatig in.
+
+De browser controleert bewust **niet zelf** het volledige audiobestand
+op SHA-256 (dit kan honderden MiB browsergeheugen vereisen). De bestaande
+serverloze Playlist Studio doet wél opnieuw de verplichte, echte lokale
+source-hashcontrole voordat import en render starten.
+
+Vul vervolgens in:
 
 - Per track expliciet het soort gebruiksrecht (synthetic, licensed,
   user-permitted of public-domain), en concrete provenance/rechtengrond.

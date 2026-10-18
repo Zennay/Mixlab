@@ -23,7 +23,7 @@ MAX_FORM = 1024 * 1024
 _PAGE = r"""<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>MixLab · Approve Your Set</title>
 <style>
 :root{color-scheme:dark;--ink:#ecf4ff;--dim:#adbbd1;--panel:#192539;--line:#3a526e;--mint:#79f2bc;--bg:#091421}
@@ -43,6 +43,14 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 .notice{border-left:4px solid #89b6ef;padding:8px 15px;color:var(--dim);margin:20px 0}
 .check{display:flex;gap:10px;align-items:start;font-size:14px}.check input{width:auto;margin-top:5px;accent-color:var(--mint)}
 .feedback{min-height:24px;font-weight:600}.bad{color:#ffaeac}.good{color:var(--mint)}
+.audition{border:1px dashed #53728d;border-radius:13px;margin-top:15px;padding:14px}
+.audition audio{width:100%;display:block;margin:10px 0}
+.audition .buttons{display:flex;gap:8px;flex-wrap:wrap}
+.audition button{padding:8px 10px;border:1px solid #507b93;background:#2b4b5b;color:#f3fbff;font-size:12px}
+.audition button:hover{background:#416b79}
+.audition button:disabled{opacity:.3;cursor:not-allowed}
+.file-note{font-size:12px;color:var(--dim)}
+
 @media(max-width:650px){.row{grid-template-columns:1fr}.card{padding:16px}}
 </style>
 </head>
@@ -50,7 +58,7 @@ button:hover{background:#abffda}button:disabled{opacity:.45;cursor:not-allowed}
 <div class="eyebrow">MIXLAB / HUMAN CUE APPROVAL</div>
 <h1>Approve your set, on one screen.</h1>
 <p>Provide the actual usage-rights basis and exact checked audio cue seconds for each transition. This is a private local form, **not** automatic downbeat detection or an online licensing check.</p>
-<div class="notice"><strong>Before you begin:</strong> listen to your permitted local recordings with your own player. Enter the precise outgoing and incoming cue start seconds; they are the FIRST samples of the transition. A correct BPM and rights declaration must be based on real information, not a guess.</div>
+<div class="notice"><strong>Before you begin:</strong> you can now select each permitted audio file from your device and audition it directly in this offline form (nothing is uploaded), or use your own player. Capture the playhead as the first sample of a transition, then confirm every cue yourself. BPM and rights must be based on real information, not guessed. The browser checks the selected filename; the Studio later checks the actual source SHA.</div>
 <section class="card"><h2>Set settings</h2>
 <div class="row"><label>Shared manually verified tempo
 <span id="bpm" class="meta"></span></label><label for="beats">Transition length, in beats (1–64)
@@ -81,6 +89,56 @@ function field(label,kind,attributes){
 }
 const rights=["synthetic","licensed","user-permitted","public-domain"];
 const inputs=[],pairs=[];
+function auditionFor(track,index,downbeatInput){
+ const panel=node("div","audition");
+ const label=node("label","");
+ label.append(node("span","","Local audio for cue audition (never uploaded)"));
+ const file=document.createElement("input");file.type="file";
+ file.accept=".wav,.mp3,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff,audio/*";
+ label.append(file);panel.append(label);
+ const player=document.createElement("audio");player.controls=true;
+ player.preload="none";panel.append(player);
+ const status=node("p","file-note","Select the corresponding local song. The browser checks its filename, not its SHA; the Studio rechecks the actual source later.");
+ status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+ let previousUrl=null;
+ file.onchange=()=>{
+  const selected=file.files&&file.files[0];
+  player.pause();player.removeAttribute("src");player.load();
+  if(previousUrl){URL.revokeObjectURL(previousUrl);previousUrl=null}
+  if(!selected)return;
+  if(selected.name!==track.path||selected.size<=0||selected.size>512*1024*1024){
+   status.textContent="Choose the exact expected local filename (max 512 MiB), not a renamed or oversized song.";
+   return;
+  }
+  previousUrl=URL.createObjectURL(selected);player.src=previousUrl;
+  status.textContent="Local audio selected; press play and confirm cues by listening. No audio was uploaded.";
+ };
+ player.onerror=()=>{status.textContent="This browser cannot decode that local audio format; use a separate player and type the seconds manually."};
+ const buttons=node("div","buttons");
+ function action(name,fn){
+  const b=node("button","",name);b.type="button";
+  b.onclick=()=>{if(!previousUrl||!Number.isFinite(player.currentTime)){
+   status.textContent="First select and play this exact local song.";return;
+  }fn()};
+  buttons.append(b);
+ }
+ function current(){return String(Math.round(Math.max(0,Math.min(900,player.currentTime))*1000)/1000)}
+ action("Set first downbeat",()=>{downbeatInput.value=current();status.textContent="Set manually auditioned first-downbeat position."});
+ if(index<tracks.length-1)action("Mark outgoing A cue",()=>{
+  pairs[index].a.value=current();status.textContent="Set outgoing A cue for the next transition.";
+ });
+ if(index>0)action("Mark incoming B cue",()=>{
+  pairs[index-1].b.value=current();status.textContent="Set incoming B cue for the preceding transition.";
+ });
+ action("−4 beats",()=>{
+  player.currentTime=Math.max(0,player.currentTime-4*60/track.bpm);
+ });
+ action("+4 beats",()=>{
+  const length=Number.isFinite(player.duration)?player.duration:900;
+  player.currentTime=Math.min(length,player.currentTime+4*60/track.bpm);
+ });
+ panel.append(buttons,status);return panel;
+}
 function build(){
  el("bpm").textContent=String(bundle.bpm)+" BPM";
  tracks.forEach((track,index)=>{
@@ -98,7 +156,9 @@ function build(){
   row.append(provenance.wrap);box.append(row);
   const downbeat=field("Verified first downbeat, seconds (optional)","number",
   {min:0,max:900,step:0.001,placeholder:"Leave blank if unknown"});
-  box.append(downbeat.wrap);el("tracks").append(box);
+  box.append(downbeat.wrap);
+  box.append(auditionFor(track,index,downbeat.input));
+  el("tracks").append(box);
   inputs.push({select,provenance:provenance.input,downbeat:downbeat.input,track});
  });
  tracks.slice(0,-1).forEach((track,index)=>{

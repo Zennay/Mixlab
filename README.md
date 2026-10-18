@@ -163,6 +163,13 @@ python3 -m mixlab.playlist_approval /private/music /private/music/set-plan.priva
 python3 -m mixlab.playlist_studio /private/music /private/music/approved-sources.private.json /private/event-session --journey-plan /private/music/set-plan.private.json --approval-file /private/music/mixlab-event-approved.private.json --beats 16 --full-set-wav /private/event.wav
 ~~~
 
+In dit formulier kun je inmiddels ook per nummer een **lokaal
+audiobestand kiezen en direct beluisteren**: tik op de afspeelkop en
+markeer eerste downbeat, outgoing A of incoming B cue. Er wordt alleen
+een lokale tijdelijke blob-afspeel-URL gebruikt; de originele audio
+wordt niet geüpload. Je handmatig opgegeven BPM ondersteunt
+vier-beat-sprongen, niet automatisch beatmatching.
+
 Een browserinvoer is **geen juridisch rechtenbewijs** en vervangt geen
 muzikale analyse of echte luisteracceptatie. De renderer controleert bron-
 SHA, plan-SHA, cuegrenzen, rechtenverklaring en finale menselijke
