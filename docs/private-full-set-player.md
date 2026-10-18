@@ -28,6 +28,34 @@ Als alleen het maken van de HTML-speler faalt, blijft de eerder atomair
 gepubliceerde WAV intact; de CLI meldt dan `player_warning`. Er worden nooit
 bestaande pagina's of muziekbestanden overschreven.
 
+## Eventmodus — lokale afspeelbediening tijdens een feest
+
+Klik **⛶ Eventmodus** in de HTML-speler wanneer je de set daadwerkelijk
+afspeelt. MixLab gebruikt nog steeds **dezelfde vooraf gerenderde,
+hashgebonden complete WAV**; er vindt geen live remix, streaming,
+tijdrekmethode of netwerkaanroep plaats.
+
+In deze modus zie je:
+
+- Een groot, duidelijk leesbaar veld met **huidige track/overgang**,
+  een aftelklok tot de **eerstvolgende overgang** en, wanneer er
+  geen volgende overgang is, de resterende speeltijd van de set.
+- Een grote **Speel/Hervat/Pauzeer**-knop. De toets **P** schakelt
+  afspelen/pauzeren zolang je niet op een invoerveld of knop staat.
+- De al beschikbare golfvorm als visuele feedback. Om per ongeluk
+  overslaan tijdens een feest te voorkomen, zijn waveform-klik,
+  hoofdstuk-springknoppen, vorige/volgende en de standaard
+  browsertijdlijn **tijdelijk uitgeschakeld**.
+- Optioneel schermvullende presentatie als de browser die toestaat.
+  Met **Verlaat eventmodus** kun je altijd terug naar de normale
+  bewerkings-/luisterweergave; de set blijft afspelen.
+
+Het is een **afspeelmodus**, geen zero-fail professioneel DJ-systeem.
+De browser en lokale computer moeten wakker blijven en de WAV moet
+naast de privé HTML-speler beschikbaar zijn. Houd een aparte offline
+noodafspeeloptie beschikbaar bij echte evenementen. MixLab belooft
+geen ononderbroken audiohardware of perfecte latency.
+
 ## Een bestaande WAV later van een tijdlijn voorzien
 
     python3 -m mixlab.set_player \
