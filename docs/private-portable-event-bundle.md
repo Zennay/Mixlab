@@ -64,6 +64,31 @@ file SHA matches its official private receipt and the receipt refers to
 **the exact same canonical WAV SHA**. You cannot sneak in an unrelated
 MP3, an arbitrary file outside the real event directory or a symlink.
 
+## Restore the ZIP on another offline computer
+
+Copy your trusted, already-created ZIP to a USB drive, then extract it to
+a **new** private directory using the standard-library restore command:
+
+~~~bash
+python3 -m mixlab.event_restore \
+  /media/usb/final-set.private.zip \
+  /home/dj/restored-event
+~~~
+
+The restore command validates the bundle's own flat-file inventory,
+uncompressed ZIP layout, byte sizes, internal SHA-256 entries and original
+WAV/receipt pairing while streaming at most 64 KiB per read. It creates a
+new private folder, never overwrites an old event, and cleans up only its
+own partial extraction on failure. Open `restored-event/index.html` for
+the actual offline event player, printable showbook and, for newer bundles,
+the Rehearsal Desk with repeatable transition excerpts and local notes.
+
+**Use only ZIPs you made or received from a trusted source.** The manifest
+is not digitally signed; a forged ZIP can carry malicious HTML with forged
+self-consistent checksums. Verifying a ZIP against its *own* manifest is
+not external authentication, licensing proof or a real-audio quality gate.
+See [Private Event Restore](private-event-restore.md).
+
 ## Format, bounds and safety
 
 - The exporter uses Python's standard-library ZIP format with
