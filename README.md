@@ -617,3 +617,7 @@ The analyzer proposes a constant beatgrid from regular percussive excerpts and a
 > Werk verder aan MixLab. Kijk in Notion naar de huidige fase en wat er nog moet gebeuren, claim een vrije taak en werk die uit.
 
 Detailed coordination belongs in [AGENTS.md](AGENTS.md) and the worker plan. GitHub holds code and task specifications; the zCloud VPS SQLite queue holds live claims and scheduling. Notion is the product/decision/handoff mirror. Do not infer a live queue entry from an issue or a plan file.
+
+### Revisie van reeds afgeronde hybride DJ-masters
+
+Nieuwe `python3 -m mixlab.marathon_revision_desk CURRENT_HYBRID_WAV ORIGINAL_WAV BLEND_WAV NEW_MIXLAB_HTML` opent een **besloten revisiestudio** voor de reeds werkelijk afgemaakte hybride WAV. De DJ kan per overgang de eerdere harde join/echte crossfade wijzigen, eerdere keuzes herstellen en het effect op de echte WAV-duur zien. Het nieuwe plan bindt aan de exacte SHA van de vorige master. `mixlab.marathon_reel_decisions ... --previous-hybrid CURRENT_HYBRID_WAV` verifieert oorspronkelijke én vorige complete WAVs/keuzelog opnieuw en rendert na typed `yes` een **aparte nieuwe versie**, zonder oudere masters of muziekbronnen aan te passen. [Hybrid Revision Desk](docs/marathon-human-hybrid-master.md#7-reopen-revise-and-re-render-a-completed-real-hybrid-set).
