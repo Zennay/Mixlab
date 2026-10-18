@@ -394,8 +394,8 @@ def prepare_page(new_private_html, *source_pairs):
 
 
 def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
-                     blend_output=None, bundle=False, delivery=None, bitrate_kbps=192,
-                     read=input, write=print):
+                     blend_output=None, review_output=None, bundle=False, delivery=None,
+                     bitrate_kbps=192, read=input, write=print):
     pairs, items = _admit_pairs(source_pairs)
     plan = _read_plan(plan_path)
     if (not isinstance(plan, dict) or plan.get("schema_version") != 1 or
@@ -414,7 +414,7 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
     if mode not in ("hard_cuts", "manual_crossfades") or type(fades) is not list:
         raise ValueError("Unsupported manual transition plan")
     if mode == "hard_cuts":
-        if fades or blend_output is not None:
+        if fades or blend_output is not None or review_output is not None:
             raise ValueError("Hard-join plans do not accept a separate blended output")
     else:
         if blend_output is None or len(fades) != len(order) - 1 or any(
@@ -452,6 +452,22 @@ def compile_sequence(plan_path, new_private_folder, *source_pairs, start=None,
             "The original verified Marathon remains available; its optional "
             "separate blended master was not published. Inspect local input "
             "format, available resources and explicit approval before retrying.")
+    if review_output is not None:
+        if result["blended_marathon"] is None:
+            result["master_review_warning"] = (
+                "No blended master was published. Both original and blended "
+                "real WAVs are required to generate a useful A/B listening page.")
+        else:
+            try:
+                from .marathon_master_review import create_review
+                result["private_master_review"] = create_review(
+                    original["continuous_wav"],
+                    result["blended_marathon"]["continuous_wav"], review_output)
+            except (ValueError, TypeError, KeyError, OSError, wave.Error):
+                result["master_review_warning"] = (
+                    "Both original and blended WAVs remain intact; an optional "
+                    "private actual-master review page could not be generated. "
+                    "Run mixlab.marathon_master_review prepare manually.")
     return result
 
 
@@ -468,6 +484,7 @@ def main():
     publish.add_argument("session_wav_pairs", nargs="+", help="SAME original SESSION WAV pairs as prepare")
     publish.add_argument("--start", help="Optional planned HH:MM local show start")
     publish.add_argument("--blend-output", help="Mandatory NEW private folder when the exported plan includes actual audio crossfades")
+    publish.add_argument("--review-output", help="Optional NEW local mixlab-*.html in an existing private folder; auto-build actual original-versus-blend review after both render approvals")
     publish.add_argument("--bundle", action="store_true", help="Optional separate private ZIP")
     publish.add_argument("--delivery", choices=("mp3", "flac"), help="Optional installed FFmpeg delivery")
     publish.add_argument("--bitrate-kbps", type=int, choices=(128, 192, 256, 320), default=192)
@@ -479,6 +496,7 @@ def main():
             result = compile_sequence(args.private_plan_json, args.new_private_folder,
                                       *args.session_wav_pairs, start=args.start,
                                       blend_output=args.blend_output,
+                                      review_output=args.review_output,
                                       bundle=args.bundle, delivery=args.delivery,
                                       bitrate_kbps=args.bitrate_kbps)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt,

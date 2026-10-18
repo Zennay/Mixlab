@@ -42,6 +42,10 @@ python3 -m mixlab.marathon_sequence render \
 
 **Pass every original SESSION/WAV pair in the same *original input order* as the prepare command.** The downloaded JSON contains the chosen indices, not private file paths. The CLI recomputes source master hashes, validates all original files/receipts, confirms an unchanged rate/frame inventory, rejects duplicate/invalid positions, checks the selected PCM budget and shows the final order. The canonical existing Marathon compiler still demands the operator's explicit typed **yes** and creates a **new** private folder.
 
+To generate the **actual-original-versus-actual-blended A/B review page** automatically after both separate human-approved WAVs are complete, add `--review-output /private/review/mixlab-master-review.private.html` to that same `render` command. The existing `/private/review` folder must already exist and be outside Git/symlinks. This option is valid only for manual-crossfade plans, never for hard-join-only output.
+
+Once both real WAVs exist, MixLab calls the official `marathon_master_review.create_review` with the exact verified originals. A failed optional review page **does not delete either WAV**; the command shows a `master_review_warning`. The DJ can open the generated offline page, listen to the actual audio from local file pickers, export a SHA-bound choice, and publish **only the chosen master** through `python3 -m mixlab.marathon_master_review publish ... --bundle --delivery mp3`. See [Marathon Master Review](marathon-master-review.md).
+
 ### Manual crossfade export: two explicit approvals, two independently valid WAVs
 
 For a plan whose browser transition style is **Separate manually blended WAV**, add a second **new** folder via `--blend-output`:
