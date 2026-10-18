@@ -507,8 +507,11 @@ python3 -m mixlab.marathon_reel_decisions \
   /private/new-hybrid-event --bundle
 ```
 
-Inclusief nieuw volledig audio-receipt, lokale afspeelpagina en optionele
-printbare privé-cue-sheet met echte WAV-SHA en notities. **Harde joins blijven
+Inclusief nieuw volledig audio-receipt, lokale afspeelpagina, printbare
+privé-cue-sheet met echte WAV-SHA/notities **én de nieuwe offline live
+operator-mode `master-picks.stage.html`**: nu/volgende set, countdown tot
+de werkelijke gerenderde join, terug/vooruit en ±15 seconden zoeken,
+8 seconden voor overgang cuen en fullscreen op laptop/tablet. **Harde joins blijven
 sample-exact**, gekozen fades zijn bestaande 2/4/8/16s PCM16-renderkeuzes.
 Afzonderlijke typed-`yes`-goedkeuring blijft vereist. Optioneel
 `--reels-output /private/hybrid-reels --reels-usb` maakt na nóg een
