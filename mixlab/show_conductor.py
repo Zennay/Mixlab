@@ -69,6 +69,14 @@ fade, timed playback, website requests, or master modifications.</p>
 The browser verifies the complete local file SHA-256 in 1 MiB chunks before playback.
 A filename, duration or byte-size match alone never grants playback.
 Do not substitute unknown recordings. No music is embedded in this page.</p>
+<div class="panel"><strong>Load a full local show folder</strong>
+<p>Optional: choose a parent folder containing the original finished WAVs in
+subfolders. Only files matching an approved WAV name and exact byte length
+are read. Each candidate is fully SHA-256 verified before being armed.
+No folder paths, music or files are uploaded; individual pickers remain available.</p>
+<input type="file" id="folder" webkitdirectory multiple
+ aria-label="Choose the local parent folder of approved show WAVs">
+<p id="folder-status" role="status">No folder selected.</p></div>
 <ol id="setlist"></ol></section>
 <section><div class="panel"><h2>2 / Playback & manually controlled changeover</h2>
 <audio id="player" controls preload="metadata"></audio>
@@ -94,7 +102,7 @@ __SHA_JS__
 "use strict";
 const data=JSON.parse(document.getElementById("mixlab-show-data").textContent);
 const $=id=>document.getElementById(id),audio=$("player");
-const attached=new Map();
+const attached=new Map(),attachGeneration=data.sets.map(()=>0);
 const breaks=data.saved_breaks?data.saved_breaks.slice():
  data.sets.map((_,i)=>i===data.sets.length-1?0:data.default_break);
 const notes=data.saved_notes?data.saved_notes.slice():
@@ -167,6 +175,7 @@ data.sets.forEach((set,i)=>{
  fileInput.addEventListener("change",async()=>{
   const file=fileInput.files?.[0];
   if(!file)return;
+  const generation=++attachGeneration[i];
   // Detach even a previously verified file: a new choice must pass again.
   attached.delete(i);
   if(i===active)select(i);
@@ -180,6 +189,7 @@ data.sets.forEach((set,i)=>{
    const verifiedHash=await sha256LocalFile(file,percent=>{
     status.textContent="Verifying full original WAV locally: "+percent+"% (no upload).";
    });
+   if(generation!==attachGeneration[i])return;
    if(verifiedHash!==set.wav_sha256){
     status.textContent="Rejected: WAV content SHA-256 differs from the approved original. No playback.";
     return;
@@ -208,7 +218,53 @@ data.sets.forEach((set,i)=>{
  note.value=notes[i];
  note.addEventListener("input",()=>{notes[i]=note.value;});
  card.append(heading,schedule,fileInput,status,breakline,note);
- $("setlist").append(card);rows.push({card,schedule});
+ $("setlist").append(card);rows.push({card,schedule,status});
+});
+// Folder selection is an optional offline convenience, not filesystem access
+// outside the user's explicitly granted FileList.
+$("folder").addEventListener("change",async()=>{
+ const input=$("folder"),status=$("folder-status");
+ const files=Array.from(input.files||[]);
+ if(!files.length)return;
+ if(files.length>1000){
+  status.textContent="Folder contains too many files (>1000). Use individual approved WAV pickers.";
+  return;
+ }
+ const candidates=files.filter(file=>data.sets.some(set=>
+  file.name===set.wav_name&&file.size===set.size_bytes));
+ if(candidates.length>24){
+  status.textContent="Too many plausible full WAVs (>24). Choose a smaller private show folder.";
+  return;
+ }
+ if(!candidates.length){
+  status.textContent="No filename/byte-length candidates found. Original WAVs were not attached.";
+  return;
+ }
+ // A newer manual picker always wins over a stale asynchronous folder scan.
+ const generation=attachGeneration.map((value,i)=>++attachGeneration[i]);
+ let accepted=0,rejected=0;
+ input.disabled=true;
+ try{
+  for(const file of candidates){
+   status.textContent="Checking private show WAV "+(accepted+rejected+1)+"/"+
+    candidates.length+" locally…";
+   let digest;
+   try{
+    digest=await sha256LocalFile(file,percent=>{
+     status.textContent="Verifying full local WAV "+(accepted+rejected+1)+"/"+
+      candidates.length+" · "+percent+"% (offline)";
+    });
+   }catch(_error){rejected++;continue;}
+   const idx=data.sets.findIndex(set=>set.wav_name===file.name&&
+    set.size_bytes===file.size&&set.wav_sha256===digest);
+   if(idx<0||generation[idx]!==attachGeneration[idx]){rejected++;continue;}
+   attached.set(idx,file);accepted++;
+   rows[idx].status.textContent="Verified complete WAV SHA-256 from private folder. Arm manually.";
+  }
+  status.textContent="Folder finished: "+accepted+" verified WAV"+
+   (accepted===1?"":"s")+"; "+rejected+" unmatched/failed candidates. "+
+   "Previously armed audio was not started or switched.";
+ }finally{input.disabled=false;}
 });
 $("previous").addEventListener("click",()=>select(active-1));
 $("next").addEventListener("click",()=>select(active+1));
