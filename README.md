@@ -178,6 +178,14 @@ Dit is een creatieve preview en **geen** rendering of maat voor
 kwaliteit van de definitieve DSP-overgang. Er wordt geen audio
 geüpload.
 
+Verder kies je voortaan in dit formulier **per overgang de echte
+rendermethode** (\`baseline\`, \`bass_swap\`, \`echo_exit\`
+of \`hard_cut\`). Bij een volledige \`--full-set-wav\`
+past de bestaande MixLab-renderer die expliciete pair-keuzes toe:
+geen losse \`--style pair-001:...\` argumenten nodig. De
+browser-crossfade is uitsluitend een creatieve vergelijking; de
+definitieve uitvoer komt uit de echte canonieke DSP-recepten.
+
 Een browserinvoer is **geen juridisch rechtenbewijs** en vervangt geen
 muzikale analyse of echte luisteracceptatie. De renderer controleert bron-
 SHA, plan-SHA, cuegrenzen, rechtenverklaring en finale menselijke

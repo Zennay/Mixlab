@@ -86,6 +86,26 @@ Vul vervolgens in:
   teruglopende uitgangen t.o.v. het voorgaande B-eind.
 - Twee expliciete vakjes: eigen rechtenverklaring en akkoord met de volgorde.
 
+**Renderstijl per overgang.** Kies in ieder overgangsblok
+\`Use --family default\`, \`baseline\`, \`bass_swap\`,
+\`echo_exit\` of \`hard_cut\`. Deze stijlen zijn de **bestaande
+vier echte MixLab DSP-families**. De door jou gekozen stijlen
+gaan mee in de SHA-gebonden privécuegoedkeuring: als je direct een
+complete WAV rendert met \`--full-set-wav\`, maakt Playlist Studio
+automatisch de juiste pair-specificieke \`pair-NNN:family\`-keuzes
+voor de officiële Studio/Instant Set renderer.
+
+Een browserrepetitie speelt slechts een **benaderde equal-power
+fade**, ongeacht de geselecteerde renderstijl. Voor de werkelijk
+gerenderde \`bass_swap\` en \`echo_exit\` moet je de output
+nadien via de lokale WAV Set Player/Set Gallery beluisteren.
+Een onbekende stijl wordt geweigerd; combineer de in het formulier
+gekozen stijlen niet met een tweede tegenstrijdige \`--style\`
+opdracht. Zonder \`--full-set-wav\` wordt nu alleen het
+goedgekeurde bronmanifest/studio gemaakt; wie later met
+\`--resume\` rendert, kiest de per-paarstijlen bij die
+aparte renderstap opnieuw.
+
 Klik **Export my private approved cues**. Dit downloadt een nieuw
 `mixlab-event-approved.private.json` met **geen audio**. Verplaats
 het nieuwe bestand naast de originele songs en het eerder gebruikte
