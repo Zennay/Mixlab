@@ -387,6 +387,35 @@ opnieuw gecontroleerd; handmatige toestemming voor de uiteindelijke nieuwe
 WAV blijft verplicht. Muzikale kwaliteit en rechten voor openbaar gebruik
 blijven apart te beoordelen. [Sequence Studio-handleiding](docs/marathon-sequence-studio.md).
 
+### Luister naar de twee échte Marathon-masters en lever alleen je keuze op
+
+Na een handmatig gerenderde crossfade bestaat naast het oorspronkelijke WAV
+ook een tweede WAV met echte PCM16-overgangen. Met de nieuwe **Marathon Master
+Review** vergelijk je die twee reeds bestaande lokale masters direct op hun
+werkelijke eventovergangen. Je kiest zelf de definitieve versie en geeft pas
+daarna toestemming voor het mobiele bestand of de USB-bundel.
+
+```bash
+python3 -m mixlab.marathon_master_review prepare \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/review/mixlab-master-review.private.html
+
+# Open de offline HTML, beluister beide échte WAVs en exporteer
+# mixlab-marathon-master-choice.private.json.
+python3 -m mixlab.marathon_master_review publish \
+  /private/review/mixlab-marathon-master-choice.private.json \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  --delivery mp3 --bundle
+```
+
+Deze route controleert opnieuw de originele én afgeleide WAV-receipts en
+SHA-256-bronrelatie. De operator moet de exacte selectie met `yes` bevestigen;
+alleen de gekozen master wordt als nieuwe privé-uitvoer gecodeerd/verpakt.
+Het is geen geblindeerde luisterstudie, geen rechtenverklaring en geen live
+kwaliteitscertificaat. [Master Review-handleiding](docs/marathon-master-review.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
