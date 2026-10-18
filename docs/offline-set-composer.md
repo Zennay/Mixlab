@@ -35,6 +35,28 @@ pair IDs and transition families into a long shell command.
       /private/mixlab-set-plan.private.json \
       /private/final-set-01.wav
 
+### WAV + Event Player + portable MP3 in dezelfde opdracht
+
+Je kunt de volledige WAV en een draagbare versie in één commando laten
+maken (als lokaal FFmpeg en FFprobe geïnstalleerd zijn):
+
+~~~bash
+python3 -m mixlab.set_composer render \
+  /private/session-01 \
+  /private/mixlab-set-plan.private.json \
+  /private/final-set-01.wav \
+  --portable-mp3 /private/final-set-01-portable.mp3
+~~~
+
+Na het renderen publiceert MixLab de complete originele WAV, de offline
+[Full Set Player](private-full-set-player.md) met eventmodus en,
+optioneel, een lossy 192 kbit/s MP3 met CUE/M3U8 en privé hash-receipt
+(zie [Portable DJ Set](private-portable-dj-set.md)). De MP3-export
+hercontroleert de oorspronkelijke WAV en sessiehashes. Als FFmpeg
+ontbreekt of MP3-encodering mislukt, blijft de geslaagde WAV staan en
+meldt de CLI **`portable_warning`**; een mislukte bijlage vernietigt
+niet de originele mix. Er worden geen oude bestanden overschreven.
+
 The composer additionally publishes `<output>.wav.player.html` next to the
 finished audio: a local continuous player with clickable song/transition
 chapters, JSON chapter export and a compatible `.cue` download. The original
