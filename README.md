@@ -170,6 +170,14 @@ een lokale tijdelijke blob-afspeel-URL gebruikt; de originele audio
 wordt niet geüpload. Je handmatig opgegeven BPM ondersteunt
 vier-beat-sprongen, niet automatisch beatmatching.
 
+Je kunt vervolgens **twee lokale nummers als overgang samen voorluisteren**:
+de nieuwe knop \`Rehearse A→B transition\` maakt een tijdelijke
+equal-power browser-crossfade van de exact handmatig opgegeven
+startcues en overgangslengte, met stopknop en voortgang.
+Dit is een creatieve preview en **geen** rendering of maat voor
+kwaliteit van de definitieve DSP-overgang. Er wordt geen audio
+geüpload.
+
 Een browserinvoer is **geen juridisch rechtenbewijs** en vervangt geen
 muzikale analyse of echte luisteracceptatie. De renderer controleert bron-
 SHA, plan-SHA, cuegrenzen, rechtenverklaring en finale menselijke

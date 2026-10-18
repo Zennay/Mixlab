@@ -46,6 +46,30 @@ handmatig geverifieerde BPM, niet van een automatisch gevonden beat.
 Kan de browser een bestand niet afspelen, beluister het in je eigen
 muziekspeler en voer de seconden handmatig in.
 
+**Twee-decks prelisten voordat je rendert.** Na het selecteren van de
+originele nummers, rechtenverklaring/bronbasis en het handmatig markeren
+van een outgoing A-cue en incoming B-cue, kun je bij de betreffende
+overgang nu op **Rehearse A→B transition** klikken. De browser start de
+twee geselecteerde lokale bestanden bij hun eigen vastgelegde cuepositie
+en laat A geleidelijk uit- en B geleidelijk invloeien over het ingestelde
+aantal beats. **Stop rehearsal** stopt beide lokale audiospelers meteen.
+
+De afspeelvolumes volgen bij benadering de equal-power curve:
+A = cos(pi * t/2), B = sin(pi * t/2). Er is geen extern
+geluidsbestand, service, upload of FFmpeg nodig voor dit creatieve
+voorluisteren. De browser moet het lokale codec-formaat wel kunnen
+afspelen; als een file niet kan worden geopend, een cue buiten de
+bronduur ligt of playback geblokkeerd wordt, meldt de pagina dat en
+blijft handmatige tijdsinvoer beschikbaar. Bij opnieuw selecteren
+van een bronbestand stopt de actieve preview.
+
+Dit is **alleen een ruwe browserprelisten**: de daadwerkelijke
+\`bass_swap\`, \`echo_exit\`, \`hard_cut\` of kanonieke
+\`baseline\`-renderer kan anders klinken door decodeer-, timing-,
+DSP- en normalisatieverschillen. De offline Studio rendert
+de definitieve bronhashgebonden overgangen; de voorluisterknop geeft
+**geen** rechtenbewijs of muzikale voorkeursmeting.
+
 De browser controleert bewust **niet zelf** het volledige audiobestand
 op SHA-256 (dit kan honderden MiB browsergeheugen vereisen). De bestaande
 serverloze Playlist Studio doet wél opnieuw de verplichte, echte lokale
