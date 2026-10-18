@@ -366,6 +366,14 @@ python3 -m mixlab.marathon_sequence render /private/mixlab-marathon-sequence.pri
   /private/set-c/session /private/set-c/final.wav --bundle
 ```
 
+Je kunt in de nieuwe offline editor ook **eigen originele WAV-bestanden
+lokaal aankoppelen en beluisteren**: de eerste/laatste 12 seconden per
+afgeronde DJ-set, en een benaderende tweedeksoverlap voor een gekozen
+2/4/8/16-secondenovergang. Alleen naam en bestandsgrootte worden door
+de browser gecontroleerd; de daadwerkelijke bron-SHA en authorisatie
+worden pas bij de officiële CLI-render volledig opnieuw gevalideerd.
+Geen upload, sessieopslag of audio-embedding.
+
 Voor **echt gerenderde handmatige crossfades per overgang** kies je in de
 offline editor *Separate manually blended WAV* en de gewenste 2/4/8/16 seconden
 per inkomende set. Voeg bij de bovenstaande `render`-opdracht toe:

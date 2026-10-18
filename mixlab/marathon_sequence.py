@@ -23,7 +23,7 @@ MAX_PAGE = 512 * 1024
 
 _HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; media-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; media-src blob:; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>MixLab / Private Marathon Sequence Studio</title><style>
 :root{color-scheme:dark;--bg:#091520;--card:#1a2b3b;--mint:#a5f6d0;--txt:#ecf7ff;--muted:#bbcbda;--edge:#486477}
 *{box-sizing:border-box}body{background:radial-gradient(at 80% 0%,#20534c,var(--bg) 60%);color:var(--txt);font:15px/1.5 system-ui,sans-serif;margin:0}
@@ -46,6 +46,16 @@ select{background:#102735;color:#f3ffff;padding:9px;border:1px solid #77989e;bor
 .join-item{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
 .join-item label{font-size:12px;color:#a8ffdc}
 .join-item select{min-width:100px}
+#audition-panel{background:#102838;border:1px solid #5d8990;border-radius:15px;padding:18px;margin:20px 0}
+#audition-panel audio{display:block;width:100%;margin:11px 0}
+.preview-pickers{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex-basis:100%}
+.preview-pickers input{max-width:270px;font-size:12px}
+.preview-pickers small{flex:1;min-width:130px}
+.preview-pickers button{padding:8px 11px;font-size:12px}
+.preview-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.preview-controls label{font-weight:750}
+#audition-message{font-size:13px;color:#bdffdd}
+
 
 .notice{border-left:4px solid var(--mint);padding:11px 16px;background:#0c2530}
 code{overflow-wrap:anywhere}.hash{font:11px ui-monospace,monospace;word-break:break-all}
@@ -61,6 +71,19 @@ temporarily exclude one, and export the source-bound render plan. This page cont
 <div class="stat"><strong id="size">—</strong><span>new WAV size</span></div></div>
 <ol id="ordered" aria-label="Reorder completed event masters"></ol>
 <p id="notice" class="notice" role="status"></p>
+<section id="audition-panel"><h2>Audition original local audio — optional</h2>
+<p>Select each <em>original permitted completed WAV</em> with its file picker in the list above.
+Only the expected filename and byte length are checked here. The canonical render CLI
+checks full original SHA-256 and receipt again. The browser never uploads files;
+selected media stays in this tab as local blob URLs.</p>
+<div class="preview-controls"><label for="preview-join">Adjacent handoff</label><select id="preview-join"></select>
+<button id="preview-pair" type="button">Listen to approximate manual fade</button>
+<button id="preview-stop" type="button">Stop all local audio</button></div>
+<audio id="preview-out" controls preload="none" aria-label="Outgoing approved local WAV"></audio>
+<audio id="preview-in" controls preload="none" aria-label="Incoming approved local WAV"></audio>
+<p id="audition-message" role="status">Attach WAV files by hand before listening.
+Browser overlap is only an approximate cue preview, NOT the actual MixLab PCM renderer.
+Always review the final rendered WAV yourself before any event.</p></section>
 <div class="join-row"><label for="join-mode">Real output transition style</label>
 <select id="join-mode"><option value="hard_cuts">Original sample-exact joins (one output WAV)</option>
 <option value="manual_crossfades">Separate manually blended WAV with per-join fades</option></select></div>
@@ -85,6 +108,25 @@ const all=source.originals;
 let order=all.map((_,i)=>i);
 let selected=new Set(order);
 const fadeByIncoming=new Map(all.map((_,i)=>[i,8]));
+const privateMedia=new Map();
+let previewAnimation=null;
+const previewOut=$("preview-out"),previewIn=$("preview-in");
+const previewStatus=message=>{$("audition-message").textContent=message;};
+function stopPreview(){
+ if(previewAnimation!==null){cancelAnimationFrame(previewAnimation);previewAnimation=null;}
+ previewOut.pause();previewIn.pause();
+ previewOut.ontimeupdate=null;previewIn.ontimeupdate=null;
+ previewOut.volume=1;previewIn.volume=1;
+}
+function unloadMedia(index){
+ const old=privateMedia.get(index);
+ if(old){stopPreview();URL.revokeObjectURL(old.url);privateMedia.delete(index);}
+}
+window.addEventListener("pagehide",()=>{
+ stopPreview();for(const item of privateMedia.values())URL.revokeObjectURL(item.url);
+ privateMedia.clear();
+});
+
 const clock=s=>{
  let t=Math.round(s);const h=Math.floor(t/3600);t%=3600;
  return String(h).padStart(2,"0")+":"+String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0");
@@ -124,11 +166,44 @@ function render(){
    select.addEventListener("change",()=>{fadeByIncoming.set(idx,Number(select.value));render();});
    wrap.append(hint,select);row.append(wrap);
   }
-  row.prepend(check,number,name,up,down);root.append(row);
+  const mediaLine=document.createElement("div");mediaLine.className="preview-pickers";
+  const file=document.createElement("input");file.type="file";file.accept=".wav,audio/wav";
+  file.setAttribute("aria-label","Attach local source for "+entry.label);
+  const attached=document.createElement("small");
+  attached.textContent=privateMedia.has(idx)?"Private WAV attached in this tab":"No media loaded";
+  const first=document.createElement("button");first.type="button";first.textContent="Listen opening";
+  const last=document.createElement("button");last.type="button";last.textContent="Listen closing";
+  first.disabled=last.disabled=!privateMedia.has(idx);
+  first.addEventListener("click",()=>playClip(idx,false));
+  last.addEventListener("click",()=>playClip(idx,true));
+  file.addEventListener("change",()=>{
+   const incoming=file.files&&file.files[0];
+   if(!incoming)return;
+   if(incoming.name!==entry.wav_name||incoming.size!==entry.size_bytes){
+    unloadMedia(idx);previewStatus("Rejected attachment for "+entry.label+
+      ": name or byte size differs. Browser cannot certify a WAV; canonical CLI checks SHA.");
+    render();return;
+   }
+   unloadMedia(idx);
+   privateMedia.set(idx,{url:URL.createObjectURL(incoming)});
+   previewStatus("Local WAV attached for "+entry.label+". Browser has NOT verified its SHA.");
+   render();
+  });
+  mediaLine.append(file,attached,first,last);
+  row.prepend(check,number,name,up,down);row.append(mediaLine);root.append(row);
  });
  const chosen=order.filter(i=>selected.has(i));
  const frames=chosen.reduce((n,i)=>n+all[i].frames,0);
  const seconds=chosen.reduce((n,i)=>n+all[i].frames/all[i].rate,0);
+ const select=$("preview-join");
+ const previous=Number(select.value)||0;select.replaceChildren();
+ for(let i=0;i<chosen.length-1;i++){
+  const option=document.createElement("option");option.value=String(i);
+  option.textContent=all[chosen[i]].label+" → "+all[chosen[i+1]].label;
+  select.append(option);
+ }
+ select.value=String(Math.min(previous,Math.max(0,chosen.length-2)));
+ $("preview-pair").disabled=chosen.length<2||$("join-mode").value!=="manual_crossfades";
  $("count").textContent=String(chosen.length);
  $("time").textContent=clock(seconds);
  $("size").textContent=(frames*4/1048576).toFixed(1)+" MiB";
@@ -168,6 +243,73 @@ $("export").addEventListener("click",()=>{
  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
  $("notice").textContent="Private plan saved. Hand it to the CLI with the original SESSION/WAV pairs.";
 });
+
+function safeDuration(media,entry){
+ const expected=entry.frames/entry.rate;
+ return Number.isFinite(media.duration)&&media.duration>0&&
+  Math.abs(media.duration-expected)<0.3;
+}
+function admitBrowserMedia(element,index){
+ return new Promise((resolve,reject)=>{
+  const entry=all[index],attached=privateMedia.get(index);
+  if(!attached){reject(new Error("Source WAV is not attached"));return;}
+  element.onloadedmetadata=()=>{
+   if(!safeDuration(element,entry)){reject(new Error("Browser WAV duration differs from original receipt"));return;}
+   resolve(element.duration);
+  };
+  element.onerror=()=>reject(new Error("Browser could not decode the selected local WAV"));
+  element.src=attached.url;element.load();
+ });
+}
+async function playClip(index,tail){
+ stopPreview();
+ try{
+  const duration=await admitBrowserMedia(previewOut,index);
+  const start=tail?Math.max(0,duration-12):0;
+  previewOut.currentTime=start;previewIn.removeAttribute("src");previewIn.load();
+  const end=Math.min(duration,start+12);
+  previewOut.ontimeupdate=()=>{
+   if(previewOut.currentTime>=end-0.05){previewOut.pause();previewOut.ontimeupdate=null;}
+  };
+  await previewOut.play();
+  previewStatus("Rehearsing "+all[index].label+" locally; "+
+    (tail?"last":"first")+" 12 seconds. Source SHA is NOT browser-verified.");
+ }catch(_){previewStatus("Browser playback unavailable, or the selected WAV duration did not match. Check local media and use a native player.");}
+}
+async function playJoinedPreview(){
+ const chosen=order.filter(i=>selected.has(i));
+ const pos=Number($("preview-join").value);
+ if($("join-mode").value!=="manual_crossfades"||!Number.isInteger(pos)||
+    pos<0||pos>=chosen.length-1)return;
+ const from=chosen[pos],to=chosen[pos+1],fade=fadeByIncoming.get(to)||8;
+ if(!privateMedia.has(from)||!privateMedia.has(to)){
+  previewStatus("Attach both original local WAVs with their row pickers before previewing this handoff.");
+  return;
+ }
+ stopPreview();
+ try{
+  const durations=await Promise.all([admitBrowserMedia(previewOut,from),
+                                     admitBrowserMedia(previewIn,to)]);
+  const originalStart=Math.max(0,durations[0]-fade);
+  previewOut.currentTime=originalStart;previewIn.currentTime=0;
+  previewOut.volume=1;previewIn.volume=0;
+  await Promise.all([previewOut.play(),previewIn.play()]);
+  const tick=()=>{
+   if(previewOut.paused||previewIn.paused){stopPreview();return;}
+   const fraction=Math.min(1,Math.max(0,(previewOut.currentTime-originalStart)/fade));
+   previewOut.volume=1-fraction;previewIn.volume=fraction;
+   if(fraction>=1){stopPreview();previewStatus("Approximate browser handoff ended. The canonical PCM renderer is separate.");return;}
+   previewAnimation=requestAnimationFrame(tick);
+  };
+  tick();
+  previewStatus("Local approximately simultaneous "+fade+"s gain-fade prelisten: "+
+   all[from].label+" → "+all[to].label+". This is NOT an exact audio render or SHA proof.");
+ }catch(_){
+  stopPreview();previewStatus("Local overlap preview could not start. Browser codec/playback permissions vary. The canonical CLI still renders offline.");
+ }
+}
+$("preview-pair").addEventListener("click",playJoinedPreview);
+$("preview-stop").addEventListener("click",()=>{stopPreview();previewStatus("Local audio stopped.");});
 $("fingerprint").textContent="Private original event receipt SHA-256 fingerprints: "+
  all.map(x=>x.sha256.substring(0,16)).join(" / ");
 render();
@@ -232,7 +374,8 @@ def prepare_page(new_private_html, *source_pairs):
     # The exact 768 MiB cap is enforced on the *selected* render plan.
     dest = _private_html_destination(new_private_html)
     data = {"kind": PLAN_KIND, "max_pcm_bytes": MAX_BYTES,
-            "originals": [{**identity, "label": x["wav"].parent.name}
+            "originals": [{**identity, "label": x["wav"].parent.name,
+                           "wav_name": x["wav"].name, "size_bytes": x["stamp"][2]}
                           for x, identity in zip(items, _source_identity(items))]}
     text = json.dumps(data, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
     text = text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")

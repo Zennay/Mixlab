@@ -16,6 +16,18 @@ Provide 2–8 **alternating original Studio session and completed WAV** pairs. E
 
 Open `mixlab-sequence.private.html` locally. Use **↑/↓** to reorder completed events, untick any event you don't want, and choose the **output transition style**: default hard joins, or a separately rendered audio crossfade at each incoming event (2, 4, 8 or 16 seconds; an individual choice for each join). Choose **Export exact-source render plan**. The browser downloads `mixlab-marathon-sequence.private.json`; no media or metadata is sent to a server. You must keep **2–8 selected** events and stay within the existing **768 MiB uncompressed master** limit. You can start with a larger inventory and exclude events to fit the budget.
 
+## Optional: listen to your original local WAVs before choosing the order
+
+The new **Audition original local audio** area of the offline Sequence Studio lets you manually attach the *actual local WAV files* for the finished events:
+
+- Use the WAV file picker in an event row. The browser only checks its filename and byte size against source receipt information embedded in the local page. This is a convenience check, **not** a SHA-256 verification or source authenticity proof.
+- **Listen opening** and **Listen closing** play a bounded 12-second sample from the selected real local media. Only a single browser player is used for this operation.
+- With **Separate manually blended WAV** selected, choose an adjacent pair in the handoff selector and select **Listen to approximate manual fade**. Two local file-backed HTML5 players apply an approximate, complementary volume fade matching your selected 2/4/8/16-second choice. This is for human arrangement decisions only: the two browser clocks, decoding and output timing are **not sample-accurate** and not guaranteed to match the real deterministic MixLab offline blend engine.
+- Local source files stay entirely on the device via ephemeral `blob:` URLs. No music is embedded in the exported HTML/JSON, saved into persistent browser storage, sent over the network or packaged automatically. The URLs are revoked when you leave the page.
+- Browser decoding and autoplay permissions vary. If your browser cannot open the chosen WAV or playback is blocked, use your independent desktop audio player. Never present a simulated preview as a quality-certified master.
+
+A private canonical `render` still reopens **every original source and receipt** and validates their actual complete hashes before asking the operator to approve new audio. You must audition the **final exported WAV**, not just a two-deck browser approximation, before any event.
+
 ## 2. Approve and render a new actual Marathon
 
 ```bash
