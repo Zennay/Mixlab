@@ -65,6 +65,17 @@ geen ononderbroken audiohardware of perfecte latency.
 Een nieuw HTML-bestand verschijnt naast de WAV. De originele private receipt
 `final-set-01.wav.receipt.private.json` moet aanwezig zijn.
 
+## Offline portable pakket voor telefoon of USB
+
+Wil je de volledige set als één **MP3** meenemen in plaats van een grote
+WAV? [MixLab Portable DJ Set](private-portable-dj-set.md) kan op basis
+van de exact dezelfde vooraf gerenderde private WAV optioneel een
+192 kbit/s MP3, CUE-hoofdstukkenlijst, M3U8-afspeellijst en hashgebonden
+conversiereceipt maken. Alleen reeds geïnstalleerde FFmpeg/FFprobe wordt
+gebruikt, zonder upload of wijziging aan de originele WAV. De MP3 is
+lossy en de CUE-tijden zijn dus indicatief; voor exact framegebonden
+bewijs blijft de oorspronkelijke WAV leidend.
+
 ## Integriteits- en privacygrenzen
 
 De golfvorm wordt in maximaal 640 tijdvakken uit vier korte PCM-vensters per vak gesampled (maximaal 655.360 leesframes). Hij geeft een genormaliseerde, **benaderde energievisualisatie**, geen geïntegreerde loudnessmeting of muziekbeoordeling. Daardoor blijft de extra CPU- en geheugendruk begrensd, ook bij langere sets.
