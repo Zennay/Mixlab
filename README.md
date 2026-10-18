@@ -45,6 +45,12 @@ python3 -m mixlab.playlist_studio \
   --family bass_swap
 ~~~
 
+Met lokaal geïnstalleerde **FFmpeg/FFprobe** kun je in dezelfde
+opdracht ook een compacte privé-MP3 of verliesvrije FLAC publiceren.
+Voeg bijvoorbeeld `--delivery /private/mixlab-party.mp3 --bitrate-kbps 192`
+toe. Als optionele MP3/FLAC-export niet lukt, blijft de echte WAV
+beschikbaar. [Private Delivery-handleiding](docs/private-set-delivery.md).
+
 De wizard levert nu **meteen** de volledige
 **/private/mixlab-party.wav** én de offline
 **/private/mixlab-party.wav.player.html** naast de gewone Studio en Set Composer.
