@@ -83,3 +83,38 @@ This is a handoff/printing aid: an exported selection and SHA-bound receipt
 do not prove music licensing, independently measured playback timing,
 acoustic output, listener satisfaction, or musical ranking. No WAVs are
 embedded, played, modified or uploaded.
+
+## Rehearse the selected cues directly with original full WAV audio
+
+After exporting your human-chosen take, create an independent local cue
+player alongside the print cuebook. This player checks **every full
+original WAV SHA-256**, actual source receipt and private selected-take
+identity again **before producing the new private HTML**:
+
+```bash
+python3 -m mixlab.show_rehearsal_cue_stage \
+  /private/rehearsal-review/mixlab-selected-cue-stage.html \
+  /private/rehearsal-review/mixlab-rehearsal-take-selection.private.json \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --journal /private/rehearsals/take-01/mixlab-show-rehearsal.private.json \
+  --journal /private/rehearsals/take-02/mixlab-show-rehearsal.private.json
+```
+
+Open the generated HTML on an authorised **offline** computer. Attach each
+set's original completed local WAV using the file picker. The browser
+streams the *whole* WAV through local 1 MiB SHA-256 chunks and refuses
+substitutes, including equal-name/size files with different content.
+Only after it verifies the SHA can the DJ manually **Arm set**, press the
+native **Play** control, or click a selected cue to **seek** (without
+autoplay) to that recorded exact WAV position. Each cue retains the
+original source chapter and its comparison offset plus the DJ's private
+note. Switching sets stops the old file and revokes the previous browser
+playback URL.
+
+The new HTML contains **no music bytes**, no absolute local paths and no
+network or telemetry. It carries selected private cue annotations and
+SHA-fingerprints: treat it as private. It is NOT stage-grade fault-tolerant
+DJ equipment, a measured venue playback log, beat detection, music-rights
+proof or an independently blinded preference experiment. Bring a trusted
+native audio player and lawful music for an actual live event.
