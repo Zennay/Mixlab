@@ -21,19 +21,49 @@ MAX_NOTE = 300
 MAX_BRIEF = 64 * 1024
 
 
-def _validated_choices(plan_path, original_wav, blended_wav):
+def _validated_choices(plan_path, original_wav, blended_wav, previous_hybrid_wav=None):
     """Validate exact real source pair and every manually chosen join."""
     (_, _), (source, blend), fades, _ = _pair(original_wav, blended_wav)
     plan = _read_plan(plan_path)
-    if (not isinstance(plan, dict) or set(plan) != {
-            "schema_version", "kind", "original_sha256", "blend_sha256",
-            "private_only", "blind_study", "joins"} or
+    allowed = {"schema_version", "kind", "original_sha256", "blend_sha256",
+               "private_only", "blind_study", "joins"}
+    if (not isinstance(plan, dict) or set(plan) not in (allowed, allowed | {"parent_hybrid_sha256"}) or
             type(plan["schema_version"]) is not int or plan["schema_version"] != 1 or
             plan["kind"] != KIND or plan["private_only"] is not True or
             plan["blind_study"] is not False or
             plan["original_sha256"] != source["wav_sha256"] or
             plan["blend_sha256"] != blend["wav_sha256"]):
         raise ValueError("Join master selections do not match both real private Marathon masters")
+    parent_sha = plan.get("parent_hybrid_sha256")
+    if (parent_sha is None) != (previous_hybrid_wav is None):
+        raise ValueError("A revision must include both a previous WAV and its bound parent SHA")
+    if parent_sha is not None:
+        from .event_vault import _marathon_duration, _read_small_json
+        previous = Path(previous_hybrid_wav).absolute()
+        if previous.name != "marathon.wav":
+            raise ValueError("Previous revision must be an existing completed Marathon WAV")
+        _, previous_count, previous_kind = _marathon_duration(previous.parent, previous)
+        receipt = _read_small_json(previous.parent / "marathon.receipt.private.json")
+        if (previous_kind != "marathon_blend" or
+                parent_sha != receipt["wav_sha256"] or
+                receipt["source_marathon_sha256"] != source["wav_sha256"] or
+                previous_count != len(source["sections"])):
+            raise ValueError("This revision does not descend from the exact verified private hybrid master")
+        from .marathon_operator_transfer import _validate
+        old = _read_plan(previous.parent / "master-picks.private.json")
+        _validate(previous, old)
+        if old.get("source_blend_sha256") != blend["wav_sha256"]:
+            raise ValueError("Existing parent was not compared with these exact original/blended sources")
+        if not isinstance(old.get("joins"), list) or len(old["joins"]) != len(fades):
+            raise ValueError("Existing parent has no matching complete per-join decisions")
+        for old_row, fade in zip(old["joins"], fades):
+            if old_row.get("fade_seconds") != fade:
+                raise ValueError("Existing parent cannot be revised against a different fade baseline")
+        if not isinstance(plan.get("joins"), list) or not any(
+                current.get("choice") != past.get("choice")
+                for current, past in zip(plan["joins"], old["joins"])
+                if isinstance(current, dict) and isinstance(past, dict)):
+            raise ValueError("No audio transitions changed; keep the existing approved WAV")
     rows = plan["joins"]
     if not isinstance(rows, list) or len(rows) != len(fades) or len(rows) != len(source["sections"]) - 1:
         raise ValueError("Each real join needs one manually reviewed selection")
@@ -50,7 +80,7 @@ def _validated_choices(plan_path, original_wav, blended_wav):
                 any(ord(c) < 32 and c not in "\n\t" for c in row["note"])):
             raise ValueError("Join decision is incomplete or not tied to approved source audio")
         results.append(row)
-    return source, blend, results
+    return source, blend, results, parent_sha
 
 
 def _brief_html(source, blend, rows, master_sha):
@@ -94,10 +124,11 @@ def _write_private(path, data):
 def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
                      *, start=None, bundle=False, delivery=None,
                      bitrate_kbps=192, reels_output=None, reels_usb=False, operator_notes_usb=False,
-                     read=input, write=print):
+                     previous_hybrid_wav=None, read=input, write=print):
     if type(reels_usb) is not bool or (reels_usb and reels_output is None):
         raise ValueError("Optional real hybrid handoff ZIP requires --reels-output")
-    source, blend, choices = _validated_choices(plan_path, original_wav, blended_wav)
+    source, blend, choices, parent_sha = _validated_choices(
+        plan_path, original_wav, blended_wav, previous_hybrid_wav)
     fade_choices = tuple(row["fade_seconds"] if row["choice"] == "blend" else 0
                          for row in choices)
     if not any(fade_choices):
@@ -124,6 +155,7 @@ def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
             "source_blend_sha256": blend["wav_sha256"],
             "rendered_hybrid_sha256": result["wav_sha256"],
             "joins": choices, "actual_fade_seconds_by_join": list(fade_choices),
+            **({"parent_hybrid_sha256": parent_sha} if parent_sha else {}),
             "private_only": True, "blind_study": False, "music_rights_proven": False
         }
         _write_private(decision_file, (json.dumps(
@@ -188,6 +220,7 @@ def main():
     parser.add_argument("original_marathon_wav")
     parser.add_argument("blended_marathon_wav")
     parser.add_argument("new_private_folder")
+    parser.add_argument("--previous-hybrid", help="Required exact completed previous-hybrid WAV when a revision JSON names parent_hybrid_sha256")
     parser.add_argument("--start", help="Optional local HH:MM start")
     parser.add_argument("--reels-output", help="Optional NEW private real PCM16 original-versus-hybrid short WAV listening folder; extra typed approval")
     parser.add_argument("--reels-usb", action="store_true",
@@ -207,7 +240,8 @@ def main():
             start=args.start, bundle=args.bundle, delivery=args.delivery,
             bitrate_kbps=args.bitrate_kbps,
             reels_output=args.reels_output, reels_usb=args.reels_usb,
-            operator_notes_usb=args.operator_notes_usb)
+            operator_notes_usb=args.operator_notes_usb,
+            previous_hybrid_wav=args.previous_hybrid)
     except (ValueError, TypeError, KeyError, OSError, UnicodeError,
             EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab hybrid: plan, approved real WAVs, explicit consent or new private destination invalid.\n")

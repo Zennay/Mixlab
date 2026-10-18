@@ -166,3 +166,58 @@ WAV player, possibly after seeking or pausing. It does **not** measure when
 a performer played something at a physical event, how a room reacted, mix
 quality, rights provenance, or a scientific preference outcome. Private
 logs are never automatically inserted into regular portable music ZIPs.
+
+## 7. Reopen, revise and re-render a completed real hybrid set
+
+A DJ can now **revise previously approved join choices without starting over**.
+The source is not a browser-generated approximation: the new
+`mixlab.marathon_revision_desk` first verifies the previous completed hybrid
+WAV and receipt, original master, compared previously approved real blended
+master, every source hash, its human choice log, and exact per-join fade values.
+
+Choose a **new local HTML file** in an existing trusted private folder:
+
+```bash
+python3 -m mixlab.marathon_revision_desk \
+  /private/current-hybrid/marathon.wav \
+  /private/original/marathon.wav \
+  /private/approved-blend/marathon.wav \
+  /private/work/mixlab-revise-handoffs.html
+```
+
+Open the HTML without a server. Each real boundary remembers its previously
+approved hard-cut/crossfade decision and note. Change one or more joins,
+reset to the previous choices, set all to original, or choose all previously
+rendered fades. The UI calculates the **new estimated PCM frame count and
+duration difference** for the exact selected already-rendered fade lengths.
+There is no audio embedded, no network, no hidden model or real-time mix claim.
+The existing original/approved-blend sources stay untouched.
+
+Only a plan with an actual transition change can be exported. If every join
+becomes original, use the **already approved original** WAV; the application
+does not create a redundant hybrid copy. The exported
+`mixlab-hybrid-revision.private.json` includes the *previous* fully
+verified hybrid master SHA-256 as `parent_hybrid_sha256`. Its output is
+never silently treated as valid for a different previous master.
+
+To actually render the revised version:
+
+```bash
+python3 -m mixlab.marathon_reel_decisions \
+  /private/work/mixlab-hybrid-revision.private.json \
+  /private/original/marathon.wav \
+  /private/approved-blend/marathon.wav \
+  /private/new-revised-hybrid \
+  --previous-hybrid /private/current-hybrid/marathon.wav
+```
+
+The renderer independently rechecks the previous full WAV hash, its existing
+private human decision log and its exact original/blend ancestry, and refuses
+no-op revisions, missing/mismatched parent SHA, wrong fade provenance or
+changed source media. It still asks for human typed `yes` before actual
+PCM16 rendering. A **new separate, source-verified WAV** is created and the
+private decision log retains `parent_hybrid_sha256` for traceability;
+existing original, blended and parent hybrid masters are never overwritten.
+Print stage/notes and optional approved ZIP workflows remain available. This
+is manual local DJ curation, **not** proof of music rights or blinded
+independent sound quality.
