@@ -88,6 +88,10 @@ Het bord kiest geen definitieve overgang en verandert geen bronmanifest
 zonder de aparte `mixlab.idea_board apply`-opdracht. Bekijk de
 [volledige Idea Board-workflow](transition-idea-board.md) om de
 goedgekeurde cues veilig in een **nieuwe** Studio te renderen.
+De nieuwe `python3 -m mixlab.idea_board finish ...`-opdracht verbindt
+de hashgebonden DJ-goedkeuring, het nieuwe bronmanifest, alle vier
+echt gerenderde overgangstypes en de offline Set Composer in één stap.
+De originele track- en sessiebestanden blijven ongewijzigd.
 
 `--ideas` vereist genormaliseerde audio en kan daarom niet met
 `--manifest-only` worden gecombineerd. Bij `--resume --ideas`
