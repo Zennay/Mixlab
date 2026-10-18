@@ -27,6 +27,26 @@ python3 -m mixlab.event_restore \
 
 The printed command result tells you the exact restored WAV, event dashboard and Rehearsal Desk paths, if present. Bundles created before the rehearsal feature simply restore without that optional page.
 
+## Marathon ZIPs
+
+The same `mixlab.event_restore` command also accepts a trusted
+**Event Marathon** ZIP produced by `python3 -m mixlab.marathon_bundle`
+or `python3 -m mixlab.event_marathon --bundle ...`.
+
+A restored Marathon contains `marathon.wav`,
+`marathon.receipt.private.json`, and `index.html`, rather than an
+original Playlist Studio session. The restore command checks the
+three expected members, private archive SHA inventory, the exact joined
+WAV SHA, PCM16 stereo frame count, sample rate and contiguous 2–8
+subevent frame boundaries before admitting the new output folder.
+
+A restored Marathon can then be indexed in the
+[private Event Vault](private-event-vault.md).
+The 768 MiB Marathon WAV bound differs from the existing per-file
+512 MiB original single-event bundle bound, but both use the overall
+896 MiB ZIP package budget. The manifest is still **unsigned** and
+proves no external authenticity or additional music distribution rights.
+
 ## Protections and limits
 
 - The ZIP must be an original-style **uncompressed** MixLab bundle with its private manifest. ZIP paths, directories, symlinks, absolute filenames, traversals, duplicates, unlisted entries, unknown compression and extra files are refused.
