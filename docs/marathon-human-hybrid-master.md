@@ -34,6 +34,24 @@ The resulting new folder contains:
 - `index.html` and, when possible, the original existing printed show runbook.
 - `master-picks.private.json` — the explicit operator decisions, private notes and SHA-256 of the **actual newly rendered** hybrid.
 - `master-picks.private.html` — printable private cue sheet tying each hard join/crossfade and human note to the exact completed hybrid WAV.
+- `master-picks.stage.html` — a mobile/desktop **offline live cue navigator** that plays only the real finished `marathon.wav`, shows the currently playing event, the next event, countdown to its actual receipt-bound join, each real hard/fade decision and the private note. Jump to 8 seconds before a join, previous/next join, ±15 seconds, and fullscreen stage mode. No server, microphone, telemetry or localStorage.
+
+
+You can open `master-picks.stage.html` directly with `marathon.wav`
+alongside it, on an offline laptop or tablet; use `master-picks.private.html`
+for paper. A separate rebuild is also possible after moving the verified
+hybrid and operator choices:
+
+```bash
+python3 -m mixlab.marathon_hybrid_stage   /private/new-hybrid-event/marathon.wav   /private/new-hybrid-event/master-picks.private.json   /private/new-hybrid-event/master-picks.stage.html
+```
+
+The stage generator rechecks the **actual complete rendered WAV SHA-256**,
+its valid Marathon receipt and every note/decision/timestamp relationship.
+The browser does not itself hash the WAV and must not be used as a professional
+timing or live-output guarantee; its countdown is guidance derived from the
+verified rendered timeline. This extra page is not part of the regular music
+ZIP and must be handed off privately.
 
 The decision/print artifacts are optional operator handoff extras: if their local publication fails after the actual approved WAV renders, MixLab retains the real master and reports a warning. If every join was marked **original**, simply use the already approved original WAV; there is no reason to create a misleading redundant derivative, so the hybrid command rejects that case.
 

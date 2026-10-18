@@ -130,6 +130,15 @@ def render_decisions(plan_path, original_wav, blended_wav, new_private_folder,
         _write_private(brief_file, _brief_html(source, blend, choices, result["wav_sha256"]))
         result["private_master_picks"] = str(decision_file)
         result["private_printable_cue_sheet"] = str(brief_file)
+        try:
+            from .marathon_hybrid_stage import create_stage
+            result["private_stage_navigator"] = create_stage(
+                result["continuous_wav"], decision_file,
+                folder / "master-picks.stage.html")
+        except (ValueError, TypeError, KeyError, OSError, wave.Error):
+            result["stage_navigator_warning"] = (
+                "Actual hybrid WAV and printed operator cues remain available; "
+                "optional local live stage navigator could not be published.")
     except (OSError, ValueError, UnicodeError):
         result["cue_sheet_warning"] = ("Approved actual hybrid WAV remains intact; "
               "the optional local operator-notes handoff could not be completed.")
