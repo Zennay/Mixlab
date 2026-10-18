@@ -15,6 +15,7 @@ import wave
 from pathlib import Path
 import shutil
 import stat
+import subprocess
 
 from .cueprep import _read_spec
 from .ingest import digest
@@ -395,7 +396,7 @@ def main():
                         args.session, file, args.portable_mp3,
                         timeout_seconds=args.portable_timeout_seconds)
                 except (ValueError, OSError, TypeError, KeyError, wave.Error,
-                        __import__("subprocess").SubprocessError) as exc:
+                        subprocess.SubprocessError) as exc:
                     payload["portable_warning"] = str(exc)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Set Composer: " + str(exc) + "\n")
