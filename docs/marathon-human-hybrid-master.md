@@ -262,3 +262,37 @@ same separately approved real full hybrid WAV is rendered first; the clip
 step then requests an **additional typed `yes`**. If it fails, only
 the optional new listening folder is rolled back. The full prior and newly
 approved revised WAV masters remain available.
+
+## 9. Browse real WAV revisions and release one selected master
+
+Use the following with 2–8 **ordered consecutive** finished private hybrid WAVs:
+
+```bash
+python3 -m mixlab.marathon_revision_history prepare \
+  /private/work/mixlab-revision-history.html \
+  /private/hybrid-v1/marathon.wav /private/hybrid-v2/marathon.wav
+```
+
+The CLI verifies each full PCM16 WAV SHA-256, official receipt, source identity,
+original approved blend relationship, private operator decisions, and every
+successive `parent_hybrid_sha256`. Foreign/out-of-order versions are rejected.
+The local offline HTML shows original durations, real changed transition counts
+and SHA fingerprints. You can manually attach each local WAV to listen, but
+the browser checks only basename, size and decoded duration, **not SHA**;
+the CLI always independently hashes original audio before any publication.
+Export a selected-version JSON without source paths or audio bytes.
+
+```bash
+python3 -m mixlab.marathon_revision_history publish \
+  /private/work/mixlab-selected-hybrid-lineage.private.json \
+  /private/hybrid-v1/marathon.wav /private/hybrid-v2/marathon.wav \
+  --bundle --delivery mp3
+```
+
+`publish` re-verifies all ordered WAVs and the exact selection, requests
+explicit typed `yes` and invokes only the existing official private WAV USB
+and installed FFmpeg routes. The selected already finished WAV is **never
+modified**, other versions cannot be silently chosen, and private DJ notes
+are not automatically included. Optional output failures keep original WAVs.
+Music rights, external sender authenticity and independent blinded listening
+preference are still **not** proven by internal source hashes.
