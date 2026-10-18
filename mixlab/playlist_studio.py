@@ -53,7 +53,7 @@ def _positive_cue(value):
 
 
 def create_playlist_manifest(music_directory, output_manifest, new_session,
-                             *, read=input, write=print, beats=16, partition="development", journey_plan=None):
+                             *, read=input, write=print, beats=16, partition="development", journey_plan=None, approval_file=None):
     """Capture an ordered rights-permitted private playlist and every manual cue.
 
     Cheap input checks run before touching the local song collection. Sources
@@ -65,6 +65,12 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
         raise ValueError("Invalid dataset partition")
     source, manifest_path, project = _check_paths(music_directory, output_manifest, new_session)
     files = _media_listing(source)
+    approved = None
+    if approval_file is not None:
+        if journey_plan is None:
+            raise ValueError("--approval-file requires --journey-plan")
+        from .playlist_approval import load_approval
+        approved = load_approval(source, journey_plan, approval_file, beats=beats)
     write("\nMIXLAB · PRIVATE PLAYLIST STUDIO")
     write("Select an ordered list of up to 11 rights-permitted local tracks.")
     write("All BPM, cue points and permissions must be supplied by you; no tempo is inferred.")
@@ -100,15 +106,26 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
         else:
             bpm = pinned_bpm[name]
             write(f"Using human-verified notes: {bpm} BPM; source hash checked.")
-        first_downbeat = _ask(read, write,
-                              "Verified first downbeat seconds (blank if unknown): ",
-                              lambda s: None if not s else _positive_cue(s))
-        rights = _ask(read, write, "Declared rights (synthetic / licensed / user-permitted / public-domain): ",
-                      _rights)
-        provenance = _ask(read, write, "Source provenance / your permission basis: ",
-                          _nonblank)
+        if approved is None:
+            first_downbeat = _ask(read, write,
+                                  "Verified first downbeat seconds (blank if unknown): ",
+                                  lambda s: None if not s else _positive_cue(s))
+            rights = _ask(read, write, "Declared rights (synthetic / licensed / user-permitted / public-domain): ",
+                          _rights)
+            provenance = _ask(read, write, "Source provenance / your permission basis: ",
+                              _nonblank)
+        else:
+            manual = approved["tracks"][i-1]
+            if manual["path"] != name:
+                raise ValueError("Approved track order differs from plan")
+            first_downbeat = manual["first_downbeat_seconds"]
+            rights = _rights(manual["rights"])
+            provenance = _nonblank(manual["provenance"])
+            write("Using explicitly supplied local human rights, provenance and downbeat fields.")
         song = _regular_source(source, name)
         sha, _identity = _fingerprint(song)
+        if approved is not None and sha != manual["sha256"]:
+            raise ValueError("Source changed since manual cue approval")
         item = {"id": f"track-{i:03d}", "path": name, "sha256": sha,
                 "bpm": bpm, "rights": rights, "provenance": provenance,
                 "partition": partition, "recording_id": f"recording-{i:03d}"}
@@ -134,9 +151,15 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
             if value + 1e-8 < previous_incoming_end:
                 raise ValueError("Outgoing cue backtracks before the previous incoming transition ends")
             return value
-        a_start = _ask(read, write,
-                       f"Outgoing A cue in seconds (>= {previous_incoming_end:g}): ", outgoing)
-        b_start = _ask(read, write, "Incoming B cue in seconds: ", _positive_cue)
+        if approved is None:
+            a_start = _ask(read, write,
+                           f"Outgoing A cue in seconds (>= {previous_incoming_end:g}): ", outgoing)
+            b_start = _ask(read, write, "Incoming B cue in seconds: ", _positive_cue)
+        else:
+            approved_pair = approved["pairs"][i]
+            a_start = outgoing(str(approved_pair["a_start_seconds"]))
+            b_start = _positive_cue(str(approved_pair["b_start_seconds"]))
+            write("Using manually checked source-bound A/B cues from approved private form.")
         pairs.append({"id": f"pair-{i+1:03d}",
                       "a": catalog[i]["id"], "b": catalog[i+1]["id"],
                       "bpm": catalog[i]["bpm"], "beats": beats,
@@ -163,8 +186,13 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           timeout_seconds=600, partition="development",
                           resume=False, manifest_only=False, ideas=False,
                           full_set_wav=None, family="bass_swap", styles=(),
-                          delivery=None, bitrate_kbps=192, journey_plan=None):
+                          delivery=None, bitrate_kbps=192, journey_plan=None,
+                          approval_file=None):
     """Run the complete local product workflow after explicit human annotation."""
+    if approval_file is not None and journey_plan is None:
+        raise ValueError("--approval-file needs the original --journey-plan")
+    if resume and approval_file is not None:
+        raise ValueError("--approval-file is only used on fresh manifest creation")
     if resume and journey_plan is not None:
         raise ValueError("--journey-plan is only for a fresh playlist, not --resume")
     if resume and manifest_only:
@@ -185,7 +213,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         write("Resuming the exact existing private playlist manifest without changing its cues.")
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
-                                 beats=beats, partition=partition, journey_plan=journey_plan)
+                                 beats=beats, partition=partition, journey_plan=journey_plan,
+                                 approval_file=approval_file)
     idea_beats = None
     if ideas:
         with manifest.open("r", encoding="utf-8") as reader:
@@ -279,6 +308,8 @@ def main():
     parser.add_argument("new_session_directory", help="New private session directory outside music/Git")
     parser.add_argument("--journey-plan",
                         help="Private SHA-pinned energy journey suggestion; explicitly approve before cues")
+    parser.add_argument("--approval-file",
+                        help="Private SHA-bound human rights/cues exported from playlist_approval; requires --journey-plan")
     parser.add_argument("--beats", type=int, default=16,
                         help="Manually chosen transition beat count, shared by all pairs (1..64)")
     parser.add_argument("--partition", choices=("development", "evaluation"),
@@ -311,7 +342,7 @@ def main():
             ideas=args.ideas, full_set_wav=args.full_set_wav,
             family=args.family, styles=args.style,
             delivery=args.delivery, bitrate_kbps=args.bitrate_kbps,
-            journey_plan=args.journey_plan)
+            journey_plan=args.journey_plan, approval_file=args.approval_file)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
