@@ -403,6 +403,15 @@ besloten bijlage meenemen, maar nooit automatisch zonder verzoek. De
 `event_restore`-route verifieert na extractie dat het besluit bij de
 daadwerkelijk herstelde WAV hoort. Geen externe identiteit/rechtenauthenticatie.
 
+Bij de expliciet aangevinkte keuze-overdracht levert MixLab nu ook
+`marathon.master-choice.private.html`: een volledig offline,
+printbare DJ-handoff met de werkelijke WAV-overgangstijden, gekozen
+fade-duren en de eigen privénotities. Je kunt die ook los maken met
+`python3 -m mixlab.marathon_master_review brief SELECTED.wav CHOICE.json NEW.html`.
+Na USB-herstel controleert de bestaande herstelroute dat de printbrief
+uit de echte SHA-geverifieerde WAV en bijbehorende notities opnieuw
+identiek te maken is. Standaard ZIP-pakketten blijven zonder notities.
+
 ### Luister naar de twee échte Marathon-masters en lever alleen je keuze op
 
 Na een handmatig gerenderde crossfade bestaat naast het oorspronkelijke WAV

@@ -66,7 +66,7 @@ def _open_archive(source):
 
 def _inspect(archive):
     infos = archive.infolist()
-    if not 3 <= len(infos) <= MAX_ITEMS + 4:
+    if not 3 <= len(infos) <= MAX_ITEMS + 5:
         raise ValueError("Private bundle has an invalid number of outputs")
     names = [info.filename for info in infos]
     if len(set(names)) != len(names) or names.count(MANIFEST) != 1:
@@ -99,7 +99,7 @@ def _inspect(archive):
     ):
         raise ValueError("Not a supported private MixLab event manifest")
     entries = manifest.get("files")
-    if not isinstance(entries, list) or not 2 <= len(entries) <= MAX_ITEMS + (3 if is_marathon else 0):
+    if not isinstance(entries, list) or not 2 <= len(entries) <= MAX_ITEMS + (4 if is_marathon else 0):
         raise ValueError("Bundle file inventory is missing or oversized")
     file_map = {}
     size_total = 0
@@ -125,15 +125,19 @@ def _inspect(archive):
                     "marathon.mp3", "marathon.mp3.receipt.private.json", "marathon.mp3.player.html",
                     "marathon.flac", "marathon.flac.receipt.private.json", "marathon.flac.player.html",
                     "mixlab-marathon-cues.private.json", "marathon.cues.private.html",
-                    "mixlab-marathon-master-choice.private.json"}
+                    "mixlab-marathon-master-choice.private.json",
+                    "marathon.master-choice.private.html"}
         cue_pair = {"mixlab-marathon-cues.private.json", "marathon.cues.private.html"}
         contains_cues = set(file_map) & cue_pair
         if (bool(contains_cues) != (manifest.get("operator_cues_included") is True) or
                 (contains_cues and not cue_pair.issubset(file_map))):
             raise ValueError("Portable operator cues must be explicitly declared and complete")
-        has_choice = "mixlab-marathon-master-choice.private.json" in file_map
-        if has_choice != (manifest.get("master_choice_included") is True):
-            raise ValueError("Private human master choice must be an explicitly declared ZIP member")
+        choice_pair = {"mixlab-marathon-master-choice.private.json",
+                       "marathon.master-choice.private.html"}
+        has_choice = set(file_map) & choice_pair
+        if (bool(has_choice) != (manifest.get("master_choice_included") is True) or
+                (has_choice and not choice_pair.issubset(file_map))):
+            raise ValueError("Private human choice and printable brief must be declared together")
         packed_codecs = [codec for codec in ("mp3", "flac")
                          if ("marathon." + codec) in file_map]
         if len(packed_codecs) > 1:
@@ -236,6 +240,20 @@ def restore_bundle(private_zip, new_private_folder):
                         bound_choice_for_master(
                             output / master,
                             output / "mixlab-marathon-master-choice.private.json")
+                        from .marathon_master_review import create_master_brief
+                        checked = output / "marathon.master-choice.check.private.html"
+                        try:
+                            create_master_brief(
+                                output / master,
+                                output / "mixlab-marathon-master-choice.private.json",
+                                checked)
+                            if (hashlib.sha256(checked.read_bytes()).digest() !=
+                                    hashlib.sha256(
+                                        (output / "marathon.master-choice.private.html").read_bytes()
+                                    ).digest()):
+                                raise ValueError("Printable DJ handoff differs from selected master receipt/notes")
+                        finally:
+                            checked.unlink(missing_ok=True)
                     for codec in ("mp3", "flac"):
                         name = "marathon." + codec
                         if name not in files:
@@ -271,6 +289,8 @@ def restore_bundle(private_zip, new_private_folder):
                         if master == "marathon.wav" and "marathon.join-studio.private.html" in files else None,
                     "offline_marathon_master_choice": str(output / "mixlab-marathon-master-choice.private.json")
                         if master == "marathon.wav" and "mixlab-marathon-master-choice.private.json" in files else None,
+                    "offline_marathon_master_brief": str(output / "marathon.master-choice.private.html")
+                        if master == "marathon.wav" and "marathon.master-choice.private.html" in files else None,
                     "offline_marathon_cues": str(output / "mixlab-marathon-cues.private.json")
                         if master == "marathon.wav" and "mixlab-marathon-cues.private.json" in files else None,
                     "offline_marathon_cue_sheet": str(output / "marathon.cues.private.html")
