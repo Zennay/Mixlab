@@ -39,6 +39,22 @@ The `publish` CLI revalidates the *two* originals and their full PCM16 SHA-256 r
 
 Select `--delivery flac` instead of `--delivery mp3` for optional lossless local encoding, or `--bundle` alone to retain the original WAV format in portable ZIP. At least one output flag is required. These optional outputs need enough local space and installed codecs (for MP3/FLAC). An unavailable codec/ZIP is recorded as a warning; the existing real WAVs remain unchanged. Previously created output files are never overwritten.
 
+## 3. Carry the actual operator decision in the private USB archive
+
+When you run **`marathon_master_review publish ... --bundle`**, MixLab now includes the exact originally exported `mixlab-marathon-master-choice.private.json` in the portable ZIP **only because you explicitly invoked the human-choice release workflow**. Standalone `marathon_bundle` does **not** add notes by default; you may request this separately with `--master-choice /private/review/mixlab-marathon-master-choice.private.json`.
+
+The bundle manifest explicitly marks `master_choice_included`; the choice's selected output SHA is rechecked against the **actual ZIP's selected original or blended WAV**. Restore with:
+
+```bash
+python3 -m mixlab.event_restore \
+  /private/marathon-blend/marathon.selected.private.zip \
+  /private/restored-show
+```
+
+The restore path verifies the ZIP member SHA and **again** validates the carried decision against the restored `marathon.wav`, its official receipt, its type (original versus blended), event count, and (for blends) the original source SHA. The restored choice is reported as `offline_marathon_master_choice`. It preserves a DJ's chosen version, review notes and private context across computers without requiring the other master to travel. It **cannot authenticate** the absent other original WAV, an external reviewer's identity, the authenticity of an unsigned ZIP, or public performance rights.
+
+Privacy: handwritten notes are **not** included in unrelated USB packages. If the notes contain private information, omit `--master-choice` from direct bundle exports and protect your selected-master ZIP.
+
 ## Important gates
 
 - Use only privately allowed music and actual completed MixLab Event Publisher/Marathon masters. The receipt hashes verify internal consistency, **not a recording's licensing or authentic authorship**.
