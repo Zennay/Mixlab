@@ -76,7 +76,7 @@ def _overlap(reader, writer, last_frame_start, next_frame_start, fade_frames):
 
 
 def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
-                             fade_seconds=8, join_fades=None, start=None, bundle=False,
+                             fade_seconds=8, join_fades=None, join_plan=None, start=None, bundle=False,
                              read=input, write=print):
     """Create a new continuous WAV with actual manually chosen crossfades.
 
@@ -86,6 +86,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
     """
     if type(fade_seconds) is not int or fade_seconds not in CHOICES:
         raise ValueError("Choose exactly 2, 4, 8 or 16 seconds of crossfade")
+    if (join_plan is not None and (join_fades is not None or fade_seconds != 8)):
+        raise ValueError("Choose manual fades OR an original-SHA-bound Join Studio plan, not both")
     if join_fades is not None and fade_seconds != 8:
         raise ValueError("Choose a common fade OR a per-boundary sequence, not both")
     if type(bundle) is not bool:
@@ -101,6 +103,25 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
 
     rate = source_receipt["rate"]
     original_sections = source_receipt["sections"]
+    if join_plan is not None:
+        from .event_vault import _read_small_json
+        plan_path = Path(join_plan).absolute()
+        if plan_path.suffix.lower() != ".json" or plan_path.is_symlink():
+            raise ValueError("Choose an actual local private Join Studio JSON plan")
+        for ancestor in plan_path.parents:
+            if ancestor.is_symlink():
+                raise ValueError("Private render plan must not use a symlinked directory")
+        plan = _read_small_json(plan_path)
+        if (not isinstance(plan, dict) or plan.get("schema_version") != 1 or
+                plan.get("kind") != "mixlab-private-manual-join-plan-v1" or
+                plan.get("original_wav_sha256") != source_receipt["wav_sha256"] or
+                plan.get("original_frames") != source_receipt["frames"] or
+                plan.get("rate") != rate or
+                plan.get("source_event_sha256s") !=
+                [section["source_sha256"] for section in original_sections] or
+                plan.get("private_only") is not True):
+            raise ValueError("Join plan belongs to a different completed Marathon master")
+        join_fades = plan.get("fade_seconds_by_join")
     if join_fades is None:
         seconds_by_join = (fade_seconds,) * (count - 1)
     else:
@@ -285,13 +306,14 @@ def main():
     fades.add_argument("--fade-seconds", type=int, choices=CHOICES, default=8,
                        help="One duration used at every event boundary")
     fades.add_argument("--join-fades", help="Comma-separated seconds for EACH join, e.g. 16,4,8")
+    fades.add_argument("--join-plan", help="Original SHA-locked private JSON exported by Join Studio")
     parser.add_argument("--start", help="Optional local show start HH:MM")
     parser.add_argument("--bundle", action="store_true", help="Also create optional private USB ZIP")
     args = parser.parse_args()
     try:
         per_join = tuple(int(item.strip()) for item in args.join_fades.split(",")) if args.join_fades is not None else None
         result = publish_blended_marathon(args.original_marathon_wav, args.new_private_folder,
-                                         fade_seconds=args.fade_seconds, join_fades=per_join,
+                                         fade_seconds=args.fade_seconds, join_fades=per_join, join_plan=args.join_plan,
                                          start=args.start, bundle=args.bundle)
     except (ValueError, KeyError, TypeError, OSError, EOFError, KeyboardInterrupt, wave.Error):
         parser.exit(2, "MixLab blend: source or explicit approval failed; no blended output was published.\n")
