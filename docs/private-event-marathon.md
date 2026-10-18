@@ -45,6 +45,48 @@ receipt, checks its entire PCM16 master, then asks for a fresh human
 event must be longer than twice that length. No render ever overwrites the
 existing master, source tracks or original Studio sessions.
 
+### Visual offline Join Studio (no terminal duration list)
+
+For a private original Marathon, the Event Publisher's Marathon route now
+automatically creates `marathon.join-studio.private.html` alongside its
+receipt-verified `marathon.wav`. The offline Marathon player links to it
+with **Arrange transitions**. To create a separate editor manually:
+
+~~~bash
+python3 -m mixlab.marathon_join_studio \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon/new-join-studio.private.html
+~~~
+
+Open the HTML in a local browser. Choose 2, 4, 8 or 16 seconds **independently
+for every event handoff**. The page shows the actual receipt-bound event
+labels, original WAV boundary clocks and the proposed shorter running
+time. **Listen to approximation** uses temporary local browser streams and
+a manually controlled complementary-gain blend. Browser audio is best-effort
+and is not the canonical MixLab PCM renderer or reliable evidence of quality.
+
+Choose **Export private render plan** to download a small JSON file (no
+music/audio included) with the original WAV's SHA-256, exact original PCM
+frame count, sample rate, all original event SHA-256s and the selected
+durations. Move it to any trusted private local path and render the
+**real** PCM16 WAV with:
+
+~~~bash
+python3 -m mixlab.marathon_blend \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon-custom \
+  --join-plan /private/mixlab-marathon-joins.private.json \
+  --bundle
+~~~
+
+The renderer rehashes the original WAV, compares all bound fields and
+refuses a stale or unrelated plan before creating any output. A fresh
+typed **yes** remains mandatory; a browser export cannot grant source
+rights or authorize production on its own. The private Marathon USB ZIP
+carries the offline editor when present, and the existing restore command
+retains its adjacent original WAV so the editor remains usable on a
+trusted second computer.
+
 ### Choose a different fade for each transition
 
 For an original Marathon of **four complete sets**, there are three joins.
