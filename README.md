@@ -40,12 +40,20 @@ MP3/FLAC/M4A vereisen reeds geïnstalleerde FFmpeg/FFprobe en canonieke
 python3 -m mixlab.playlist_studio \
   /private/music \
   /private/music/my-playlist.private.json \
-  /private/mixlab-playlist-01 --beats 16
+  /private/mixlab-playlist-01 --beats 16 \
+  --full-set-wav /private/mixlab-party.wav \
+  --family bass_swap
 ~~~
 
-Open **/private/mixlab-playlist-01/set-composer/index.html**.
-Beluister de reeds gerenderde overgangen, bouw je route en download
-`mixlab-set-plan.private.json`. Render daarna één complete WAV:
+De wizard levert nu **meteen** de volledige
+**/private/mixlab-party.wav** én de offline
+**/private/mixlab-party.wav.player.html** naast de gewone Studio en Set Composer.
+Je kunt tijdens het invoeren ook `--style pair-002:echo_exit` kiezen
+om precies die tweede overgang expliciet een andere renderstijl te geven.
+
+Wil je de stijlkeuze juist eerst handmatig beluisteren? Open dan
+**/private/mixlab-playlist-01/set-composer/index.html**, kies je route,
+download `mixlab-set-plan.private.json` en render die later afzonderlijk:
 
 ~~~bash
 python3 -m mixlab.set_composer render \
@@ -54,8 +62,8 @@ python3 -m mixlab.set_composer render \
   /private/mixlab-party.wav
 ~~~
 
-Daar verschijnt ook **/private/mixlab-party.wav.player.html** met een
-interactieve golfvorm, hoofdstukken per overgang en CUE-export. Je kunt
+De offline speler heeft een interactieve golfvorm, hoofdstukken per
+overgang en CUE-export. Je kunt
 de handmatige invoer vooraf vastleggen met `--manifest-only` en later
 zonder opnieuw typen renderen met `--resume`.
 
@@ -68,7 +76,27 @@ kwaliteit of echte phrase-detectie wordt geclaimd.
 Lees [de Playlist Studio-handleiding](docs/guided-playlist-studio.md),
 [de offline Set Composer](docs/offline-set-composer.md),
 [de Full Set Player](docs/private-full-set-player.md) en
-[Transition Idea Board](docs/transition-idea-board.md).
+[Transition Idea Board](docs/transition-idea-board.md),
+[de nieuwe complete cue-goedkeuringsflow](docs/cue-idea-production-workflow.md),
+[Instant Set](docs/instant-private-full-set.md) en
+[Set Gallery](docs/offline-full-set-gallery.md).
+
+### Vergelijk twee complete mixes zonder opnieuw te beginnen
+
+Render twee privé volledige playlists met verschillende al bestaande,
+écht gerenderde overgangsstijlen en wissel in de lokale browser
+op dezelfde afspeelpositie:
+
+~~~bash
+python3 -m mixlab.set_gallery \
+  /private/mixlab-playlist-01 \
+  /private/mixlab-variant-gallery
+~~~
+
+Open **/private/mixlab-variant-gallery/index.html**. Dit is geen
+blinde kwaliteitsmeting: de stijlkeuzes zijn zichtbaar en de muziek
+blijft lokaal. Gebruik [de volledige Set Gallery-handleiding](docs/offline-full-set-gallery.md)
+voor tot vier varianten.
 
 ### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
