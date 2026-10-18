@@ -172,9 +172,16 @@ def create_runbook(marathon_wav, new_html, *, start=None):
     page = _PAGE.replace("__DATA__", serialized).encode("utf-8")
     if len(page) > MAX_HTML:
         raise ValueError("Private Marathon showbook exceeds page budget")
-    with target.open("xb") as dst:
-        os.fchmod(dst.fileno(), 0o600)
-        dst.write(page)
+    created = False
+    try:
+        with target.open("xb") as dst:
+            created = True
+            os.fchmod(dst.fileno(), 0o600)
+            dst.write(page)
+    except Exception:
+        if created:
+            target.unlink(missing_ok=True)
+        raise
     return target
 
 
