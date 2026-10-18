@@ -49,10 +49,10 @@ def _read_cues(path):
         raise ValueError("Private cue log is not valid UTF-8 JSON") from exc
 
 
-def create_cue_sheet(approved_marathon_wav, private_cue_json, new_private_html):
+def verified_cues(approved_marathon_wav, private_cue_json):
+    """Verify exact original WAV receipt and bounded private markers without publishing."""
     wav = Path(approved_marathon_wav).absolute()
     cues_path = Path(private_cue_json).absolute()
-    output = Path(new_private_html).absolute()
     if wav.name != "marathon.wav":
         raise ValueError("Expected the completed original or blended Marathon master")
     _ordinary_file(wav, 768 * 1024 * 1024 + 44)
@@ -87,6 +87,13 @@ def create_cue_sheet(approved_marathon_wav, private_cue_json, new_private_html):
             raise ValueError("Private cue has an invalid time, section binding or note")
         ordered.append((float(when), i, idx, note))
     ordered.sort()
+    return wav, cues_path, receipt, sections, duration, count, ordered
+
+
+def create_cue_sheet(approved_marathon_wav, private_cue_json, new_private_html):
+    wav, cues_path, receipt, sections, duration, count, ordered = verified_cues(
+        approved_marathon_wav, private_cue_json)
+    output = Path(new_private_html).absolute()
     if (output.suffix.lower() != ".html" or not NAME.fullmatch(output.name) or
             output == wav or output == cues_path or output.exists() or output.is_symlink() or
             not output.parent.is_dir() or

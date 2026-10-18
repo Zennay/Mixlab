@@ -50,9 +50,32 @@ masters and notes are left unchanged.
   200 manually entered markers per sheet and up to 300 characters per marker.
 - No browser storage, music upload, server endpoint, audio recording, analytics,
   or automatic source-rights verification.
-- The ZIP/restore workflows already carry the standard player; Stage is part
-  of that player. Cue files are independently exported by the operator and
-  must be copied separately; they are not added automatically to a ZIP.
+- The standard player, including Stage, always travels in the private ZIP.
+  **Operator notes are not included by default**: export the Stage JSON,
+  then explicitly choose to include it with `--cues` when making a **new**
+  private ZIP. Only the canonical Stage export name is accepted, and the
+  printable sheet is newly regenerated from the exact WAV receipt.
+- The optional full handoff command (note: use the *original*, trusted ZIP
+  only when restoring to a second computer):
+
+```bash
+python3 -m mixlab.marathon_bundle \
+  /private/marathon/marathon.wav \
+  /private/marathon/marathon-with-cues.private.zip \
+  --cues /private/Downloads/mixlab-marathon-cues.private.json
+
+python3 -m mixlab.event_restore \
+  /private/marathon/marathon-with-cues.private.zip \
+  /private/restored-marathon
+```
+
+- After restoration, the two optional artifacts are
+  `mixlab-marathon-cues.private.json` and
+  `marathon.cues.private.html`, alongside `marathon.wav`,
+  `marathon.receipt.private.json` and `index.html`.
+  The restore validates that both notes and the printed sheet correspond
+  exactly to the SHA-verified restored WAV. Unapproved/disjoint cue
+  files fail closed and the new incomplete restore folder is removed.
 - The master and cue JSON are not cryptographically signed. Hash binding
   catches accidental mixing with a different master, not a malicious author
   who controls both files.
