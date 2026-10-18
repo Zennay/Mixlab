@@ -636,3 +636,12 @@ selectie. Met `marathon_revision_history publish CHOICE_JSON DEZELFDE_WAVS
 getypte `yes` via de officiële besloten USB-/MP3-/FLAC-route gepubliceerd.
 Geen her-render, automatische beoordeling, muziek-upload of ongevraagde
 privénotities in het audiopakket.
+
+De bestaande hybride **Revision Desk** kan optioneel meteen echte korte
+originele/crossfade-WAVs bij elke overgang laten horen: maak of herstel eerst
+de officiële SHA-geverifieerde `Real Join Reels` en plaats het nieuwe
+`mixlab-revision.html` in diezelfde besloten map met de extra optie
+`--reels-folder PRIVATE_REAL_REELS_DIR`. De CLI controleert de volledige
+masterbron-SHA's, de daadwerkelijke PCM16-fragmenten en exacte joinfades;
+de browser gebruikt alleen deze lokaal bestaande WAVs, zonder eigen fades of
+uploads. [Hybrid Revision Desk](docs/marathon-human-hybrid-master.md#10-audition-genuine-originalblend-wav-excerpts-while-revising).

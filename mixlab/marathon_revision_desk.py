@@ -65,6 +65,13 @@ frame count before authorising a new CLI render.</p>
 <button id="originals" type="button">All original hard cuts</button>
 <button id="blends" type="button">All already approved crossfades</button></div>
 <p id="status" role="status"></p></section>
+<section id="audition" hidden><h2>Real WAV A/B before changing a decision</h2>
+<p>Each source clip and its exact official private full-WAV receipt were
+verified by the CLI before this page was made. There is no browser-made
+fade, model audio or upload.</p>
+<audio id="clip-audio" controls preload="none"></audio>
+<p id="clip-status" role="status">Choose a short existing real WAV below.</p>
+</section>
 <section><h2>2 / Export a new exact-source revision</h2>
 <p>The new local JSON names the previous finished WAV SHA-256 as
 `parent_hybrid_sha256`. The renderer refuses this plan unless you supply
@@ -91,6 +98,9 @@ const duration=seconds=>{
   .map(v=>String(v).padStart(2,"0")).join(":");
 };
 const cards=[],selects=[],textareas=[];
+const clipPlayer=$("clip-audio");
+$("audition").hidden=!data.reels_available;
+window.addEventListener("pagehide",()=>clipPlayer.pause());
 function currentFades(){return data.joins.map((join,i)=>choices[i]==="blend"?join.fade_seconds:0);}
 function render(){
  let changed=0;const fades=currentFades();
@@ -132,7 +142,24 @@ data.joins.forEach((join,i)=>{
  const field=document.createElement("textarea");field.maxLength=300;
  field.value=join.note;field.setAttribute("aria-label","Private operator note for join "+(i+1));
  field.addEventListener("input",()=>{notes[i]=field.value;});
- card.append(row,field);$("joins").append(card);
+ card.append(row,field);
+ if(data.reels_available){
+  const controls=document.createElement("div");controls.className="controls";
+  for(const version of ["original","blend"]){
+   const listen=document.createElement("button");listen.type="button";
+   listen.textContent=version==="original"?"Hear actual hard join":"Hear actual rendered crossfade";
+   listen.addEventListener("click",()=>{
+    clipPlayer.pause();
+    clipPlayer.src="./join-"+String(i+1).padStart(2,"0")+"-"+version+".wav";
+    clipPlayer.load();
+    $("clip-status").textContent="Real previously verified "+version+
+     " PCM16 excerpt, not a browser-generated transition.";
+    const playback=clipPlayer.play();
+    if(playback)playback.catch(()=>{$("clip-status").textContent="Press Play in the player.";});
+   });controls.append(listen);
+  }card.append(controls);
+ }
+ $("joins").append(card);
  cards.push(card);selects.push(select);textareas.push(field);
 });
 function resetChoices(which){
@@ -190,16 +217,33 @@ def _verified_revision_context(previous_wav, original_wav, blend_wav):
     return r0, r1, choices, receipt, prev_duration
 
 
-def create_revision_desk(previous_wav, original_wav, blend_wav, new_private_html):
+def create_revision_desk(previous_wav, original_wav, blend_wav, new_private_html,
+                         *, reels_folder=None):
     r0, r1, decisions, receipt, previous_duration = _verified_revision_context(
         previous_wav, original_wav, blend_wav)
     target = _private_html_destination(new_private_html)
+    if reels_folder is not None:
+        from .marathon_reels_transfer import _inspect
+        if Path(reels_folder).absolute() != target.parent:
+            raise ValueError("Private revision page and verified real reels must share one folder")
+        approved, _ = _inspect(reels_folder)
+        if (approved["original_sha256"] != r0["wav_sha256"] or
+                approved["blend_sha256"] != r1["wav_sha256"] or
+                approved["rate"] != r0["rate"] or
+                len(approved["joins"]) != len(decisions["joins"])):
+            raise ValueError("Real WAV reels do not belong to these approved masters")
+        for i, pair in enumerate(approved["joins"]):
+            if (pair["from"] != r0["sections"][i]["label"] or
+                    pair["to"] != r0["sections"][i+1]["label"] or
+                    pair["fade_seconds"] != decisions["joins"][i]["fade_seconds"]):
+                raise ValueError("Verified short original/blend reels have different join labels or fades")
     data = {
         "original_sha256": r0["wav_sha256"],
         "blend_sha256": r1["wav_sha256"],
         "parent_hybrid_sha256": receipt["wav_sha256"],
         "current_duration": previous_duration, "original_frames": r0["frames"],
         "rate": r0["rate"], "max_wav_bytes": 768 * 1024 * 1024,
+        "reels_available": reels_folder is not None,
         "joins": decisions["joins"]
     }
     serialized = json.dumps(data, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
@@ -220,6 +264,7 @@ def create_revision_desk(previous_wav, original_wav, blend_wav, new_private_html
             "approved_source_original_sha256": r0["wav_sha256"],
             "approved_source_blend_sha256": r1["wav_sha256"],
             "joins": len(decisions["joins"]), "contains_audio": False,
+            "verified_real_reels": reels_folder is not None,
             "has_source_paths": False, "music_rights_proven": False,
             "blind_preference_proven": False}
 
@@ -231,12 +276,14 @@ def main():
     parser.add_argument("original_marathon_wav")
     parser.add_argument("approved_blended_marathon_wav")
     parser.add_argument("new_private_mixlab_revision_html")
+    parser.add_argument("--reels-folder", help="Existing verified real original-vs-blend Join Reel folder; new revision HTML must be in it")
     args = parser.parse_args()
     try:
         result = create_revision_desk(
             args.existing_hybrid_marathon_wav,
             args.original_marathon_wav, args.approved_blended_marathon_wav,
-            args.new_private_mixlab_revision_html)
+            args.new_private_mixlab_revision_html,
+            reels_folder=args.reels_folder)
     except (ValueError, KeyError, TypeError, OSError, wave.Error, UnicodeError):
         parser.exit(2, "MixLab revision: previous real WAV, source receipts, privacy or new HTML destination unavailable.\n")
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))

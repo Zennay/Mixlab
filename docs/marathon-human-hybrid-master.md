@@ -296,3 +296,33 @@ modified**, other versions cannot be silently chosen, and private DJ notes
 are not automatically included. Optional output failures keep original WAVs.
 Music rights, external sender authenticity and independent blinded listening
 preference are still **not** proven by internal source hashes.
+
+## 10. Audition genuine original/blend WAV excerpts while revising
+
+The revision desk can also play the original **actual** PCM16 A/B snippets
+before you edit your previous decisions, without repeatedly loading huge
+WAVs. First generate or restore the official [Real Join Reels](marathon-real-join-reels.md)
+for the same original and approved blended source masters. Then place a
+**new** revision HTML beside the already verified short WAV files:
+
+```bash
+python3 -m mixlab.marathon_revision_desk \
+  /private/hybrid-current/marathon.wav \
+  /private/original/marathon.wav \
+  /private/approved-blend/marathon.wav \
+  /private/handoff-reels/mixlab-revision.html \
+  --reels-folder /private/handoff-reels
+```
+
+The CLI re-verifies the entire original/blended/hybrid full WAVs, current
+choice history, the exact official Real Join Reels receipt, each tiny stereo
+PCM16 WAV header and content SHA-256, source SHA match, sample rate,
+transition labels, selected fade lengths and join cardinality. It refuses
+unrelated, changed or symlinked reel sources. The editor now shows **Hear
+actual hard join / Hear actual rendered crossfade** for each row; both are
+existing, already copied short WAVs, **never browser-created audio or new
+models**. Browser playback may be restricted locally and does not itself
+re-hash the WAV, but the CLI rechecks the physical sources before publishing.
+The editor remains offline with no media embedded, storage or upload.
+Re-exported revisions still require a separate typed approval and preserve
+the older finished WAV and its real SHA/receipt.
