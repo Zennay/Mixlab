@@ -367,6 +367,10 @@ def main():
     finish.add_argument("session", help="The original private session directory")
     finish.add_argument("choice_file", help="Downloaded private JSON route plan")
     finish.add_argument("output", help="New output .wav path outside the session")
+    finish.add_argument("--portable-mp3", metavar="NEW_FILE.mp3",
+                        help="Also create a private 192-kbit MP3+CUE+M3U8 delivery pack")
+    finish.add_argument("--portable-timeout-seconds", type=int, default=600,
+                        help="Max seconds for local FFmpeg delivery (30..900)")
     args = parser.parse_args()
     try:
         if args.command == "create":
@@ -382,6 +386,17 @@ def main():
                 payload["offline_player"] = str(publish_player(args.session, file))
             except (ValueError, OSError, TypeError, KeyError, wave.Error) as exc:
                 payload["player_warning"] = str(exc)
+            # Optional portable delivery never invalidates a completed WAV,
+            # its source receipt or already published offline player.
+            if args.portable_mp3:
+                try:
+                    from .set_delivery import export_portable
+                    payload["portable_delivery"] = export_portable(
+                        args.session, file, args.portable_mp3,
+                        timeout_seconds=args.portable_timeout_seconds)
+                except (ValueError, OSError, TypeError, KeyError, wave.Error,
+                        __import__("subprocess").SubprocessError) as exc:
+                    payload["portable_warning"] = str(exc)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Set Composer: " + str(exc) + "\n")
     payload.update({"mode": "offline-manual-creative", "automatic_beatmatching": False,
