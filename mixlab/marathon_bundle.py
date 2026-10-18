@@ -48,6 +48,8 @@ def export_marathon_bundle(original_marathon_wav, new_zip):
         _source(folder, "marathon.receipt.private.json", RECEIPT_LIMIT),
         _source(folder, "index.html", PAGE_LIMIT),
     ]
+    if (folder / "marathon.runbook.private.html").exists():
+        files.append(_source(folder, "marathon.runbook.private.html", PAGE_LIMIT))
     if sum(meta.st_size for _, meta in files) > MAX_TOTAL:
         raise ValueError("Private Marathon package exceeds the existing ZIP memory/disk budget")
     created = False
