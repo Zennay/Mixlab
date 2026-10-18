@@ -129,3 +129,37 @@ original session, symlinked source or unsafe output path is rejected. You
 can continue editing and explicitly download an updated SHA-bound show plan,
 then use that exact revision with `show_conductor print` or
 `show_master`. The old plan, source sessions and WAVs stay untouched.
+
+
+## Capture a private manual rehearsal journal
+
+During the **offline manual** multi-set stage, MixLab records only local browser
+operator actions after an approved set has been SHA-verified and armed:
+arm, playback start, manually marked WAV cue position, Stop, and WAV end.
+Press **Mark local WAV cue position** at the moment you want to note a cue.
+Entries carry the exact source set index, native browser seek position and a
+page-relative monotonic elapsed time. They do **not** prove what speakers,
+attendees, a venue clock or a human DJ actually heard. Nothing is stored
+persistently until you deliberately choose **Download private rehearsal
+journal**. Maximum 256 records per page (48-hour elapsed ceiling).
+
+To create a **new** private, printable report in a separate approved folder:
+
+```bash
+python3 -m mixlab.show_rehearsal \
+  /private/event-operations/mixlab-show-rehearsal.private.json \
+  /private/event-operations/mixlab-rehearsal-report.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav
+```
+
+Use the same original ordered source-session/full-WAV pairs as Show Conductor.
+The CLI independently verifies every original WAV SHA, studio/source receipts,
+and exact event set indices and WAV positions. It refuses a foreign source list,
+extra/incorrect fields, out-of-order entries or invalid private output
+location. The report shows elapsed page time, action, set and WAV position,
+plus full original SHA fingerprints. It includes **no audio bytes, local file
+paths or private operator notes**. Handle the exported JSON and report as
+private operational materials. This is a rehearsal annotation workflow, not
+independent human blind listening, real-world venue evidence, playback timing
+certification or permission to use the music.
