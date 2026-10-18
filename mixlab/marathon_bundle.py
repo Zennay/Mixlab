@@ -6,10 +6,12 @@ therefore proves internal file consistency, never external authenticity.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
 import stat
+import tempfile
 import zipfile
 
 from .event_bundle import BLOCK, MAX_TOTAL, _copy_entry, _new_zip_path
@@ -30,7 +32,7 @@ def _source(folder, name, maximum):
     return path, metadata
 
 
-def export_marathon_bundle(original_marathon_wav, new_zip):
+def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None):
     """Package the real WAV, its exact receipt and its official offline player."""
     wav = Path(original_marathon_wav).absolute()
     if wav.name != "marathon.wav":
@@ -73,45 +75,61 @@ def export_marathon_bundle(original_marathon_wav, new_zip):
                 not isinstance(details.get("output_sha256"), str)):
             raise ValueError("Portable audio does not match the original private Marathon receipt")
         files.extend([(audio, audio_meta), (portable_receipt, receipt_meta), (page, page_meta)])
-    if sum(meta.st_size for _, meta in files) > MAX_TOTAL:
-        raise ValueError("Private Marathon package exceeds the existing ZIP memory/disk budget")
-    created = False
-    complete = False
-    try:
-        with target.open("xb") as output:
-            created = True
-            os.fchmod(output.fileno(), 0o600)
-            with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_STORED,
-                                 allowZip64=True) as archive:
-                records = [
-                    _copy_entry(archive, item, meta,
-                                expected_hash=(receipt["wav_sha256"] if item == wav else
-                                               details["output_sha256"] if portable and item == audio else None))
-                    for item, meta in files
-                ]
-                manifest = {
-                    "schema_version": 1,
-                    "kind": "mixlab-private-portable-marathon-v1",
-                    "wav_sha256": receipt["wav_sha256"],
-                    "chapters": sections,
-                    "source_media_included": False,
-                    "private_local_use_only": True,
-                    "automatic_licensing": False,
-                    "files": records,
-                }
-                descriptor = zipfile.ZipInfo(MANIFEST)
-                descriptor.compress_type = zipfile.ZIP_STORED
-                descriptor.external_attr = 0o600 << 16
-                with archive.open(descriptor, "w") as stream:
-                    stream.write((json.dumps(manifest, sort_keys=True, indent=2,
-                                             allow_nan=False) + "\n").encode("utf-8"))
-        complete = True
-    finally:
-        if created and not complete:
-            target.unlink(missing_ok=True)
-    return {"private_bundle_zip": str(target), "wav_sha256": receipt["wav_sha256"],
-            "events_joined": sections, "private": True, "network_uploads": False,
-            "archive_authenticated": False, "source_media_included": False}
+    with ExitStack() as stack:
+        if cues is not None:
+            # Only an explicit opt-in can package human notes. The printed
+            # sheet is rebuilt from receipt-bound JSON (not arbitrary HTML).
+            from .marathon_cue_sheet import create_cue_sheet
+            cues_path = Path(cues).absolute()
+            if cues_path.name != "mixlab-marathon-cues.private.json":
+                raise ValueError("Use the original Stage-exported private cue filename")
+            scratch = Path(stack.enter_context(
+                tempfile.TemporaryDirectory(prefix=".mixlab-marathon-cues-", dir=folder)))
+            sheet_path = scratch / "marathon.cues.private.html"
+            create_cue_sheet(wav, cues_path, sheet_path)
+            files.append(_source(cues_path.parent, cues_path.name, RECEIPT_LIMIT))
+            files.append(_source(scratch, sheet_path.name, PAGE_LIMIT))
+        if sum(meta.st_size for _, meta in files) > MAX_TOTAL:
+            raise ValueError("Private Marathon package exceeds the existing ZIP memory/disk budget")
+        created = False
+        complete = False
+        try:
+            with target.open("xb") as output:
+                created = True
+                os.fchmod(output.fileno(), 0o600)
+                with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_STORED,
+                                     allowZip64=True) as archive:
+                    records = [
+                        _copy_entry(archive, item, meta,
+                                    expected_hash=(receipt["wav_sha256"] if item == wav else
+                                                   details["output_sha256"] if portable and item == audio else None))
+                        for item, meta in files
+                    ]
+                    manifest = {
+                        "schema_version": 1,
+                        "kind": "mixlab-private-portable-marathon-v1",
+                        "wav_sha256": receipt["wav_sha256"],
+                        "chapters": sections,
+                        "source_media_included": False,
+                        "private_local_use_only": True,
+                        "automatic_licensing": False,
+                        "operator_cues_included": cues is not None,
+                        "files": records,
+                    }
+                    descriptor = zipfile.ZipInfo(MANIFEST)
+                    descriptor.compress_type = zipfile.ZIP_STORED
+                    descriptor.external_attr = 0o600 << 16
+                    with archive.open(descriptor, "w") as stream:
+                        stream.write((json.dumps(manifest, sort_keys=True, indent=2,
+                                                 allow_nan=False) + "\n").encode("utf-8"))
+            complete = True
+        finally:
+            if created and not complete:
+                target.unlink(missing_ok=True)
+        return {"private_bundle_zip": str(target), "wav_sha256": receipt["wav_sha256"],
+                "events_joined": sections, "private": True, "network_uploads": False,
+                "archive_authenticated": False, "source_media_included": False,
+                "operator_cues_included": cues is not None}
 
 
 def main():
@@ -119,9 +137,10 @@ def main():
         description="Package one original private MixLab Marathon WAV into a SHA-manifest USB ZIP")
     parser.add_argument("marathon_wav", help="Existing receipt-bound marathon.wav")
     parser.add_argument("new_private_zip", help="NEW private .zip beside marathon.wav")
+    parser.add_argument("--cues", help="Include the SHA-bound private Stage cue log and newly generated printable show sheet")
     args = parser.parse_args()
     try:
-        result = export_marathon_bundle(args.marathon_wav, args.new_private_zip)
+        result = export_marathon_bundle(args.marathon_wav, args.new_private_zip, cues=args.cues)
     except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
         parser.exit(2, "MixLab Marathon ZIP: no complete package was published; "
                        "inspect your original local WAV and receipt.\n")
