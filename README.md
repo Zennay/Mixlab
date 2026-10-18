@@ -147,6 +147,27 @@ geen geldig draaiboek; de bestaande Studio/WAV-bronintegriteitscontrole
 blijft verplicht. De afspeelklok, niet de geplande tijd, is leidend bij
 pauzes of live onderbrekingen. [Show Runbook-handleiding](docs/offline-dj-show-runbook.md).
 
+### Rechten en overgangscues in één privé-browserformulier
+
+Maak van jouw voorgestelde DJ-set een echte volledige set zonder voor
+elk nummer opnieuw BPM/rechten/cues in de terminal over te typen.
+Een nieuw offline formulier toont alle SHA-gebonden nummers, verzamelt
+jouw expliciete gebruiksrechten en bronherkomst, en de echte door jou
+gecontroleerde A/B-cuepunten. Exporteer daarna een nieuw privé-
+goedkeuringsbestand en voer een **bestaande Playlist Studio-render**
+uit, met één laatste expliciete toestemming vóór er muziek verwerkt wordt.
+
+~~~bash
+python3 -m mixlab.playlist_approval /private/music /private/music/set-plan.private.json /private/music/playlist-approval.private.html
+# Open de HTML lokaal en exporteer mixlab-event-approved.private.json.
+python3 -m mixlab.playlist_studio /private/music /private/music/approved-sources.private.json /private/event-session --journey-plan /private/music/set-plan.private.json --approval-file /private/music/mixlab-event-approved.private.json --beats 16 --full-set-wav /private/event.wav
+~~~
+
+Een browserinvoer is **geen juridisch rechtenbewijs** en vervangt geen
+muzikale analyse of echte luisteracceptatie. De renderer controleert bron-
+SHA, plan-SHA, cuegrenzen, rechtenverklaring en finale menselijke
+goedkeuring opnieuw. [Volledige formulierhandleiding](docs/offline-playlist-approval.md).
+
 ### Nieuw: plan een energieboog en laat MixLab de volgorde voorstellen
 
 Je hoeft de volgorde niet meer volledig zelf te verzinnen. Leg eerst per
