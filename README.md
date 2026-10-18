@@ -441,6 +441,14 @@ alleen de gekozen master wordt als nieuwe privé-uitvoer gecodeerd/verpakt.
 Het is geen geblindeerde luisterstudie, geen rechtenverklaring en geen live
 kwaliteitscertificaat. [Master Review-handleiding](docs/marathon-master-review.md).
 
+Bij de bestaande `marathon_sequence render`-opdracht kun je nu
+`--reels-output /private/nieuwe-luistermap` meegeven naast
+`--blend-output /private/nieuwe-blendmap`. Na de echte originele én
+apart goedgekeurde blended WAV vraagt MixLab om afzonderlijke toestemming
+om korte fragmenten rond alle overgangen uit de echte WAVs te kopiëren.
+Daarna is de luistermap meteen klaar. Het optionele luisterpakket faalt
+of wordt geweigerd zonder de twee afgewerkte masters weg te halen.
+
 ### Hoor de échte overgang zonder complete urenlange WAV te laden
 
 **Real Join Reels** maakt uit twee al officieel geverifieerde private
