@@ -81,7 +81,8 @@ def _copy_entry(archive, item, meta, *, expected_hash=None):
 
 
 def export_bundle(private_session, complete_wav, new_zip, *,
-                  player=None, dashboard=None, runbook=None, compressed=None):
+                  player=None, dashboard=None, runbook=None,
+                  rehearsal=None, compressed=None):
     """Build private portable event ZIP from canonical WAV and validated links."""
     wav = Path(complete_wav).absolute()
     target = _new_zip_path(wav, new_zip)
@@ -97,7 +98,7 @@ def export_bundle(private_session, complete_wav, new_zip, *,
     wav_receipt, _ = _regular_companion(root, wav_receipt)
     inputs.append((wav_receipt, None))
 
-    for optional in (player, dashboard, runbook):
+    for optional in (player, dashboard, runbook, rehearsal):
         if optional is not None:
             path = _local_optional(root, optional, (".html",), required=True)
             inputs.append((path, None))
@@ -178,6 +179,7 @@ def main():
     parser.add_argument("--player")
     parser.add_argument("--dashboard")
     parser.add_argument("--runbook")
+    parser.add_argument("--rehearsal")
     parser.add_argument("--compressed")
     parser.add_argument("--compressed-receipt")
     parser.add_argument("--compressed-player")
@@ -193,6 +195,7 @@ def main():
         result = export_bundle(args.private_session, args.complete_wav,
                                args.new_private_zip, player=args.player,
                                dashboard=args.dashboard, runbook=args.runbook,
+                               rehearsal=args.rehearsal,
                                compressed=portable)
     except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile) as exc:
         parser.exit(2, "MixLab portable bundle: " + str(exc) + "\n")

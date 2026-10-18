@@ -63,8 +63,11 @@ The Publisher:
    show runbook** with chapter times and optional human-selected
    local start time (`--start HH:MM`). The paper/CSV cue sheet is
    complementary to the audio player, not a live audio mixer.
+8. Creates the **private offline Rehearsal Desk** from the same canonical
+   WAV receipt. Rehearse verified chapter offsets, loop short transition
+   excerpts and export/import SHA-bound operator notes without uploading audio.
 
-8. Builds \`index.html\` as a private offline **event landing page**
+9. Builds \`index.html\` as a private offline **event landing page**
    linking the actual WAV/chapter player, optional portable audio and
    runbook. The waveform/timeline are derived from the verified output
    receipt and contain no original private source paths.
@@ -81,10 +84,11 @@ Example private package:
     final-set.wav.player.html                  # offline chapter/event player
     final-set.mp3                              # optional; requires FFmpeg
     final-set.runbook.private.html             # private operator timeline
+    final-set.rehearsal.private.html           # offline loop practice and notes
 ~~~
 
 A published `final-set.wav` is never deleted just because optional
-MP3/FLAC delivery, an event dashboard or a show runbook failed. Such errors are returned
+MP3/FLAC delivery, an event dashboard, a rehearsal page or a show runbook failed. Such errors are returned
 explicitly in `warnings`. Conversely, if no actual full-set WAV was
 published, this wrapper reports a failure even if the initial private
 Studio exists; it never reports a complete event based only on HTML or
@@ -97,12 +101,13 @@ verified event outputs into a **new**, private
 \`/private/mixlab-party-01/final-set.private.zip\`.
 The bundle contains the real WAV and its private receipt, chapter
 player, local event homepage, optional independently receipt-bound
-MP3/FLAC and operator runbook. It **never contains original source
+MP3/FLAC, the rehearsal page and operator runbook. It **never contains original source
 music or source-rights manifests**. This opt-in export uses bounded
 64 KiB streaming blocks and a strict total file budget; it will not
 overwrite existing ZIPs or accidentally upload to a service.
 If ZIP creation fails, the already produced audio and pages remain.
 [Private portable bundle manual](private-portable-event-bundle.md).
+[Offline Rehearsal Desk manual](offline-rehearsal-desk.md).
 
 ## Permissions and recovery
 
