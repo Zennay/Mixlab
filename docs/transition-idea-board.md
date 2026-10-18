@@ -65,6 +65,38 @@ Selecteer één mogelijkheid per paar en download
 `mixlab-approved-cues.private.json`. De browser maakt geen
 netwerkverzoeken en importeert geen nieuwe muziek.
 
+## Eén opdracht van goedkeuring naar écht gerenderde Studio
+
+Na het downloaden van het goedgekeurde JSON-plan kun je **alle
+geaccepteerde cuepunten** onmiddellijk met MixLabs bestaande officiële
+audio-engine opnieuw laten renderen. De Idea Board-preview speelde alleen
+losse WAV-fragmenten; `finish` maakt nu de daadwerkelijke vier
+overgangsfamilies en Set Composer in een **nieuwe** sessie:
+
+~~~bash
+python3 -m mixlab.idea_board finish \
+  /private/session-01/sources/source_manifest.json \
+  /private/session-01/cue-suggestions.private.json \
+  /private/mixlab-approved-cues.private.json \
+  /private/session-01/sources/approved-development.json \
+  /private/session-ideas-02
+~~~
+
+Open daarna het geretourneerde `studio`-pad of
+`/private/session-ideas-02/set-composer/index.html`; luister de
+**nieuw gerenderde** echte bass-swap, echo-exit, hard-cut en baseline
+DSP-overgangen en kies welke je voor de volledige set wilt exporteren.
+
+Belangrijke herstelgarantie: het goedgekeurde
+`approved-development.json` wordt **eerst exclusief nieuw** geschreven.
+Als daarna het importeren/renderen faalt, blijft die bronmanifest intact
+en kun je met `python3 -m mixlab.session` naar een andere,
+nog niet bestaande sessiemap opnieuw beginnen. Een al geslaagde Studio
+wordt niet weggegooid als optionele HTML-editorpublicatie mislukt.
+De bronsessie, de originele tracks en de keuzefile worden nooit
+overschreven. `finish` is alleen beschikbaar voor development-materiaal;
+evaluatie-/holdoutdata mogen niet met dit hulpmiddel worden aangepast.
+
 ## Eerst bevestigen, daarna een nieuwe mix maken
 
 De selectie is gebonden aan de exacte SHA-256 van zowel het oorspronkelijke

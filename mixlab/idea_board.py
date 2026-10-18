@@ -350,6 +350,65 @@ def apply_board(source_manifest, suggestions_file, selection_file, new_source_ma
     return target
 
 
+
+def finish_approved_ideas(source_manifest, suggestions_file, selection_file,
+                          new_source_manifest, new_session, *, timeout_seconds=600):
+    """Apply DJ choices and render their *actual* revised transitions.
+
+    Unlike the browser's isolated source preview, this emits real M1 Studio
+    DSP transition WAVs for the approved source windows and a new Set
+    Composer. The original session, music, suggestions and approval record
+    remain immutable. No automatic preference / phrase decisions.
+    """
+    from .session import _private_project_dir, make_session
+    from .set_composer import create_composer
+    from .cue_editor import prepare as prepare_visual_editor
+
+    source_path = Path(source_manifest).absolute()
+    approved_path = Path(new_source_manifest).absolute()
+    destination = Path(new_session).absolute()
+    if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
+        raise ValueError("Audio decoder timeout must be 30..900 seconds")
+    if not source_path.parent.is_dir() or source_path.parent.is_symlink():
+        raise ValueError("Private normalized source directory missing or redirected")
+    # Reject nesting a new render inside an existing finished Studio. The
+    # original receipts remain an independent immutable project, including
+    # when the caller uses a nonstandard project folder name.
+    parent_project = source_path.parent.parent
+    if (source_path.parent.name == "sources"
+            and (parent_project / "session-receipt.private.json").is_file()
+            and destination.is_relative_to(parent_project)):
+        raise ValueError("Write the new approved render outside the original MixLab session")
+    _private_project_dir(destination, approved_path)
+    # A successful apply is durable even if later audio import fails: the DJ
+    # can rerender this exact hash-bound approved manifest in a fresh folder.
+    saved_manifest = apply_board(
+        source_path, suggestions_file, selection_file, approved_path)
+    studio = make_session(saved_manifest, destination,
+                          timeout_seconds=timeout_seconds)
+    warnings = []
+    composer = None
+    editor = None
+    try:
+        composer = create_composer(destination)
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        warnings.append("Optional Set Composer unavailable: " + str(exc))
+    normalized = destination / "sources" / "source_manifest.json"
+    try:
+        editor = prepare_visual_editor(normalized, destination / "sources" / "cue-editor.html")
+    except (ValueError, OSError, TypeError, KeyError) as exc:
+        warnings.append("Optional visual editor unavailable: " + str(exc))
+    return {
+        "ready": True, "mode": "local-manually-approved-transition-renders",
+        "approved_manifest": str(saved_manifest),
+        "new_session": str(destination), "studio": str(studio),
+        "set_composer": str(composer) if composer else None,
+        "visual_cue_editor": str(editor) if editor else None,
+        "warnings": warnings, "audio_uploaded": False,
+        "automatic_phrase_detection": False, "human_preference_proven": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Private manual-grid energy cue ideas for DJ approval")
     actions = parser.add_subparsers(dest="action", required=True)
@@ -362,13 +421,27 @@ def main():
     apply.add_argument("energy_suggestions")
     apply.add_argument("approved_json")
     apply.add_argument("new_manifest")
+    finish = actions.add_parser("finish", help="Approve cue ideas and render a complete NEW playable Studio")
+    finish.add_argument("normalized_manifest")
+    finish.add_argument("energy_suggestions")
+    finish.add_argument("approved_json")
+    finish.add_argument("new_manifest")
+    finish.add_argument("new_session")
+    finish.add_argument("--timeout-seconds", type=int, default=600)
     args = parser.parse_args()
     try:
         if args.action == "create":
             result = prepare_board(args.normalized_manifest, args.energy_suggestions, args.new_html)
-        else:
+        elif args.action == "apply":
             result = apply_board(args.normalized_manifest, args.energy_suggestions,
                                  args.approved_json, args.new_manifest)
+        else:
+            result = finish_approved_ideas(
+                args.normalized_manifest, args.energy_suggestions,
+                args.approved_json, args.new_manifest, args.new_session,
+                timeout_seconds=args.timeout_seconds)
+            print(json.dumps(result, ensure_ascii=False))
+            return
     except (ValueError, OSError, KeyError, TypeError) as exc:
         parser.exit(2, "MixLab Idea Board: " + str(exc) + "\n")
     print(json.dumps({"saved_private": str(result), "manual_confirmation_required": True,
