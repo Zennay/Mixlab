@@ -74,13 +74,45 @@ def print_rehearsal(journal_json: str, private_report_html: str, *source_pairs: 
         track = sources[index]
         elapsed = e["elapsed_ms"] / 1000
         wavpos = e["wav_position_seconds"]
+        cue_text = "—"
+        delta_text = "—"
+        if e["kind"] == "mark" and track["chapters"]:
+            # This is a WAV-position comparison to receipt chapter metadata,
+            # not a measure of how the music sounded or a venue timestamp.
+            chapter = min(track["chapters"],
+                          key=lambda ch: abs(wavpos - ch["start_seconds"]))
+            delta = wavpos - chapter["start_seconds"]
+            if abs(delta) <= 60:
+                cue_text = str(chapter["label"]) + " · " + str(chapter["kind"])
+                delta_text = f"{delta:+.2f}s"
+            else:
+                cue_text = "No approved chapter within 60s"
         rows.append(
             "<tr><td>" + str(e["seq"]) + "</td><td>" +
             f"{elapsed:.2f}s" + "</td><td>" +
             html.escape(str(e["kind"]), quote=True) + "</td><td>" +
             str(index + 1) + " · " + html.escape(track["label"], quote=True) +
-            "</td><td>" + f"{wavpos:.2f}s" + "</td></tr>"
+            "</td><td>" + f"{wavpos:.2f}s" + "</td><td>" +
+            html.escape(cue_text, quote=True) + "</td><td>" +
+            html.escape(delta_text, quote=True) + "</td></tr>"
         )
+    set_summaries = []
+    for i, src in enumerate(sources):
+        scoped = [event for event in events if event["set_index"] == i]
+        marks = sum(event["kind"] == "mark" for event in scoped)
+        starts = sum(event["kind"] == "play" for event in scoped)
+        completions = sum(event["kind"] == "ended" for event in scoped)
+        last = scoped[-1]["kind"] if scoped else "none"
+        set_summaries.append(
+            "<li><strong>Set " + str(i + 1) + " · " +
+            html.escape(src["label"], quote=True) + "</strong> — " +
+            str(starts) + " browser play action(s), " +
+            str(marks) + " operator cue mark(s), " +
+            str(completions) + " browser ended event(s); last recorded action: " +
+            html.escape(last, quote=True) + ".</li>"
+        )
+    summary_html = "<h2>Per-set browser event overview</h2><ol>" + (
+        "".join(set_summaries)) + "</ol><p>Event counts, not listening or playback proof.</p>"
     receipt_lines = "".join(
         "<li>Set " + str(i + 1) + " · " + html.escape(s["label"], quote=True) +
         " · <code>" + s["wav_sha256"] + "</code></li>"
@@ -100,8 +132,10 @@ Not independently measured playback, wall clock, audible output, venue performan
 music rights, DJ quality, or blind listening evidence.</p>
 <p>No audio, full file path, private operator note or web request is stored in this report.</p>
 <table><thead><tr><th>Entry</th><th>Page elapsed</th><th>Action</th>
-<th>Approved set</th><th>WAV seek position</th></tr></thead><tbody>"""
-            + "".join(rows) + "</tbody></table><h2>Exact source-verified completed WAVs</h2><ol>"
+<th>Approved set</th><th>WAV seek position</th>
+<th>Closest source chapter (marks)</th><th>WAV-position delta</th></tr></thead><tbody>"""
+            + "".join(rows) + "</tbody></table>" + summary_html +
+            "<h2>Exact source-verified completed WAVs</h2><ol>"
             + receipt_lines + "</ol></html>").encode("utf-8")
     if not 0 < len(page) <= MAX_REPORT_BYTES:
         raise ValueError("Private rehearsal report exceeds size limit")

@@ -158,7 +158,11 @@ The CLI independently verifies every original WAV SHA, studio/source receipts,
 and exact event set indices and WAV positions. It refuses a foreign source list,
 extra/incorrect fields, out-of-order entries or invalid private output
 location. The report shows elapsed page time, action, set and WAV position,
-plus full original SHA fingerprints. It includes **no audio bytes, local file
+plus full original SHA fingerprints. For a manual cue mark it additionally
+shows the closest real source-receipt chapter within 60 WAV seconds and
+the signed WAV-position difference; marks farther away stay unpaired.
+A per-set browser-event overview counts play actions, manual marks and
+ended events. None of those counts prove audible performance or chapter timing. It includes **no audio bytes, local file
 paths or private operator notes**. Handle the exported JSON and report as
 private operational materials. This is a rehearsal annotation workflow, not
 independent human blind listening, real-world venue evidence, playback timing
