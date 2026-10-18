@@ -34,9 +34,6 @@ def _destination_paths(wav_path, output):
         raise ValueError("Portable mix output must be a new .mp3 file")
     if not target.parent.is_dir():
         raise ValueError("Choose an existing private output directory")
-    if target.parent == wav.parent and target.stem == wav.stem:
-        # Fine: MP3 is a *new* file, separate from the source WAV.
-        pass
     paths = {
         "mp3": target,
         "receipt": Path(str(target) + ".receipt.private.json"),
@@ -49,7 +46,7 @@ def _destination_paths(wav_path, output):
     for parent in (target, *target.parents):
         if parent.is_symlink() or (parent / ".git").exists():
             raise ValueError("Do not publish private audio into Git or a symlink path")
-    if any(part in ("\n", "\r", "\x00") for part in target.name):
+    if any(char in target.name for char in ("\n", "\r", "\x00", '"')):
         raise ValueError("Unsafe output filename")
     return paths
 
