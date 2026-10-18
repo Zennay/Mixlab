@@ -91,7 +91,11 @@ No folder paths, music or files are uploaded; individual pickers remain availabl
 <label>Optional private note for the next manual cue mark (up to 120 characters)
 <textarea id="cue-note" maxlength="120"
 placeholder="Lighting cue, transition intent, timing note…"></textarea></label>
-<ol id="chapters"></ol></div>
+<ol id="chapters"></ol><div id="selected-cues-panel" hidden>
+<h2>Selected previous rehearsal cues (private)</h2>
+<p>These human-chosen WAV positions are operator notes, not measured show
+timing. Buttons seek only; music always needs manual Play.</p>
+<ol id="selected-cues"></ol></div></div>
 <div class="panel"><h2>3 / Operator run-of-show</h2>
 <label>Planned show start (local clock) <input type="time" id="start"></label>
 <p>This timetable is a planning estimate from real WAV lengths and your
@@ -192,6 +196,34 @@ function select(i){
    audio.currentTime=ch.start_seconds;info();
   });row.append(button);$("chapters").append(row);chapterButtons.push(button);
  });
+ const selected=data.selected_rehearsal;
+ $("selected-cues-panel").hidden=!selected;
+ $("selected-cues").replaceChildren();
+ if(selected){
+  const marks=selected.marks.filter(mark=>mark.set_index===i);
+  for(const mark of marks){
+   const row=document.createElement("li"),btn=document.createElement("button");
+   btn.type="button";btn.textContent="Seek selected cue "+time(mark.position);
+   btn.addEventListener("click",()=>{
+    if(!attached.get(active)||!audio.src){
+     $("player-status").textContent="Attach and SHA-verify original WAV first.";return;
+    }
+    audio.currentTime=mark.position;info();
+    $("player-status").textContent="Manual seek complete; press Play separately.";
+   });
+   const note=document.createElement("p");note.className="description";
+   note.textContent=(mark.chapter===null?"No nearby approved chapter":
+    mark.chapter+" · "+mark.chapter_kind+" · "+
+    (mark.chapter_delta>=0?"+":"")+mark.chapter_delta.toFixed(3)+"s")+
+    (mark.note?" · private note: "+mark.note:"");
+   row.append(btn,note);$("selected-cues").append(row);
+  }
+  if(!marks.length){
+   const li=document.createElement("li");
+   li.textContent="No marked cues for this set in the chosen take.";
+   $("selected-cues").append(li);
+  }
+ }
  $("previous").disabled=i===0;$("next").disabled=i===data.sets.length-1;info();
 }
 data.sets.forEach((set,i)=>{
@@ -395,7 +427,8 @@ def _sources(raw):
 
 
 def prepare_show(new_private_html, *source_pairs, start="19:00",
-                 break_minutes=10, saved_plan=None):
+                 break_minutes=10, saved_plan=None,
+                 rehearsal_selection=None, rehearsal_journals=()):
     if not isinstance(start, str) or not CLOCK.fullmatch(start):
         raise ValueError("Planned show start must be HH:MM")
     if type(break_minutes) is not int or not 0 <= break_minutes <= 120:
@@ -415,6 +448,24 @@ def prepare_show(new_private_html, *source_pairs, start="19:00",
         data["default_start"] = approved["start_local"]
         data["saved_breaks"] = approved["break_minutes"]
         data["saved_notes"] = approved["private_notes"]
+    if rehearsal_selection is None and rehearsal_journals:
+        raise ValueError("Rehearsal journals require an explicit human-selected take")
+    if rehearsal_selection is not None:
+        from .show_rehearsal_cuebook import load_selected
+        chosen_sources, chosen_take, _ = load_selected(
+            rehearsal_selection, tuple(source_pairs), tuple(rehearsal_journals))
+        if [s["wav_sha256"] for s in chosen_sources] != [
+                s["wav_sha256"] for s in sources]:
+            raise ValueError("Human-selected rehearsal source WAVs differ")
+        roots = (rehearsal_selection, *rehearsal_journals)
+        if any(output.is_relative_to(Path(raw).absolute().parent) or
+               output.is_relative_to(Path(raw).absolute()) for raw in roots):
+            raise ValueError("Private show stage must be outside rehearsal source folders")
+        data["selected_rehearsal"] = {
+            "take": chosen_take["label"],
+            "journal_sha256": chosen_take["journal_sha256"],
+            "marks": chosen_take["marks"],
+        }
     json_blob = json.dumps(data, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     json_blob = json_blob.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     page = _HTML.replace("__DATA__", json_blob).replace("__SHA_JS__", SHA256_BROWSER_JS).encode("utf-8")
@@ -512,6 +563,11 @@ def main():
     resumed.add_argument("previous_sha_bound_private_plan")
     resumed.add_argument("new_private_mixlab_html")
     resumed.add_argument("session_and_wav_pairs",nargs="+")
+    for command in (prepare, resumed):
+        command.add_argument("--rehearsal-selection",
+                             help="Original human-selected private rehearsal JSON")
+        command.add_argument("--journal", action="append", default=[],
+                             help="Private original rehearsal journals (in comparison order)")
     printed=sub.add_parser("print",help="Print an exported source-bound operator schedule with private notes")
     printed.add_argument("exported_private_operator_plan")
     printed.add_argument("new_private_mixlab_report_html")
@@ -520,10 +576,14 @@ def main():
     try:
         if args.action=="prepare":
             result=prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
-                                start=args.start,break_minutes=args.break_minutes)
+                                start=args.start,break_minutes=args.break_minutes,
+                                rehearsal_selection=args.rehearsal_selection,
+                                rehearsal_journals=tuple(args.journal))
         elif args.action=="resume":
             result=prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
-                                saved_plan=args.previous_sha_bound_private_plan)
+                                saved_plan=args.previous_sha_bound_private_plan,
+                                rehearsal_selection=args.rehearsal_selection,
+                                rehearsal_journals=tuple(args.journal))
             result["saved_source_bound_operator_choices_restored"]=True
         else:
             result=print_show(args.exported_private_operator_plan,

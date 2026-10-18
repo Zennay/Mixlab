@@ -173,3 +173,38 @@ per-cue annotations are included** in this private document. Handle the exported
 private operational materials. This is a rehearsal annotation workflow, not
 independent human blind listening, real-world venue evidence, playback timing
 certification or permission to use the music.
+
+## Reopen an actual full Show Conductor with human-selected rehearsal cues
+
+After exporting a private selection from the offline multi-take comparison
+(`mixlab.show_rehearsal_compare`), you can load those manually selected
+cue positions **directly inside the full Show Conductor**. The existing
+show schedule, breaks, manual set controls, planned times, rehearsal-log
+export and full SHA-256 original-WAV file admission all remain unchanged.
+
+```bash
+python3 -m mixlab.show_conductor prepare \
+  /private/event-operations/mixlab-show-with-selected-cues.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --rehearsal-selection /private/rehearsal-review/mixlab-rehearsal-take-selection.private.json \
+  --journal /private/rehearsals/take-01/mixlab-show-rehearsal.private.json \
+  --journal /private/rehearsals/take-02/mixlab-show-rehearsal.private.json
+```
+
+The same optional flags also work with `show_conductor resume` and an
+existing saved private schedule. The official source/WAV receipt is
+checked for **every complete original set**; each journal and original
+canonical SHA, human-selected index and exact source order are checked
+again. The HTML displays the chosen manually marked cue positions,
+nearest source chapter and explicitly written private cue annotations
+under the existing chapter buttons. Those buttons **seek only** after
+the browser locally verifies the attached complete WAV SHA-256. Nothing
+autoplays or changes the original recorded audio.
+
+The page contains private operator annotations; do not publish it or add
+it to a media USB package. The ordinary exported Show Conductor schedule
+keeps its unchanged source-locked JSON schema and does not silently
+include past private rehearsal cue notes. This is not independent
+performance measurement or a substitute for actual approved audio,
+human listening/rights evidence or professional live DJ equipment.
