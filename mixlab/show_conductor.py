@@ -15,6 +15,7 @@ import stat
 import wave
 
 from .set_player import build_chapters
+from .browser_sha256 import SHA256_BROWSER_JS
 from .marathon_sequence import _private_html_destination, _read_plan
 
 KIND = "mixlab-private-multi-set-show-v1"
@@ -65,7 +66,8 @@ fade, timed playback, website requests, or master modifications.</p>
 <div class="stat"><small>Next cue</small><strong id="next-cue">—</strong></div></div>
 <div class="layout"><section class="panel"><h2>1 / Your approved WAV setlist</h2>
 <p>Every listed full set was source- and SHA-verified by MixLab at page creation.
-The browser checks attached file name, size and decoded duration, <strong>not SHA</strong>.
+The browser verifies the complete local file SHA-256 in 1 MiB chunks before playback.
+A filename, duration or byte-size match alone never grants playback.
 Do not substitute unknown recordings. No music is embedded in this page.</p>
 <ol id="setlist"></ol></section>
 <section><div class="panel"><h2>2 / Playback & manually controlled changeover</h2>
@@ -88,6 +90,7 @@ playback guarantee. No telemetry or persistent state.</p>
 <p class="hash" id="fingerprint"></p>
 </div></section></div>
 </main><script type="application/json" id="mixlab-show-data">__DATA__</script><script>
+__SHA_JS__
 "use strict";
 const data=JSON.parse(document.getElementById("mixlab-show-data").textContent);
 const $=id=>document.getElementById(id),audio=$("player");
@@ -129,7 +132,7 @@ function select(i){
  rows.forEach((row,n)=>row.card.classList.toggle("selected",n===i));
  const file=attached.get(i);
  if(file){attachedURL=URL.createObjectURL(file);audio.src=attachedURL;audio.load();
-  $("player-status").textContent="Local approved-size WAV attached: "+
+  $("player-status").textContent="SHA-256 verified original WAV attached: "+
     data.sets[i].label+". PRESS PLAY manually. No auto-switch or crossfade.";
   audio.onloadedmetadata=()=>{
    if(!Number.isFinite(audio.duration)||
@@ -160,20 +163,34 @@ data.sets.forEach((set,i)=>{
  const fileInput=document.createElement("input");fileInput.type="file";fileInput.accept=".wav,audio/wav";
  fileInput.setAttribute("aria-label","Attach permitted WAV for "+set.label);
  const status=document.createElement("p");status.className="description";
- status.textContent="No full WAV attached. Private WAV hash is reverified by CLI export, not browser.";
- fileInput.addEventListener("change",()=>{
+ status.textContent="No full WAV attached. SHA-256 verification is required before playback.";
+ fileInput.addEventListener("change",async()=>{
   const file=fileInput.files?.[0];
   if(!file)return;
+  // Detach even a previously verified file: a new choice must pass again.
+  attached.delete(i);
+  if(i===active)select(i);
   if(file.name!==set.wav_name||file.size!==set.size_bytes){
-   attached.delete(i);
    status.textContent="Rejected: local WAV filename/byte length does not match.";
-   if(i===active)select(i);
    return;
   }
-  attached.set(i,file);
-  status.textContent="Attached local "+file.name+
-   " (filename/bytes only; external SHA NOT checked by browser).";
-  if(i===active)select(i);
+  fileInput.disabled=true;
+  status.textContent="Verifying the full local WAV SHA-256; audio stays locked…";
+  try{
+   const verifiedHash=await sha256LocalFile(file,percent=>{
+    status.textContent="Verifying full original WAV locally: "+percent+"% (no upload).";
+   });
+   if(verifiedHash!==set.wav_sha256){
+    status.textContent="Rejected: WAV content SHA-256 differs from the approved original. No playback.";
+    return;
+   }
+   attached.set(i,file);
+   status.textContent="Verified full SHA-256 · original WAV ready; no audio uploaded.";
+   if(i===active)select(i);
+  }catch(_error){
+   // Never expose local filename or filesystem details from browser errors.
+   status.textContent="Could not verify complete local SHA-256; playback remains locked.";
+  }finally{fileInput.disabled=false;}
  });
  const breakline=document.createElement("label");breakline.className="row";
  if(i<data.sets.length-1){
@@ -291,7 +308,7 @@ def prepare_show(new_private_html, *source_pairs, start="19:00",
         data["saved_notes"] = approved["private_notes"]
     json_blob = json.dumps(data, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     json_blob = json_blob.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
-    page = _HTML.replace("__DATA__", json_blob).encode("utf-8")
+    page = _HTML.replace("__DATA__", json_blob).replace("__SHA_JS__", SHA256_BROWSER_JS).encode("utf-8")
     if not 0 < len(page) < MAX_PAGE:
         raise ValueError("Private offline show page is oversized")
     with output.open("xb") as writer:
