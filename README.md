@@ -104,6 +104,31 @@ blinde kwaliteitsmeting: de stijlkeuzes zijn zichtbaar en de muziek
 blijft lokaal. Gebruik [de volledige Set Gallery-handleiding](docs/offline-full-set-gallery.md)
 voor tot vier varianten.
 
+### Nieuw: plan een energieboog en laat MixLab de volgorde voorstellen
+
+Je hoeft de volgorde niet meer volledig zelf te verzinnen. Leg eerst per
+lokaal nummer de **handmatig geverifieerde BPM**, energie (1–10) en eventueel
+genre/mood vast. Laat de offline planner vervolgens een opbouwende, piekende
+of aflopende set van 2–11 nummers voorstellen. In een lokale browser kun je
+de energiecurve bekijken en nummers omhoog of omlaag bewegen.
+
+~~~bash
+python3 -m mixlab.journey notes /private/music /private/music/energy-notes.private.json
+python3 -m mixlab.journey plan /private/music /private/music/energy-notes.private.json /private/music/journey.private.json --tracks 5 --shape late-peak
+python3 -m mixlab.journey_board /private/music /private/music/journey.private.json /private/music/journey-board.private.html
+~~~
+
+Open daarna `/private/music/journey-board.private.html`, bewerk de
+voorgestelde volgorde en exporteer de nieuwe privé-JSON in je muziekmap.
+Geef die aan de gewone Playlist Studio met
+`--journey-plan /private/music/mixlab-journey-curated.private.json` en
+eventueel `--full-set-wav /private/my-event.wav`. De Studio verifieert alle
+SHA-256-bronnen opnieuw, vraagt expliciet toestemming voor de voorgestelde
+volgorde, rechten, herkomst en handmatige cues en rendert pas daarna de
+bestaande echte WAV-set. Er wordt **geen BPM of muzikaal oordeel automatisch
+uit muziek afgeleid**: dit is heuristische setplanning op menselijke notities.
+[Volledige handleiding](docs/energy-journey-planner.md).
+
 ### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,

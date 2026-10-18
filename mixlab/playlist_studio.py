@@ -53,7 +53,7 @@ def _positive_cue(value):
 
 
 def create_playlist_manifest(music_directory, output_manifest, new_session,
-                             *, read=input, write=print, beats=16, partition="development"):
+                             *, read=input, write=print, beats=16, partition="development", journey_plan=None):
     """Capture an ordered rights-permitted private playlist and every manual cue.
 
     Cheap input checks run before touching the local song collection. Sources
@@ -70,17 +70,36 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
     write("All BPM, cue points and permissions must be supplied by you; no tempo is inferred.")
     for i, name in enumerate(files, 1):
         write(f"{i:>3}. {name}")
-    numbers = _ask(read, write,
-                   "Playback order (2..11 distinct song numbers, comma-separated): ",
-                   _selection(len(files)))
-    if len(numbers) > MAX_PLAYLIST_TRACKS:
-        raise ValueError("Maximum 11 songs (10 transitions) per private playlist")
-    ordered = [files[i - 1] for i in numbers]
+    pinned_bpm = {}
+    if journey_plan is None:
+        numbers = _ask(read, write,
+                       "Playback order (2..11 distinct song numbers, comma-separated): ",
+                       _selection(len(files)))
+        if len(numbers) > MAX_PLAYLIST_TRACKS:
+            raise ValueError("Maximum 11 songs (10 transitions) per private playlist")
+        ordered = [files[i - 1] for i in numbers]
+    else:
+        from .journey import load_journey
+        proposed = load_journey(source, journey_plan)
+        ordered = [record["path"] for record in proposed]
+        if len(ordered) > MAX_PLAYLIST_TRACKS or any(name not in files for name in ordered):
+            raise ValueError("Journey includes unavailable local music")
+        pinned_bpm = {record["path"]: record["bpm"] for record in proposed}
+        write("\nSuggested energy journey (human notes, not automatic music analysis):")
+        for index, record in enumerate(proposed, 1):
+            write(f"  {index}. {record['path']} | {record['bpm']} BPM "
+                  f"| annotated energy {record['energy']}/10")
+        if read("Accept this exact suggested order? Type yes: ").strip().lower() != "yes":
+            raise ValueError("Journey not approved; no playlist manifest created")
     catalog = []
     for i, name in enumerate(ordered, 1):
         write(f"\nSong {i}/{len(ordered)}: {name}")
-        bpm = _ask(read, write, "Manually verified BPM (30..300): ",
-                   _float_between(30, 300))
+        if journey_plan is None:
+            bpm = _ask(read, write, "Manually verified BPM (30..300): ",
+                       _float_between(30, 300))
+        else:
+            bpm = pinned_bpm[name]
+            write(f"Using human-verified notes: {bpm} BPM; source hash checked.")
         first_downbeat = _ask(read, write,
                               "Verified first downbeat seconds (blank if unknown): ",
                               lambda s: None if not s else _positive_cue(s))
@@ -144,8 +163,10 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           timeout_seconds=600, partition="development",
                           resume=False, manifest_only=False, ideas=False,
                           full_set_wav=None, family="bass_swap", styles=(),
-                          delivery=None, bitrate_kbps=192):
+                          delivery=None, bitrate_kbps=192, journey_plan=None):
     """Run the complete local product workflow after explicit human annotation."""
+    if resume and journey_plan is not None:
+        raise ValueError("--journey-plan is only for a fresh playlist, not --resume")
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
     if manifest_only and ideas:
@@ -164,7 +185,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         write("Resuming the exact existing private playlist manifest without changing its cues.")
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
-                                 beats=beats, partition=partition)
+                                 beats=beats, partition=partition, journey_plan=journey_plan)
     idea_beats = None
     if ideas:
         with manifest.open("r", encoding="utf-8") as reader:
@@ -256,6 +277,8 @@ def main():
     parser.add_argument("private_music_directory", help="Local folder of permitted WAV/MP3/FLAC/etc.")
     parser.add_argument("new_source_manifest", help="New private JSON inside the music directory")
     parser.add_argument("new_session_directory", help="New private session directory outside music/Git")
+    parser.add_argument("--journey-plan",
+                        help="Private SHA-pinned energy journey suggestion; explicitly approve before cues")
     parser.add_argument("--beats", type=int, default=16,
                         help="Manually chosen transition beat count, shared by all pairs (1..64)")
     parser.add_argument("--partition", choices=("development", "evaluation"),
@@ -287,7 +310,8 @@ def main():
             resume=args.resume, manifest_only=args.manifest_only,
             ideas=args.ideas, full_set_wav=args.full_set_wav,
             family=args.family, styles=args.style,
-            delivery=args.delivery, bitrate_kbps=args.bitrate_kbps)
+            delivery=args.delivery, bitrate_kbps=args.bitrate_kbps,
+            journey_plan=args.journey_plan)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
