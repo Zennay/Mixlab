@@ -458,6 +458,16 @@ en zet deze op de andere computer terug met
 De originele fragmentreceipts en WAVs worden opnieuw gecontroleerd.
 De ZIP bewijst geen externe identiteit of muziekrechten.
 
+Een visual-Sequence-Studio-render kan nu ook meteen een privé-USB-bestand
+maken van de korte echte PCM-overgangen: voeg expliciet
+`--reels-output /private/nieuwe-luistermap --reels-usb` toe naast
+`--blend-output /private/nieuw-blendresultaat`.
+Na afzonderlijke toestemming voor de originele master, het echte
+crossfade-resultaat en de excerpt-kopie verschijnt ook
+`join-reels.private.zip` in de nieuwe luistermap. Er gaan géén volledige
+Marathon-WAVs of originele tracks mee in dit kleine pakket; mislukte
+optionele packaging raakt bestaande outputs niet.
+
 ### Hoor de échte overgang zonder complete urenlange WAV te laden
 
 **Real Join Reels** maakt uit twee al officieel geverifieerde private
