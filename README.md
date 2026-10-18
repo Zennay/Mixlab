@@ -344,6 +344,33 @@ Stage te importeren. Er is geen upload, automatische rechtencontrole,
 audio-opname of nieuwe AI-engine. Bewaar voor echte optredens altijd een
 separate WAV-back-up. [Stage-handleiding](docs/marathon-stage.md).
 
+### Offline een reeks bestaande DJ-sets herschikken en écht renderen
+
+De **Marathon Sequence Studio** ordent complete reeds toegestane, privé
+DJ-master-WAVs vanuit een offline browser. Verplaats events, sluit ongewenste
+events uit en exporteer een plan dat aan de exacte WAV-hashes is gekoppeld.
+Daarna verwerkt de canonieke renderer die keuze na expliciet `yes` tot een
+**nieuw doorlopend WAV-bestand** met privé player, receipt en optioneel USB-pakket.
+
+```bash
+python3 -m mixlab.marathon_sequence prepare /private/mixlab-sequence.html \
+  /private/set-a/session /private/set-a/final.wav \
+  /private/set-b/session /private/set-b/final.wav \
+  /private/set-c/session /private/set-c/final.wav
+
+# Maak met de browser het bestand mixlab-marathon-sequence.private.json.
+python3 -m mixlab.marathon_sequence render /private/mixlab-marathon-sequence.private.json \
+  /private/new-marathon \
+  /private/set-a/session /private/set-a/final.wav \
+  /private/set-b/session /private/set-b/final.wav \
+  /private/set-c/session /private/set-c/final.wav --bundle
+```
+
+Geen muziek wordt geüpload. Zowel bronbestanden als sessiereceipts worden
+opnieuw gecontroleerd; handmatige toestemming voor de uiteindelijke nieuwe
+WAV blijft verplicht. Muzikale kwaliteit en rechten voor openbaar gebruik
+blijven apart te beoordelen. [Sequence Studio-handleiding](docs/marathon-sequence-studio.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
