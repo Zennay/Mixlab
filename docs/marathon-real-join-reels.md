@@ -22,6 +22,30 @@ Inside `/private/handoff-listening/`:
 
 Open the generated `index.html` locally while keeping all `join-XX-*.wav` files beside it. If your browser cannot play local WAV because of its security settings or codec support, use a local music app instead.
 
+## Carry only the real handoff clips to a second offline computer
+
+The short PCM16 listening room can be moved **without** the huge full original and blended Marathon masters. After creating it, run:
+
+```bash
+python3 -m mixlab.marathon_reels_transfer pack \
+  /private/handoff-listening \
+  /private/handoff-listening/join-reels.private.zip
+```
+
+The ZIP includes only the source-verified *short* WAV clips, their complete original/derivative provenance receipt, and their exact local browser player. It excludes the full show WAVs, original individual songs, external access tokens and permissions evidence. The packer rereads the source folder and verifies actual PCM16 file frame counts, hashes, bounded total size and exact offline HTML before producing a new SHA-manifest **uncompressed** ZIP (private mode 0600).
+
+On another authorized local device, with a **new** destination directory:
+
+```bash
+python3 -m mixlab.marathon_reels_transfer restore \
+  /private/handoff-listening/join-reels.private.zip \
+  /private/second-computer-reels
+```
+
+Restore admits only bounded, flat, named short WAV/HTML/JSON members, refuses symlinks/path traversal/duplicate names, checks each ZIP entry size/hash while streaming to a private fresh folder, then recomputes the original reel receipt consistency, every real PCM16 clip header/SHA and the exact offline player HTML. Incomplete restoration cleans the **new** destination and leaves the original archive untouched. Open `/private/second-computer-reels/index.html` offline to listen.
+
+The ZIP manifest is **unsigned**, so it proves internal consistency but not authenticity of an external sender or licensed rights. Share only where the underlying music recording usage is permitted. This is not independent blind rating evidence.
+
 ### What this means for mastering
 
 Unlike the existing Sequence Studio two-deck approximation, Join Reels play the **actual final PCM16** chosen by the MixLab renderer. This allows rapid operator audition of the audible transition moments without reloading entire 768 MiB masters.
