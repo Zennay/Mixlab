@@ -37,6 +37,13 @@ For an existing manual bundle command, pass `--rehearsal /private/event-2026-10-
 3. Use Space to play/pause, N/P to move between chapters and L to toggle looping while not editing text. Browser playback is best-effort and may be imprecise by a fraction of a second.
 4. Enter notes for as many chapters as you like. **Export all practice notes** creates a local private JSON file; reload it with **Import notes** on the same exact master. Notes do not go to a server or browser storage.
 
+You can open the Event Publisher's `final-set.runbook.private.html` and
+choose **Import notes from Rehearsal Desk**. Only the exact source WAV
+SHA-256 and chapter count can populate the runbook's operator note fields.
+Imported notes immediately appear in **print/PDF and the CSV cue sheet**;
+you can also export notes JSON from the runbook to continue practising.
+No server, shared storage or automatic browser persistence is involved.
+
 Imported notes have a size limit of 128 KiB, at most 1,000 characters per chapter, and must match the original WAV SHA-256 and chapter count. A different mix is rejected even if chapter labels look identical.
 
 ## Privacy and live boundary
