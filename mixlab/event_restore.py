@@ -16,6 +16,7 @@ import stat
 import zipfile
 
 from .event_bundle import BLOCK, MAX_FILE, MAX_ITEMS, MAX_TOTAL
+from .event_vault import MAX_MARATHON, _marathon_duration
 
 MANIFEST = "mixlab-bundle-manifest.private.json"
 MAX_MANIFEST = 65536
@@ -78,17 +79,21 @@ def _inspect(archive):
         kind = stat.S_IFMT(info.external_attr >> 16)
         if kind not in (0, stat.S_IFREG):
             raise ValueError("Archive must not contain symlinks or special files")
-        if not (0 < info.file_size <= (MAX_MANIFEST if info.filename == MANIFEST else MAX_FILE)):
+        limit = MAX_MANIFEST if info.filename == MANIFEST else (MAX_MARATHON if info.filename == "marathon.wav" else MAX_FILE)
+        if not (0 < info.file_size <= limit):
             raise ValueError("Archive member is empty or larger than the private event budget")
         if info.compress_size != info.file_size:
             raise ValueError("The portable event archive must contain only uncompressed entries")
     manifest = json.loads(archive.read(MANIFEST).decode("utf-8"))
+    mode = manifest.get("kind") if isinstance(manifest, dict) else None
+    is_marathon = mode == "mixlab-private-portable-marathon-v1"
     if not isinstance(manifest, dict) or manifest.get("schema_version") != 1 or (
-        manifest.get("kind") != "mixlab-private-portable-full-set-v1" or
+        mode not in ("mixlab-private-portable-full-set-v1",
+                     "mixlab-private-portable-marathon-v1") or
         manifest.get("source_media_included") is not False or
         manifest.get("private_local_use_only") is not True or
         type(manifest.get("chapters")) is not int or
-        not 1 <= manifest["chapters"] <= 200 or
+        not (2 if is_marathon else 1) <= manifest["chapters"] <= (8 if is_marathon else 200) or
         not isinstance(manifest.get("wav_sha256"), str) or
         not SHA.fullmatch(manifest["wav_sha256"])
     ):
@@ -101,7 +106,7 @@ def _inspect(archive):
     for row in entries:
         if (not isinstance(row, dict) or not _safe_name(row.get("file")) or
                 type(row.get("size_bytes")) is not int or
-                not 0 < row["size_bytes"] <= MAX_FILE or
+                not 0 < row["size_bytes"] <= (MAX_MARATHON if is_marathon and row.get("file") == "marathon.wav" else MAX_FILE) or
                 not isinstance(row.get("sha256"), str) or
                 not SHA.fullmatch(row["sha256"]) or row["file"] in file_map or
                 row["file"] == MANIFEST):
@@ -114,7 +119,12 @@ def _inspect(archive):
             set(names) != set(file_map).union({MANIFEST})):
         raise ValueError("Event archive contains inventory mismatch or unlisted files")
     masters = [row for row in entries if row["file"].lower().endswith(".wav")]
-    if (len(masters) != 1 or masters[0]["sha256"] != manifest["wav_sha256"] or
+    if is_marathon:
+        if (set(file_map) != {"marathon.wav", "marathon.receipt.private.json", "index.html"} or
+                len(masters) != 1 or masters[0]["file"] != "marathon.wav" or
+                masters[0]["sha256"] != manifest["wav_sha256"]):
+            raise ValueError("Portable Marathon ZIP must include its one actual WAV, receipt and player")
+    elif (len(masters) != 1 or masters[0]["sha256"] != manifest["wav_sha256"] or
             masters[0]["file"] + ".receipt.private.json" not in file_map):
         raise ValueError("Portable event is missing its exact original WAV and receipt")
     return file_map, masters[0]["file"]
@@ -172,6 +182,10 @@ def restore_bundle(private_zip, new_private_folder):
                                 dst.write(chunk)
                 finally:
                     os.close(dfd)
+                if master == "marathon.wav":
+                    # Check the actual joined WAV against its ORIGINAL continuous
+                    # output receipt after extraction, not just the ZIP inventory.
+                    _marathon_duration(output, output / master)
                 after = os.fstat(stream.fileno())
                 if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
                         after.st_ctime_ns) != (
@@ -187,6 +201,7 @@ def restore_bundle(private_zip, new_private_folder):
                         if "final-set.rehearsal.private.html" in files else None,
                     "file_count": len(files),
                     "wav_sha256": files[master]["sha256"],
+                    "continuous_marathon": master == "marathon.wav",
                     "private": True, "network_uploads": False,
                     "archive_authenticity_proven": False,
                     "automatic_licensing": False
