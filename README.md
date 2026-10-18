@@ -325,6 +325,25 @@ Een rechtenverklaring is geen juridisch bewijs. Automatische BPM-
 matching, echt key/phrase/downbeat-begrip en human-preference bewijs
 zijn niet afgerond; experimenteer alleen met bronnen die je mag gebruiken.
 
+### DJ-marathon draaien en operator-cues bewaren
+
+Elke originele of handmatig geblende **Event Marathon** heeft in zijn
+bestaande offline `index.html` nu een groot **Stage-paneel** met de
+werkelijke WAV-playhead, huidige set, volgende handoff, seconden-aftelling
+en fullscreenbediening. Markeer handmatige cues tijdens het beluisteren,
+exporteer een bron-SHA-gebonden privé-JSON en maak daarvan een **printbaar
+evenementdraaiboek**:
+
+```bash
+python3 -m mixlab.marathon_cue_sheet /private/marathon/marathon.wav \
+  /private/mixlab-marathon-cues.private.json /private/marathon/cues.private.html
+```
+
+Ook terugzetten op een andere computer kan door de JSON in de offline
+Stage te importeren. Er is geen upload, automatische rechtencontrole,
+audio-opname of nieuwe AI-engine. Bewaar voor echte optredens altijd een
+separate WAV-back-up. [Stage-handleiding](docs/marathon-stage.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
