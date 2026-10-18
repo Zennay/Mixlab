@@ -113,11 +113,11 @@ function render(){
  const root=$("events");root.replaceChildren();
  $("empty").hidden=shown.length>0;
  shown.forEach(item=>{
-  const card=element("article","card"),eyebrow=element("div","eyebrow",item.evidence==="canonical"?"ORIGINAL MIXLAB SET":item.evidence==="marathon"?"CONTINUOUS EVENT MARATHON":"RESTORED PRIVATE PACKAGE");
+  const card=element("article","card"),eyebrow=element("div","eyebrow",item.evidence==="canonical"?"ORIGINAL MIXLAB SET":item.evidence==="marathon"?"CONTINUOUS EVENT MARATHON":item.evidence==="marathon_blend"?"RENDERED CROSSFADE MARATHON":"RESTORED PRIVATE PACKAGE");
   card.append(eyebrow,element("h3","",item.label));
   const meta=element("div","meta");
   [pretty(item.duration_seconds)+" runtime",
-   item.chapters+" chapters",item.evidence==="canonical"?"Original receipts":item.evidence==="marathon"?"Joined WAV SHA match":"Bundle SHA match"].forEach(label=>meta.append(element("span","badge",label)));
+   item.chapters+" chapters",item.evidence==="canonical"?"Original receipts":item.evidence==="marathon"?"Joined WAV SHA match":item.evidence==="marathon_blend"?"Crossfaded WAV SHA match":"Bundle SHA match"].forEach(label=>meta.append(element("span","badge",label)));
   card.append(meta);
   const actions=element("div","actions");
   const button=element("button","", "Play here");button.type="button";
@@ -182,11 +182,13 @@ def _digest_regular(path, expected, *, max_bytes=MAX_FILE):
 def _marathon_duration(folder, wav):
     """Verify the local joined WAV; its unsigned receipt is not source authentication."""
     data = _read_small_json(folder / "marathon.receipt.private.json")
+    blended = isinstance(data, dict) and data.get("kind") == "mixlab-private-blended-event-v1"
     if (not isinstance(data, dict) or data.get("schema_version") != 1 or
-            data.get("kind") != "mixlab-private-continuous-event-v1" or
+            data.get("kind") not in ("mixlab-private-continuous-event-v1",
+                                     "mixlab-private-blended-event-v1") or
             data.get("wav_name") != "marathon.wav" or
             data.get("private_local_use_only") is not True or
-            data.get("sample_preserving_joins") is not True or
+            data.get("sample_preserving_joins") is not (not blended) or
             data.get("automatic_licensing") is not False or
             data.get("musical_preference_proven") is not False or
             type(data.get("rate")) is not int or
@@ -200,17 +202,29 @@ def _marathon_duration(folder, wav):
     sections = data.get("sections")
     if not isinstance(sections, list) or not 2 <= len(sections) <= 8:
         raise ValueError("Private Marathon receipt has no valid event sequence")
+    overlap = 0
+    if blended:
+        overlap = data.get("overlap_frames")
+        if (type(overlap) is not int or
+                overlap not in (2 * data["rate"], 4 * data["rate"],
+                                8 * data["rate"], 16 * data["rate"]) or
+                data.get("fade_seconds") != overlap // data["rate"] or
+                data.get("transition_curve") != "complementary-linear-pcm16-v1" or
+                not isinstance(data.get("source_marathon_sha256"), str) or
+                not SHA.fullmatch(data["source_marathon_sha256"]) or
+                data.get("no_automatic_tempo_matching") is not True):
+            raise ValueError("Blended event is missing explicit original SHA or fade provenance")
     offset = 0
     for i, row in enumerate(sections, 1):
         if (not isinstance(row, dict) or row.get("index") != i or
                 type(row.get("start_frame")) is not int or
-                row["start_frame"] != offset or
-                type(row.get("frames")) is not int or row["frames"] <= 0 or
+                row["start_frame"] != offset - (i - 1) * overlap or
+                type(row.get("frames")) is not int or row["frames"] <= (2 * overlap if blended else 0) or
                 not isinstance(row.get("source_sha256"), str) or
                 not SHA.fullmatch(row["source_sha256"])):
             raise ValueError("Joined event boundaries are not contiguous or receipt-bound")
         offset += row["frames"]
-    if offset != data["frames"]:
+    if offset - (len(sections) - 1) * overlap != data["frames"]:
         raise ValueError("Marathon chapter frames do not cover the real master")
     _digest_regular(wav, data["wav_sha256"], max_bytes=MAX_MARATHON)
     fd = os.open(wav, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
@@ -222,7 +236,7 @@ def _marathon_duration(folder, wav):
                     media.getframerate() != data["rate"] or
                     media.getnframes() != data["frames"]):
                 raise ValueError("Private Marathon audio differs from its joined PCM receipt")
-    return data["frames"] / data["rate"], len(sections), "marathon"
+    return data["frames"] / data["rate"], len(sections), "marathon_blend" if blended else "marathon"
 
 
 def _chapter_count_and_duration(folder, wav):
@@ -309,7 +323,8 @@ def build_vault(new_private_html, *event_directories):
     return {"private_event_vault":str(target), "events":len(records),
             "original_canonical":sum(x["evidence"]=="canonical" for x in records),
             "restored_private_packages":sum(x["evidence"]=="bundle" for x in records),
-            "continuous_marathons":sum(x["evidence"]=="marathon" for x in records),
+            "continuous_marathons":sum(x["evidence"] in ("marathon","marathon_blend") for x in records),
+            "crossfaded_marathons":sum(x["evidence"]=="marathon_blend" for x in records),
             "offline":True, "source_media_uploads":False,
             "automatic_licensing":False, "musical_preference_proven":False}
 

@@ -50,7 +50,7 @@ textarea{resize:vertical;min-height:76px}button{background:var(--mint);color:#10
 </style></head><body><main>
 <div class="eyebrow">MIXLAB / PRIVATE EVENT OPERATIONS</div>
 <h1>Marathon<br>run of show.</h1>
-<p>Every segment below is an original, sample-counted completed set within one actual joined WAV. The planned wall-clock time is a projection: pauses and device problems shift the real schedule.</p>
+<p>Every section below is a receipt-derived completed event within the actual output WAV, including any optional manually selected crossfades. The planned wall-clock time is a projection: pauses and device problems shift the real schedule.</p>
 <section class="panel">
 <div class="row">
 <label for="start">Local planned start<input id="start" type="time"></label>
@@ -69,7 +69,7 @@ textarea{resize:vertical;min-height:76px}button{background:var(--mint);color:#10
 <p>Save notes locally as CSV for your event team or print the runbook. Notes are only in this browser page until exported; they are not uploaded or automatically saved.</p>
 <div class="actions no-print"><button id="csv" type="button">Export private cue CSV</button><button id="print" type="button">Print / Save PDF</button></div>
 <div id="sha" class="hash"></div></section>
-<p>These are gapless sample joins, <strong>not</strong> automatically beatmatched transitions between distinct events. Independently confirm venue/playback rights, speakers, backup media and manual interventions before a real show.</p>
+<p>These are human-approved event joins: hard cuts or optional PCM16 gain-crossfades, <strong>not</strong> automatically beatmatched transitions. Independently confirm venue/playback rights, speakers, backup media and manual interventions before a real show.</p>
 </main><script type="application/json" id="data">__DATA__</script><script>
 "use strict";
 const payload=JSON.parse(document.getElementById("data").textContent);
