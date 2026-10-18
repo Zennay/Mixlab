@@ -69,3 +69,9 @@ recovery of goedgekeurde songlicenties. Bestaande Eventmodus (in
 de Show Runbook is een planning-, organisatie- en printdocument.
 Een mens controleert en beheert het evenement. Muzikale superioriteit en
 M1 blind luisteracceptatie zijn niet met dit runbook aangetoond.
+
+## Rehearsal → live showbook handoff
+
+After rehearsing the actual receipt-verified set in the [Offline Rehearsal Desk](offline-rehearsal-desk.md), choose **Export all practice notes**. In the corresponding `final-set.runbook.private.html`, choose **Import notes from Rehearsal Desk**. The operator note fields are populated for the exact original WAV and identical chapter count. Your notes are included when printing/saving the runbook and in **Export private cue-sheet CSV**.
+
+You can also choose **Export notes JSON** from the runbook to edit the same private notes later in Rehearsal Desk. Imports are limited to 128 KiB and 1,000 characters per chapter. A different WAV SHA-256 or malformed notes file is refused; no network request, browser storage or automatic sharing occurs.
