@@ -128,6 +128,25 @@ herkomst en de echte, door jou gecontroleerde overgangscues.
 offline voorstel op basis van jouw notities; M1-kwaliteit en luistervoorkeur
 zijn niet bewezen. [Volledige Event Brief-handleiding](docs/offline-event-brief-studio.md).
 
+### Offline eventdraaiboek uit je échte, complete DJ-set
+
+Heb je een volledige MixLab-WAV mét originele Studio en privéreceipt
+gerenderd, dan kan MixLab er direct een **printbaar showdraaiboek** van
+maken. Dit gebruikt de exacte, hashgebonden WAV-hoofdstukken in plaats van
+geschatte tracklengtes, inclusief per overgang de echte start-offset.
+Voer optioneel zelf een geplande lokale begintijd in om kloktijden en
+verwacht eindmoment te projecteren; voeg DJ-notities toe, doorloop de
+soundcheck-checklist en exporteer een privé CSV-cuesheet.
+
+~~~bash
+python3 -m mixlab.show_runbook /private/mixlab-event-session /private/my-event.wav /private/my-event.runbook.private.html
+~~~
+
+Open de HTML lokaal. Een ontbrekend of gewijzigd bron-/renderreceipt maakt
+geen geldig draaiboek; de bestaande Studio/WAV-bronintegriteitscontrole
+blijft verplicht. De afspeelklok, niet de geplande tijd, is leidend bij
+pauzes of live onderbrekingen. [Show Runbook-handleiding](docs/offline-dj-show-runbook.md).
+
 ### Nieuw: plan een energieboog en laat MixLab de volgorde voorstellen
 
 Je hoeft de volgorde niet meer volledig zelf te verzinnen. Leg eerst per
