@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import stat
 import wave
+import zipfile
 
 from .set_player import build_chapters
 
@@ -185,7 +186,7 @@ def _digest_file(path):
     return h.hexdigest()
 
 
-def create_marathon(new_private_folder, *set_pairs, read=input, write=print):
+def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False):
     if not 2 <= len(set_pairs) <= MAX_EVENTS:
         raise ValueError("Choose 2 to 8 completed private events")
     items=[_admit(session,wav) for session,wav in set_pairs]
@@ -276,10 +277,21 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print):
             artifact.unlink(missing_ok=True)
         destination.rmdir()
         raise
-    return {"continuous_wav":str(wav),"private_receipt":str(receipt),
-            "private_player":str(player),"events_joined":len(items),
-            "duration_seconds":payload["duration_seconds"],"wav_sha256":observed,
-            "automatic_tempo_matching":False,"private":True,"rights_proven":False}
+    result = {"continuous_wav":str(wav),"private_receipt":str(receipt),
+              "private_player":str(player),"events_joined":len(items),
+              "duration_seconds":payload["duration_seconds"],"wav_sha256":observed,
+              "automatic_tempo_matching":False,"private":True,"rights_proven":False}
+    if bundle:
+        # Packaging is optional; never remove the already completed WAV if
+        # the USB archive exceeds disk or file limits.
+        try:
+            from .marathon_bundle import export_marathon_bundle
+            result["portable_bundle"] = export_marathon_bundle(
+                wav, destination / "marathon.private.zip")
+        except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
+            result["portable_bundle"] = None
+            result["bundle_warning"] = "Real continuous WAV exists; optional USB ZIP was not published"
+    return result
 
 
 def main():
@@ -287,12 +299,13 @@ def main():
         description="Join 2–8 original receipt-verified private MixLab event WAVs, sample-exact and offline")
     parser.add_argument("new_private_folder")
     parser.add_argument("session_wav_pairs",nargs="+",help="Alternating Studio SESSION and original completed WAV")
+    parser.add_argument("--bundle",action="store_true",help="Also create an optional trusted private USB ZIP")
     args=parser.parse_args()
     if not 4<=len(args.session_wav_pairs)<=MAX_EVENTS*2 or len(args.session_wav_pairs)%2:
         parser.exit(2,"Provide 2–8 SESSION WAV pairs after the new output folder\n")
     pairs=list(zip(args.session_wav_pairs[0::2],args.session_wav_pairs[1::2]))
     try:
-        out=create_marathon(args.new_private_folder,*pairs)
+        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle)
     except (ValueError,TypeError,KeyError,OSError,EOFError,KeyboardInterrupt,wave.Error):
         parser.exit(2,"MixLab event marathon: source admission, approval or private export failed; "
                        "no completed new event was published.\n")
