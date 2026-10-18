@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -396,7 +397,7 @@ not an authenticated external reviewer, proof of music licensing, professional a
 or a completed blind preference study. Does not embed, upload or distribute any music.
 The actual `marathon.wav` and companion receipt must be carried separately.</p>
 </main></body></html>"""
-    for key, value in {
+    values = {
         "__SELECTED__": h(selected_name),
         "__COUNT__": str(len(receipt["sections"])),
         "__REASON__": h(reason),
@@ -404,8 +405,11 @@ The actual `marathon.wav` and companion receipt must be carried separately.</p>
         "__DURATION__": h(round(receipt["frames"] / receipt["rate"], 2)),
         "__RATE__": str(receipt["rate"]),
         "__ROWS__": "".join(rows),
-    }.items():
-        page = page.replace(key, value)
+    }
+    # Single substitution pass: operator text containing e.g. __ROWS__
+    # must remain literal text, never be recursively expanded into HTML.
+    page = re.sub(r"__(?:SELECTED|COUNT|REASON|HASH|DURATION|RATE|ROWS)__",
+                  lambda match: values[match.group()], page)
     payload = page.encode("utf-8")
     if not 0 < len(payload) <= MAX_HTML:
         raise ValueError("Private selected-master print sheet exceeds local limit")
