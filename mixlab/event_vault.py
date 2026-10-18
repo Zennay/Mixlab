@@ -18,6 +18,7 @@ from .event_bundle import MAX_FILE
 from .set_player import build_chapters
 
 MAX_EVENTS = 16
+MAX_MARATHON = 768 * 1024 * 1024 + 256  # PCM payload plus bounded RIFF header
 MANIFEST = "mixlab-bundle-manifest.private.json"
 MANIFEST_LIMIT = 65536
 BLOCK = 65536
@@ -112,11 +113,11 @@ function render(){
  const root=$("events");root.replaceChildren();
  $("empty").hidden=shown.length>0;
  shown.forEach(item=>{
-  const card=element("article","card"),eyebrow=element("div","eyebrow",item.evidence==="canonical"?"ORIGINAL MIXLAB SET":"RESTORED PRIVATE PACKAGE");
+  const card=element("article","card"),eyebrow=element("div","eyebrow",item.evidence==="canonical"?"ORIGINAL MIXLAB SET":item.evidence==="marathon"?"CONTINUOUS EVENT MARATHON":"RESTORED PRIVATE PACKAGE");
   card.append(eyebrow,element("h3","",item.label));
   const meta=element("div","meta");
   [pretty(item.duration_seconds)+" runtime",
-   item.chapters+" chapters",item.evidence==="canonical"?"Original receipts":"Bundle SHA match"].forEach(label=>meta.append(element("span","badge",label)));
+   item.chapters+" chapters",item.evidence==="canonical"?"Original receipts":item.evidence==="marathon"?"Joined WAV SHA match":"Bundle SHA match"].forEach(label=>meta.append(element("span","badge",label)));
   card.append(meta);
   const actions=element("div","actions");
   const button=element("button","", "Play here");button.type="button";
@@ -155,12 +156,12 @@ def _read_small_json(path):
     return json.loads(content)
 
 
-def _digest_regular(path, expected):
+def _digest_regular(path, expected, *, max_bytes=MAX_FILE):
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
                  getattr(os, "O_NONBLOCK", 0))
     with os.fdopen(fd, "rb") as handle:
         before = os.fstat(handle.fileno())
-        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE:
+        if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
             raise ValueError("Event master WAV is not an ordinary bounded file")
         h = hashlib.sha256()
         while True:
@@ -178,7 +179,55 @@ def _digest_regular(path, expected):
             raise ValueError("Restored WAV does not match its private package hash")
 
 
+def _marathon_duration(folder, wav):
+    """Verify the local joined WAV; its unsigned receipt is not source authentication."""
+    data = _read_small_json(folder / "marathon.receipt.private.json")
+    if (not isinstance(data, dict) or data.get("schema_version") != 1 or
+            data.get("kind") != "mixlab-private-continuous-event-v1" or
+            data.get("wav_name") != "marathon.wav" or
+            data.get("private_local_use_only") is not True or
+            data.get("sample_preserving_joins") is not True or
+            data.get("automatic_licensing") is not False or
+            data.get("musical_preference_proven") is not False or
+            type(data.get("rate")) is not int or
+            not 8000 <= data["rate"] <= 96000 or
+            data.get("channels") != 2 or data.get("sample_width_bytes") != 2 or
+            type(data.get("frames")) is not int or data["frames"] <= 0 or
+            data["frames"] * 4 > MAX_MARATHON or
+            not isinstance(data.get("wav_sha256"), str) or
+            not SHA.fullmatch(data["wav_sha256"])):
+        raise ValueError("Not a supported private continuous MixLab event")
+    sections = data.get("sections")
+    if not isinstance(sections, list) or not 2 <= len(sections) <= 8:
+        raise ValueError("Private Marathon receipt has no valid event sequence")
+    offset = 0
+    for i, row in enumerate(sections, 1):
+        if (not isinstance(row, dict) or row.get("index") != i or
+                type(row.get("start_frame")) is not int or
+                row["start_frame"] != offset or
+                type(row.get("frames")) is not int or row["frames"] <= 0 or
+                not isinstance(row.get("source_sha256"), str) or
+                not SHA.fullmatch(row["source_sha256"])):
+            raise ValueError("Joined event boundaries are not contiguous or receipt-bound")
+        offset += row["frames"]
+    if offset != data["frames"]:
+        raise ValueError("Marathon chapter frames do not cover the real master")
+    _digest_regular(wav, data["wav_sha256"], max_bytes=MAX_MARATHON)
+    fd = os.open(wav, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                 getattr(os, "O_NONBLOCK", 0))
+    with os.fdopen(fd, "rb") as source:
+        with wave.open(source, "rb") as media:
+            if (media.getnchannels() != 2 or media.getsampwidth() != 2 or
+                    media.getcomptype() != "NONE" or
+                    media.getframerate() != data["rate"] or
+                    media.getnframes() != data["frames"]):
+                raise ValueError("Private Marathon audio differs from its joined PCM receipt")
+    return data["frames"] / data["rate"], len(sections), "marathon"
+
+
 def _chapter_count_and_duration(folder, wav):
+    if wav.name == "marathon.wav":
+        return _marathon_duration(folder, wav)
     session = folder / "studio-session"
     if session.is_dir() and not session.is_symlink():
         original = build_chapters(session, wav)
@@ -236,7 +285,9 @@ def build_vault(new_private_html, *event_directories):
             raise ValueError("Events must be unique sibling directories of the private vault")
         used.add(folder.name)
         _entry(folder / "index.html", size_limit=512 * 1024)
-        wav, meta = _entry(folder / "final-set.wav", size_limit=MAX_FILE)
+        is_marathon = (folder / "marathon.receipt.private.json").exists()
+        wav_name = "marathon.wav" if is_marathon else "final-set.wav"
+        wav, meta = _entry(folder / wav_name, size_limit=MAX_MARATHON if is_marathon else MAX_FILE)
         duration, chapters, evidence = _chapter_count_and_duration(folder, wav)
         if not isinstance(duration, (float, int)) or not 0 < duration <= 86400:
             raise ValueError("Private event has invalid running time")
@@ -258,6 +309,7 @@ def build_vault(new_private_html, *event_directories):
     return {"private_event_vault":str(target), "events":len(records),
             "original_canonical":sum(x["evidence"]=="canonical" for x in records),
             "restored_private_packages":sum(x["evidence"]=="bundle" for x in records),
+            "continuous_marathons":sum(x["evidence"]=="marathon" for x in records),
             "offline":True, "source_media_uploads":False,
             "automatic_licensing":False, "musical_preference_proven":False}
 
