@@ -273,7 +273,7 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
             from .marathon_join_studio import create_join_studio
             join_studio = create_join_studio(wav, destination / "marathon.join-studio.private.html")
             created.append(join_studio)
-        except (ValueError, TypeError, KeyError, OSError):
+        except (ValueError, TypeError, KeyError, OSError, wave.Error):
             join_studio_warning = "Completed WAV exists; optional Join Studio could not be generated"
         showbook = None
         showbook_warning = None
