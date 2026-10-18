@@ -38,7 +38,7 @@ def export_marathon_bundle(original_marathon_wav, new_zip):
     folder = wav.parent
     target = _new_zip_path(wav, new_zip)
     duration, sections, evidence = _marathon_duration(folder, wav)
-    if evidence != "marathon" or not 2 <= sections <= 8:
+    if evidence not in ("marathon", "marathon_blend") or not 2 <= sections <= 8:
         raise ValueError("Private Marathon is not a completed original export")
     receipt = _read_small_json(folder / "marathon.receipt.private.json")
     if not isinstance(receipt, dict):
