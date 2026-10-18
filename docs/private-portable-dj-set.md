@@ -27,6 +27,22 @@ python3 -m mixlab.set_delivery \
   /private/final-set-portable.mp3
 ~~~
 
+**Snellere route:** je kunt dezelfde portable export ook meteen tijdens
+de oorspronkelijke volledige-setrender aanvragen, zonder eerst apart
+`mixlab.set_delivery` uit te voeren:
+
+~~~bash
+python3 -m mixlab.set_composer render \
+  /private/session-01 \
+  /private/mixlab-set-plan.private.json \
+  /private/final-set.wav \
+  --portable-mp3 /private/final-set-portable.mp3
+~~~
+
+De volledige originele WAV blijft de primaire output. Als de optionele
+MP3-conversie niet lukt, meldt de CLI een `portable_warning` zonder
+de al voltooide WAV of HTML-speler te verwijderen.
+
 MixLab maakt uitsluitend **nieuwe** bestanden:
 
 - `final-set-portable.mp3`: lokaal geëncodeerde MP3 van **192 kbit/s**,
