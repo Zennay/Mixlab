@@ -91,8 +91,11 @@ playback guarantee. No telemetry or persistent state.</p>
 "use strict";
 const data=JSON.parse(document.getElementById("mixlab-show-data").textContent);
 const $=id=>document.getElementById(id),audio=$("player");
-const attached=new Map(),breaks=data.sets.map((_,i)=>i===data.sets.length-1?0:data.default_break);
-const notes=data.sets.map(()=>""),rows=[],chapterButtons=[];
+const attached=new Map();
+const breaks=data.saved_breaks?data.saved_breaks.slice():
+ data.sets.map((_,i)=>i===data.sets.length-1?0:data.default_break);
+const notes=data.saved_notes?data.saved_notes.slice():
+ data.sets.map(()=>""),rows=[],chapterButtons=[];
 let active=-1,attachedURL=null;
 const time=seconds=>{const n=Math.max(0,Math.floor(seconds));return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(x=>String(x).padStart(2,"0")).join(":");};
 const clock=minutes=>String(Math.floor(minutes/60)%24).padStart(2,"0")+":"+
@@ -185,6 +188,7 @@ data.sets.forEach((set,i)=>{
  const note=document.createElement("textarea");note.maxLength=300;
  note.setAttribute("aria-label","Private handoff cue note for "+set.label);
  note.placeholder="Microphone intro, guest requests, lighting, safety cue (operator-only).";
+ note.value=notes[i];
  note.addEventListener("input",()=>{notes[i]=note.value;});
  card.append(heading,schedule,fileInput,status,breakline,note);
  $("setlist").append(card);rows.push({card,schedule});
@@ -264,7 +268,8 @@ def _sources(raw):
     return result
 
 
-def prepare_show(new_private_html, *source_pairs, start="19:00", break_minutes=10):
+def prepare_show(new_private_html, *source_pairs, start="19:00",
+                 break_minutes=10, saved_plan=None):
     if not isinstance(start, str) or not CLOCK.fullmatch(start):
         raise ValueError("Planned show start must be HH:MM")
     if type(break_minutes) is not int or not 0 <= break_minutes <= 120:
@@ -276,6 +281,14 @@ def prepare_show(new_private_html, *source_pairs, start="19:00", break_minutes=1
            for path in source_pairs):
         raise ValueError("Keep a standalone private show page outside the original WAV/session folders")
     data = {"sets": sources, "default_start": start, "default_break": break_minutes}
+    if saved_plan is not None:
+        # Import lazily: the canonical actual-WAV renderer uses _sources from
+        # this module. The operator plan shares its precise source identity.
+        from .show_master import _plan
+        approved = _plan(sources, saved_plan)
+        data["default_start"] = approved["start_local"]
+        data["saved_breaks"] = approved["break_minutes"]
+        data["saved_notes"] = approved["private_notes"]
     json_blob = json.dumps(data, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     json_blob = json_blob.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     page = _HTML.replace("__DATA__", json_blob).encode("utf-8")
@@ -369,17 +382,26 @@ def main():
     prepare.add_argument("session_and_wav_pairs",nargs="+")
     prepare.add_argument("--start",default="19:00",help="Planned local HH:MM event start")
     prepare.add_argument("--break-minutes",type=int,default=10)
+    resumed=sub.add_parser("resume",help="Reopen a previously saved private show in a new source-reverified manual stage")
+    resumed.add_argument("previous_sha_bound_private_plan")
+    resumed.add_argument("new_private_mixlab_html")
+    resumed.add_argument("session_and_wav_pairs",nargs="+")
     printed=sub.add_parser("print",help="Print an exported source-bound operator schedule with private notes")
     printed.add_argument("exported_private_operator_plan")
     printed.add_argument("new_private_mixlab_report_html")
     printed.add_argument("session_and_wav_pairs",nargs="+")
     args=parser.parse_args()
     try:
-        result=(prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
-                             start=args.start,break_minutes=args.break_minutes)
-                if args.action=="prepare" else
-                print_show(args.exported_private_operator_plan,
-                           args.new_private_mixlab_report_html,*args.session_and_wav_pairs))
+        if args.action=="prepare":
+            result=prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
+                                start=args.start,break_minutes=args.break_minutes)
+        elif args.action=="resume":
+            result=prepare_show(args.new_private_mixlab_html,*args.session_and_wav_pairs,
+                                saved_plan=args.previous_sha_bound_private_plan)
+            result["saved_source_bound_operator_choices_restored"]=True
+        else:
+            result=print_show(args.exported_private_operator_plan,
+                              args.new_private_mixlab_report_html,*args.session_and_wav_pairs)
     except (ValueError, KeyError, TypeError, OSError, UnicodeError, wave.Error):
         parser.exit(2,"MixLab Show Conductor: existing verified private WAVs, output, or operator schedule invalid.\n")
     print(json.dumps(result,ensure_ascii=False,allow_nan=False))
