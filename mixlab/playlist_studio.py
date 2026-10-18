@@ -53,7 +53,8 @@ def _positive_cue(value):
 
 
 def create_playlist_manifest(music_directory, output_manifest, new_session,
-                             *, read=input, write=print, beats=16, partition="development", journey_plan=None, approval_file=None):
+                             *, read=input, write=print, beats=16, partition="development",
+                             journey_plan=None, approval_file=None, approval_styles=None):
     """Capture an ordered rights-permitted private playlist and every manual cue.
 
     Cheap input checks run before touching the local song collection. Sources
@@ -160,6 +161,9 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
             a_start = outgoing(str(approved_pair["a_start_seconds"]))
             b_start = _positive_cue(str(approved_pair["b_start_seconds"]))
             write("Using manually checked source-bound A/B cues from approved private form.")
+        if approved is not None and approved["pairs"][i]["family"] is not None:
+            if approval_styles is not None:
+                approval_styles.append(f"pair-{i+1:03d}:{approved['pairs'][i]['family']}")
         pairs.append({"id": f"pair-{i+1:03d}",
                       "a": catalog[i]["id"], "b": catalog[i+1]["id"],
                       "bpm": catalog[i]["bpm"], "beats": beats,
@@ -191,6 +195,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     """Run the complete local product workflow after explicit human annotation."""
     if approval_file is not None and journey_plan is None:
         raise ValueError("--approval-file needs the original --journey-plan")
+    if approval_file is not None and styles:
+        raise ValueError("Choose render styles in the approval form OR via --style, not both")
     if resume and approval_file is not None:
         raise ValueError("--approval-file is only used on fresh manifest creation")
     if resume and journey_plan is not None:
@@ -209,12 +215,17 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
         raise ValueError("Audio decoder timeout must be between 30 and 900 seconds")
+    approved_styles = []
     if resume:
         write("Resuming the exact existing private playlist manifest without changing its cues.")
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
                                  beats=beats, partition=partition, journey_plan=journey_plan,
-                                 approval_file=approval_file)
+                                 approval_file=approval_file, approval_styles=approved_styles)
+    if full_set_wav is not None and approved_styles:
+        # These validated choices came from exactly the locally SHA-bound,
+        # explicitly approved cue form; the official renderer remains authoritative.
+        styles = tuple(approved_styles)
     idea_beats = None
     if ideas:
         with manifest.open("r", encoding="utf-8") as reader:

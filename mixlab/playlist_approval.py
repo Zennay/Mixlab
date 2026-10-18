@@ -285,7 +285,17 @@ function build(){
   const b=field("Incoming B cue: seconds","number",
    {min:0,max:900,step:0.001,required:"required",placeholder:"Exact verified cue"});
   row.append(a.wrap,b.wrap);box.append(row);
-  pairs.push({a:a.input,b:b.input});
+  const familyWrap=node("label","");
+  familyWrap.append(node("span","","Real MixLab render style for this transition"));
+  const family=document.createElement("select");
+  family.append(new Option("Use --family default (bass_swap)","",true,true));
+  [["baseline","Equal-power baseline"],
+   ["bass_swap","Bass swap"],
+   ["echo_exit","Echo exit"],
+   ["hard_cut","Hard cut"]].forEach(choice=>family.append(new Option(choice[1],choice[0])));
+  familyWrap.append(family);box.append(familyWrap);
+  box.append(node("p","meta","Your local two-deck preview is an approximate equal-power fade; other render styles are implemented by the actual offline DSP renderer, NOT this browser."));
+  pairs.push({a:a.input,b:b.input,family});
   const audition=node("div","rehearsal");
   const note=node("p","meta","Local two-deck equal-power prelisten. This approximates a baseline crossfade; it is NOT a renderer output, stem swap or musical quality claim.");
   const buttons=node("div","buttons");
@@ -333,7 +343,7 @@ function exportApproval(){
    const a=numeric(p.a),b=numeric(p.b);
    if(a+1e-8<lastIncomingEnd)throw new Error("Outgoing cue "+(i+1)+" overlaps the previous incoming transition.");
    lastIncomingEnd=b+length;
-   return {a_start_seconds:a,b_start_seconds:b};
+   return {a_start_seconds:a,b_start_seconds:b,family:p.family.value||null};
   });
   const result={kind:"mixlab-private-approved-playlist-v1",plan_sha256:bundle.plan_sha256,
    declared_source_rights:true,approved_order:true,beats:beats,tracks:declared,pairs:approvedPairs};
@@ -422,15 +432,20 @@ def load_approval(music_folder, private_plan, private_approval, *, beats):
     length_seconds=beats*60/selected[0]["bpm"]
     last_incoming=0.
     approved_pairs=[]
+    from .studio import FAMILY_NAMES
     for i,entry in enumerate(pairs):
         if not isinstance(entry,dict):
             raise ValueError("Invalid approved transition record")
+        chosen_family = entry.get("family")
+        if chosen_family is not None and chosen_family not in FAMILY_NAMES:
+            raise ValueError("Unknown or unsupported manually chosen transition render style")
         a=_seconds(entry.get("a_start_seconds"),"outgoing cue")
         b=_seconds(entry.get("b_start_seconds"),"incoming cue")
         if a+1e-8<last_incoming:
             raise ValueError("Approved transition backtracks into previous incoming section")
         last_incoming=b+length_seconds
-        approved_pairs.append({"a_start_seconds":a,"b_start_seconds":b})
+        approved_pairs.append({"a_start_seconds":a,"b_start_seconds":b,
+                               "family": chosen_family})
     return {"tracks": approved_tracks, "pairs": approved_pairs}
 
 
