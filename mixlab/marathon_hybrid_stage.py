@@ -32,7 +32,7 @@ h2{font-size:clamp(20px,3vw,30px);margin:7px 0}p{color:var(--muted)}.tag{color:v
 .controls{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
 button{cursor:pointer;background:#275f63;color:white;border:1px solid #70a09b;border-radius:12px;padding:13px 16px;font:inherit;font-weight:750}
 button:hover{background:#397a70}button:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
-button:disabled{opacity:.45}ul{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+button:disabled{opacity:.45}.mark{background:#345a47}.observed{color:var(--mint);font-weight:750}ul{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 li{display:flex;gap:15px;align-items:center;flex-wrap:wrap;padding:17px;border:1px solid var(--line);border-radius:14px;background:#0e2231}
 li[data-active="true"]{border-color:var(--mint);background:#144b42}
 li .content{flex:1;min-width:240px}li strong,li span,li small{display:block}
@@ -63,6 +63,15 @@ and browsers might require clicking Play after seeking. Use your audio player
 rather than browser timing for safety-critical event production.</p></section>
 <section class="panel"><h2>Real joined-event cue sheet</h2><ul id="cue-list"></ul>
 <p class="hash" id="hashes"></p></section>
+<section class="panel"><h2>Playback rehearsal journal · optional</h2>
+<p>During a private listening rehearsal, mark when you <em>hear</em> each
+transition in the local WAV. Compare your manual marker against its exact
+source-receipt boundary. Seek and pauses affect observations: these are not
+real-world show timings, blind ratings or music permissions. No persistence
+without your explicit download.</p>
+<div class="controls"><button type="button" id="export-journal" disabled>Export private playback journal</button>
+<button type="button" id="clear-journal">Clear marks</button></div>
+<p id="journal-status" role="status">Mark at least one join during local WAV playback.</p></section>
 </main><script type="application/json" id="stage-data">__DATA__</script><script>
 "use strict";
 const data=JSON.parse(document.getElementById("stage-data").textContent);
@@ -80,6 +89,8 @@ const seek=time=>{
  update();
 };
 const cardNodes=[];
+const observed=new Array(joins.length).fill(null);
+const observedLabels=[];
 joins.forEach((join,index)=>{
  const row=document.createElement("li"),details=document.createElement("div");
  details.className="content";
@@ -92,8 +103,57 @@ joins.forEach((join,index)=>{
  const btn=document.createElement("button");btn.type="button";btn.textContent="Cue this join";
  btn.setAttribute("aria-label","Cue "+join.from+" to "+join.to+" before actual boundary");
  btn.addEventListener("click",()=>seek(Math.max(0,join.at_seconds-8)));
- row.append(details,btn);$("cue-list").append(row);cardNodes.push(row);
+ const mark=document.createElement("button");mark.type="button";
+ mark.textContent="Mark heard NOW";mark.className="mark";
+ mark.setAttribute("aria-label","Mark playback cue "+(index+1));
+ const recorded=document.createElement("small");recorded.className="observed";
+ recorded.textContent="Not marked";
+ mark.addEventListener("click",()=>{
+  if(!Number.isFinite(player.duration)||!Number.isFinite(player.currentTime)||
+     player.currentTime<0||player.currentTime>data.duration_seconds){
+   $("journal-status").textContent="Load the actual local WAV first.";return;
+  }
+  observed[index]=Number(player.currentTime.toFixed(3));refreshJournal();
+ });
+ row.append(details,btn,mark,recorded);
+ $("cue-list").append(row);cardNodes.push(row);observedLabels.push(recorded);
 });
+function refreshJournal(){
+ const count=observed.filter(value=>value!==null).length;
+ observed.forEach((mark,index)=>{
+  const delta=mark===null?0:mark-joins[index].at_seconds;
+  observedLabels[index].textContent=mark===null?"Not marked":
+   "Heard at "+pretty(mark)+" · playback delta "+(delta>=0?"+":"")+
+    delta.toFixed(2)+" s";
+ });
+ $("export-journal").disabled=count===0;
+ $("journal-status").textContent=count+" / "+joins.length+
+ " manually marked joins, retained only in this page until export.";
+}
+$("clear-journal").addEventListener("click",()=>{
+ observed.fill(null);refreshJournal();
+});
+$("export-journal").addEventListener("click",()=>{
+ if(observed.every(value=>value===null))return;
+ const journal={
+  schema_version:1,kind:"mixlab-private-hybrid-playback-cue-journal-v1",
+  actual_master_sha256:data.wav_sha256,source_original_sha256:data.source_sha256,
+  duration_seconds:data.duration_seconds,private_only:true,
+  playback_only:true,blind_study:false,
+  joins:joins.map((join,index)=>({
+   index:index+1,from:join.from,to:join.to,
+   planned_seconds:join.at_seconds,fade_seconds:join.fade_seconds,
+   observed_playback_seconds:observed[index],note:join.note
+  }))
+ };
+ const blob=new Blob([JSON.stringify(journal,null,2)+"\n"],{type:"application/json"});
+ const url=URL.createObjectURL(blob),link=document.createElement("a");
+ link.href=url;link.download="mixlab-hybrid-playback-journal.private.json";
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $("journal-status").textContent="Private playback journal downloaded; no music or telemetry uploaded.";
+});
+refreshJournal();
 function update(){
  const pos=Number.isFinite(player.currentTime)?player.currentTime:0;
  let upcoming=joins.findIndex(row=>pos<row.at_seconds);

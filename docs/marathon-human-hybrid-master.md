@@ -131,3 +131,38 @@ against the actual recovered local WAV and verified receipt, not by trusting
 copied HTML. A failure rolls back only newly created notes/pages, **never the
 approved audio**. This small ZIP is **unsigned**: SHA proves self-consistency
 with the local WAV but not the sender's identity, music rights or DJ preference.
+
+
+## 6. Record and print manual offline playback-rehearsal cues
+
+Open the existing `master-picks.stage.html` beside the actual approved
+`marathon.wav`. While **rehearsing the local player**, use **Mark heard
+NOW** beside any join; it captures the WAV player's current playback position
+and shows its signed delta to that exact receipt-verified boundary. Marks
+can be replaced or cleared; they are held only in this open tab and never
+sent to a service. Once at least one join is marked, use **Export private
+playback journal** to download
+`mixlab-hybrid-playback-journal.private.json`, with every real source
+boundary, manual local playback marker, notes and finished WAV SHA-256.
+
+The user can independently create a fresh private printable report beside
+the original, already verified finished hybrid WAV:
+
+```bash
+python3 -m mixlab.marathon_stage_journal \
+  /private/hybrid-event/marathon.wav \
+  /private/rehearsal/mixlab-hybrid-playback-journal.private.json \
+  /private/hybrid-event/master-playback-journal.private.html
+```
+
+The renderer rechecks the entire real WAV SHA and receipt, validates each
+boundary's actual frame position, join mode, private label, bounded human
+note and optional playback marker, and refuses foreign/malformed log
+entries. It writes only a new private HTML; media is never modified or
+uploaded. The report can be printed for your own rehearsal review.
+
+**Important:** The marker means where the user manually clicked in a local
+WAV player, possibly after seeking or pausing. It does **not** measure when
+a performer played something at a physical event, how a room reacted, mix
+quality, rights provenance, or a scientific preference outcome. Private
+logs are never automatically inserted into regular portable music ZIPs.
