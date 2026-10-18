@@ -50,6 +50,26 @@ button:hover,a:hover{background:#3b6684}
 .row .stamp{color:var(--accent);font-variant-numeric:tabular-nums}
 .row[aria-current=true]{border-color:var(--accent);background:#21433e}
 .muted{color:var(--muted)}.hash{word-break:break-word;font:11px ui-monospace,monospace;color:var(--muted)}
+
+/* Operator Stage: one real WAV clock, no audio copy and no network dependency. */
+.stage{border-color:#548975;background:linear-gradient(125deg,#172f32,#11243a 65%);position:relative}
+.stage .stage-header{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}
+.stage .stage-badge{background:#254d42;color:#c1ffe0;padding:6px 11px;border-radius:100px;font-size:12px;font-weight:850}
+.stage-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:17px;margin:20px 0}
+.stage-card{padding:20px;background:#0a1a25;border:1px solid #486a76;border-radius:18px}
+.stage-kicker{font-size:12px;font-weight:850;letter-spacing:.12em;color:#abd4c4}
+.stage-title{font-size:clamp(24px,3.5vw,46px);font-weight:850;line-height:1.15;overflow-wrap:anywhere;margin:10px 0}
+.stage-counter{font-size:clamp(33px,5vw,68px);font-variant-numeric:tabular-nums;line-height:1.15;font-weight:900;margin:8px 0;color:#b9ffdc}
+.stage progress{width:100%;height:16px;accent-color:#a2ffcb}
+.stage-actions{display:flex;gap:10px;flex-wrap:wrap;margin:15px 0}
+.stage-actions>*{min-width:145px;flex:1}
+.stage textarea{width:100%;min-height:85px;border:1px solid #678e9b;background:#091923;color:#fff;padding:12px;border-radius:12px;resize:vertical;font:inherit}
+.stage .stage-notes{font-size:13px;padding-left:22px;max-height:220px;overflow-y:auto}
+.stage .stage-notes li{margin:7px 0;overflow-wrap:anywhere}
+.stage .stage-meta{font-size:13px;color:#c0d9e1}
+.stage:fullscreen{overflow:auto;padding:clamp(18px,3vw,54px);border:none;border-radius:0;background:#081923}
+.stage:fullscreen .stage-counter{font-size:clamp(65px,10vw,180px)}
+@media(max-width:700px){.stage-grid{grid-template-columns:1fr}.stage-actions>*{min-width:120px}}
 </style></head><body><main>
 <div class="eyebrow">MIXLAB / PRIVATE CONTINUOUS EVENT</div>
 <h1>One long<br>uninterrupted set.</h1>
@@ -64,6 +84,28 @@ button:hover,a:hover{background:#3b6684}
 <a id="download" class="action" download>Save original continuous WAV</a>
 <button id="cue" type="button">Download chapter CUE</button><a id="showbook" class="action" hidden>Open show runbook</a><a id="join-studio" class="action" hidden>Arrange transitions</a></div>
 <p id="status" class="muted" role="status">The actual output PCM16 WAV must remain alongside this offline page. Your media player may provide better performance than a browser with large WAV files.</p>
+</section>
+
+<section class="panel stage" id="stage">
+ <div class="stage-header"><div class="eyebrow">MIXLAB / OFFLINE STAGE CONTROL</div><span class="stage-badge" id="stage-state">PAUSED / READY</span></div>
+ <div class="stage-grid">
+  <div class="stage-card"><div class="stage-kicker">NOW PLAYING · VERIFIED MASTER</div><div class="stage-title" id="stage-current">Loading event…</div>
+   <div class="stage-kicker">PLAYHEAD</div><div class="stage-counter" id="stage-elapsed">00:00:00</div>
+   <progress id="stage-progress" value="0" max="100" aria-label="Progress through current event"></progress><div id="stage-progress-label" class="stage-meta">0% of this set</div>
+  </div>
+  <div class="stage-card"><div class="stage-kicker">NEXT EVENT / HANDOFF</div><div class="stage-title" id="stage-next">—</div>
+   <div class="stage-kicker">TIME UNTIL NEXT ENTRY</div><div class="stage-counter" id="stage-countdown">--:--:--</div>
+   <div id="stage-join" class="stage-meta">Source-receipt chapter boundaries, not automatic DJ beatmatching.</div>
+  </div>
+ </div>
+ <div class="stage-actions"><button id="stage-play" type="button">Play WAV / Space</button><button id="stage-fullscreen" type="button">Full screen / F</button>
+ <button id="stage-add" type="button">Mark cue / M</button><button id="stage-export" type="button">Export cue log</button></div>
+ <label for="stage-note" class="stage-kicker">Operator cue (stored in this page only; max 300 characters)</label>
+ <textarea id="stage-note" maxlength="300" placeholder="Crowd request, handoff cue, mix observation…"></textarea>
+ <div class="stage-actions"><label for="stage-import" class="action">Import a SHA-matched cue log</label>
+ <input id="stage-import" type="file" accept=".json,application/json" aria-label="Import private MixLab cue log"></div>
+ <ol id="stage-notes" class="stage-notes" aria-label="Cues in this browser session"></ol>
+ <p class="stage-meta" id="stage-message" role="status">No sound is recorded, uploaded or stored. Export your notes before closing this page. Browser playback is not certified for live shows; keep an independent WAV player and backup available.</p>
 </section>
 <section class="panel"><h2>Actual event sequence</h2><ol class="list" id="sections"></ol></section>
 <p>The original events and source songs are not embedded in this page. Each joint is an intentional, sample-exact boundary between completed sets. This is not a DJ-quality transition or evidence of listening preference. Only play this event where you have separately verified the required permissions.</p>
@@ -125,6 +167,107 @@ $("cue").addEventListener("click",()=>{
 });
 $("hash").textContent="Exact continuous WAV SHA-256: "+data.wav_sha256;
 update();
+
+/* Live operator view is a read-only projection of the one existing player. */
+const cueNotes=[];
+const stageClock=seconds=>clock(Math.max(0,seconds));
+const cueMessage=text=>{$("stage-message").textContent=text;};
+let stageIndex=0;
+function stageUpdate(){
+ const pos=Math.max(0,Math.min(data.duration_seconds,Number(audio.currentTime)||0));
+ const ix=Math.max(0,Math.min(secs.length-1,secs.findLastIndex(s=>s.start_seconds<=pos+0.05)));
+ stageIndex=ix;
+ const next=secs[ix+1];
+ const begin=secs[ix].start_seconds;
+ const boundary=next?next.start_seconds:data.duration_seconds;
+ const span=Math.max(0.001,boundary-begin);
+ $("stage-current").textContent=(ix+1)+" / "+secs.length+" · "+secs[ix].label;
+ $("stage-next").textContent=next?next.label:"LAST EVENT / END OF MASTER";
+ $("stage-elapsed").textContent=stageClock(pos);
+ $("stage-countdown").textContent=stageClock(Math.max(0,boundary-pos));
+ const pct=Math.min(100,Math.max(0,100*(pos-begin)/span));
+ $("stage-progress").value=pct;
+ $("stage-progress-label").textContent=Math.floor(pct)+"% of this section · total "+stageClock(data.duration_seconds);
+ const fade=next&&Number(next.fade_in_seconds)>0?Number(next.fade_in_seconds):0;
+ $("stage-join").textContent=next?(fade?("Next handoff: "+fade+"s already-rendered audio crossfade. Listen before event use."):"Next handoff: hard boundary. No automatic DJ transition."):"Final section. Master ends when the actual WAV ends.";
+ $("stage-state").textContent=audio.ended?"MASTER ENDED":audio.paused?"PAUSED / READY":"WAV PLAYING";
+ $("stage-play").textContent=audio.paused?"Play WAV / Space":"Pause WAV / Space";
+}
+function stagePlayback(){
+ if(!audio.paused){audio.pause();return;}
+ const result=audio.play();
+ if(result)result.catch(()=>cueMessage("Playback unavailable here. Open the verified WAV in an independent local player."));
+}
+function cueShow(){
+ const out=$("stage-notes");out.replaceChildren();
+ cueNotes.forEach((cue,i)=>{
+  const row=document.createElement("li");
+  row.textContent=String(i+1)+". "+stageClock(cue.time_seconds)+" · "+cue.event_label+(cue.note?" · "+cue.note:"");
+  out.append(row);
+ });
+}
+function cueAdd(){
+ if(cueNotes.length>=200){cueMessage("Maximum 200 local cue markers. Export the existing log.");return;}
+ const note=$("stage-note").value.trim();
+ const pos=Math.max(0,Math.min(data.duration_seconds,Number(audio.currentTime)||0));
+ cueNotes.push({time_seconds:Math.round(pos*100)/100,event_index:stageIndex,event_label:secs[stageIndex].label,note});
+ $("stage-note").value="";
+ cueShow();
+ cueMessage("Cue added to this browser session. Export to preserve it; no automatic storage.");
+}
+function cueSave(){
+ const payload={kind:"mixlab-private-marathon-cues-v1",schema_version:1,
+  source_wav_sha256:data.wav_sha256,source_duration_seconds:data.duration_seconds,
+  sections:secs.map(s=>({label:s.label,start_seconds:s.start_seconds})),cues:cueNotes};
+ const blob=new Blob([JSON.stringify(payload,null,2)+"\n"],{type:"application/json"});
+ const u=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=u;a.download="mixlab-marathon-cues.private.json";document.body.append(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(u),1000);
+ cueMessage("Private cues exported. They are SHA-bound to this exact master; keep alongside your offline WAV.");
+}
+async function cueLoad(file){
+ if(!file||file.size>65536||file.size<2)throw Error("Cue log must be an ordinary JSON file smaller than 64 KiB.");
+ const obj=JSON.parse(await file.text());
+ if(!obj||obj.kind!=="mixlab-private-marathon-cues-v1"||obj.schema_version!==1||
+    obj.source_wav_sha256!==data.wav_sha256||
+    obj.source_duration_seconds!==data.duration_seconds||!Array.isArray(obj.sections)||
+    JSON.stringify(obj.sections)!==JSON.stringify(secs.map(s=>({label:s.label,start_seconds:s.start_seconds})))||
+    !Array.isArray(obj.cues)||obj.cues.length>200)throw Error("Cue log is not bound to this exact verified Marathon.");
+ const valid=obj.cues.every(c=>c&&typeof c==="object"&&Number.isFinite(c.time_seconds)&&
+    c.time_seconds>=0&&c.time_seconds<=data.duration_seconds&&Number.isInteger(c.event_index)&&
+    c.event_index>=0&&c.event_index<secs.length&&c.event_label===secs[c.event_index].label&&
+    typeof c.note==="string"&&c.note.length<=300&&
+    (c.time_seconds+0.05>=secs[c.event_index].start_seconds)&&(c.event_index===secs.length-1||c.time_seconds<secs[c.event_index+1].start_seconds+0.05));
+ if(!valid)throw Error("Cue log contains invalid markers.");
+ cueNotes.splice(0,cueNotes.length,...obj.cues.map(c=>({time_seconds:c.time_seconds,event_index:c.event_index,event_label:c.event_label,note:c.note})));
+ cueShow();cueMessage("Exact-master cue log restored locally. No uploads performed.");
+}
+$("stage-play").addEventListener("click",stagePlayback);
+$("stage-fullscreen").addEventListener("click",async()=>{
+ try{if(document.fullscreenElement)await document.exitFullscreen();else await $("stage").requestFullscreen();}
+ catch(_){cueMessage("Full-screen display is unavailable in this browser.");}
+});
+$("stage-add").addEventListener("click",cueAdd);
+$("stage-export").addEventListener("click",cueSave);
+$("stage-import").addEventListener("change",async e=>{
+ try{await cueLoad(e.target.files&&e.target.files[0]);}
+ catch(_){cueMessage("Cue import rejected: wrong source, malformed data or file too large.");}
+ finally{e.target.value="";}
+});
+document.addEventListener("keydown",e=>{
+ const field=e.target&&["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target.tagName);
+ if(field||e.altKey||e.ctrlKey||e.metaKey||e.repeat)return;
+ if(e.code==="Space"){e.preventDefault();stagePlayback();}
+ else if(e.key.toLowerCase()==="f"&&!e.shiftKey){e.preventDefault();$("stage-fullscreen").click();}
+ else if(e.key.toLowerCase()==="m"&&!e.shiftKey){e.preventDefault();cueAdd();}
+});
+audio.addEventListener("timeupdate",stageUpdate);
+audio.addEventListener("seeked",stageUpdate);
+audio.addEventListener("play",stageUpdate);
+audio.addEventListener("pause",stageUpdate);
+audio.addEventListener("ended",stageUpdate);
+audio.addEventListener("loadedmetadata",stageUpdate);
+stageUpdate();
 </script></body></html>"""
 
 
