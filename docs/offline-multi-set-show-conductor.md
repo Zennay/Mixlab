@@ -208,3 +208,35 @@ keeps its unchanged source-locked JSON schema and does not silently
 include past private rehearsal cue notes. This is not independent
 performance measurement or a substitute for actual approved audio,
 human listening/rights evidence or professional live DJ equipment.
+
+## Print the official planned show with your selected rehearsal cue notes
+
+The existing printable source-bound run-of-show can optionally include
+**the exact human-selected rehearsal cue marks** under each set's
+chapter list, alongside original planned breaks, local HH:MM and the
+operator's set-level notes:
+
+```bash
+python3 -m mixlab.show_conductor print \
+  /private/event-operations/mixlab-show-conductor.private.json \
+  /private/event-operations/mixlab-show-print-with-cues.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --rehearsal-selection /private/rehearsal-review/mixlab-rehearsal-take-selection.private.json \
+  --journal /private/rehearsals/take-01/mixlab-show-rehearsal.private.json \
+  --journal /private/rehearsals/take-02/mixlab-show-rehearsal.private.json
+```
+
+The extra inputs are optional. If omitted, the original printed runbook
+behaves exactly as before. When provided, the command independently
+rechecks the official plan, all original full WAVs and session/source
+receipts, and the selected take's ordered journal digests and
+SHA-bound source identity; mismatches fail closed before output.
+The resulting **new private printout** contains set-level private
+operator notes AND deliberately selected rehearsal cue annotations, so
+do not publish it or bundle it in the music ZIP.
+
+These printed WAV-time cue markers and operator notes are planning/
+rehearsal aids; they do not prove timing in a venue, sound-system
+delivery, independent listening preferences, music rights, musical
+superiority or automatic DJ playback.

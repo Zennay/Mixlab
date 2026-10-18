@@ -481,7 +481,8 @@ def prepare_show(new_private_html, *source_pairs, start="19:00",
             "music_rights_proven": False}
 
 
-def print_show(plan_path, new_private_html, *source_pairs):
+def print_show(plan_path, new_private_html, *source_pairs,
+               rehearsal_selection=None, rehearsal_journals=()):
     sources = _sources(source_pairs)
     plan = _read_plan(plan_path)
     if (not isinstance(plan, dict) or set(plan) !=
@@ -510,6 +511,20 @@ def print_show(plan_path, new_private_html, *source_pairs):
     if any(out.is_relative_to(Path(path).absolute().parent) or
            out.is_relative_to(Path(path).absolute()) for path in source_pairs):
         raise ValueError("Keep a printable private runbook outside the original music/session folders")
+    if rehearsal_selection is None and rehearsal_journals:
+        raise ValueError("Rehearsal journals require a selected human take")
+    chosen = None
+    if rehearsal_selection is not None:
+        from .show_rehearsal_cuebook import load_selected
+        chosen_sources, chosen, _ = load_selected(
+            rehearsal_selection, tuple(source_pairs), tuple(rehearsal_journals))
+        if [s["wav_sha256"] for s in chosen_sources] != [
+                s["wav_sha256"] for s in sources]:
+            raise ValueError("Selected rehearsal has mismatched source WAV identity")
+        roots = (rehearsal_selection, *rehearsal_journals)
+        if any(out.is_relative_to(Path(raw).absolute().parent) or
+               out.is_relative_to(Path(raw).absolute()) for raw in roots):
+            raise ValueError("Print private selected cues outside original source folders")
     minute = int(plan["start_local"][:2])*60+int(plan["start_local"][3:])
     fmt = lambda m: f"{int(m // 60)%24:02d}:{int(m%60):02d}"
     body = []
@@ -521,13 +536,36 @@ def print_show(plan_path, new_private_html, *source_pairs):
             html.escape(str(c["kind"]))+" · "+f"{c['start_seconds']:.1f}s"+"</li>"
             for c in src["chapters"]
         )
+        selected_cues = ""
+        if chosen is not None:
+            selected_rows = []
+            for mark in sorted(
+                (m for m in chosen["marks"] if m["set_index"] == i),
+                key=lambda m: (m["position"], m["seq"]),
+            ):
+                nearest = ("No nearby original chapter"
+                           if mark["chapter"] is None else
+                           str(mark["chapter"]) + " · " + str(mark["chapter_kind"]) +
+                           f" · {mark['chapter_delta']:+.2f}s")
+                selected_rows.append(
+                    "<li><strong>" + f"{mark['position']:.2f}s" + "</strong> · " +
+                    html.escape(nearest, quote=True) + "<p class='note'>" +
+                    html.escape(mark["note"] or "No private note", quote=True) + "</p></li>"
+                )
+            selected_cues = (
+                "<h3>Human-selected rehearsal cues · " +
+                html.escape(chosen["label"], quote=True) + "</h3><ol>" +
+                ("".join(selected_rows) or "<li>No manually marked cues in this take.</li>") +
+                "</ol>"
+            )
         body.append(
             "<section><h2>"+str(i+1)+". "+html.escape(src["label"],quote=True)+
             "</h2><strong>"+fmt(begin)+"–"+fmt(minute)+"</strong>"+
             "<p>Actual WAV runtime "+f"{src['duration_seconds']:.1f} s"+"</p>"+
             "<small>Full WAV SHA-256: "+src["wav_sha256"]+"</small>"+
             "<p class='note'>"+html.escape(note or "No operator cue",quote=True)+"</p>"+
-            "<ol>"+chapters+"</ol><p>Manual break after set: "+str(b)+" minutes</p></section>"
+            "<ol>"+chapters+"</ol>"+selected_cues+
+            "<p>Manual break after set: "+str(b)+" minutes</p></section>"
         )
         minute += b
     page = ("""<!doctype html><html lang="en"><meta charset="utf-8">
@@ -572,6 +610,10 @@ def main():
     printed.add_argument("exported_private_operator_plan")
     printed.add_argument("new_private_mixlab_report_html")
     printed.add_argument("session_and_wav_pairs",nargs="+")
+    printed.add_argument("--rehearsal-selection",
+                         help="Previously human-selected private rehearsal JSON")
+    printed.add_argument("--journal", action="append", default=[],
+                         help="Original private journals in comparison order")
     args=parser.parse_args()
     try:
         if args.action=="prepare":
@@ -587,7 +629,9 @@ def main():
             result["saved_source_bound_operator_choices_restored"]=True
         else:
             result=print_show(args.exported_private_operator_plan,
-                              args.new_private_mixlab_report_html,*args.session_and_wav_pairs)
+                              args.new_private_mixlab_report_html,*args.session_and_wav_pairs,
+                              rehearsal_selection=args.rehearsal_selection,
+                              rehearsal_journals=tuple(args.journal))
     except (ValueError, KeyError, TypeError, OSError, UnicodeError, wave.Error):
         parser.exit(2,"MixLab Show Conductor: existing verified private WAVs, output, or operator schedule invalid.\n")
     print(json.dumps(result,ensure_ascii=False,allow_nan=False))
