@@ -284,10 +284,53 @@ def publish_choice(choice_json, original_wav, blend_wav, *,
         from .marathon_bundle import export_marathon_bundle
         try:
             result["private_usb"] = export_marathon_bundle(
-                selected, selected.parent / "marathon.selected.private.zip")
+                selected, selected.parent / "marathon.selected.private.zip",
+                master_choice=choice_json)
         except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
             result["bundle_warning"] = "Chosen WAV retained; optional private USB archive unavailable."
     return result
+
+
+def bound_choice_for_master(approved_master_wav, private_choice_json):
+    """Validate explicitly shared private human decision for ONE completed WAV.
+
+    Source pairing was already validated by publish_choice before export.
+    When restored to a second device only the selected original/derivative is
+    available; do not claim the other master has been authenticated there.
+    """
+    wav = Path(approved_master_wav).absolute()
+    if wav.name != "marathon.wav" or wav.is_symlink():
+        raise ValueError("Master-choice notes require an official Marathon WAV")
+    _, event_count, evidence = _marathon_duration(wav.parent, wav)
+    receipt = _read_small_json(wav.parent / "marathon.receipt.private.json")
+    if evidence not in ("marathon", "marathon_blend"):
+        raise ValueError("Private human choice requires a real completed Marathon")
+    plan = Path(private_choice_json).absolute()
+    if plan.name != "mixlab-marathon-master-choice.private.json":
+        raise ValueError("Choose the explicit private Master Review choice filename")
+    record = _read_plan(plan)
+    selected = "blend" if evidence == "marathon_blend" else "original"
+    notes = record.get("join_notes") if isinstance(record, dict) else None
+    reason = record.get("operator_reason") if isinstance(record, dict) else None
+    if (not isinstance(record, dict) or record.get("schema_version") != 1 or
+            record.get("kind") != KIND or record.get("private_only") is not True or
+            record.get("selected_master") != selected or
+            record.get(selected + "_sha256") != receipt["wav_sha256"] or
+            not isinstance(record.get("original_sha256"), str) or
+            not isinstance(record.get("blend_sha256"), str) or
+            len(record["original_sha256"]) != 64 or len(record["blend_sha256"]) != 64 or
+            not all(c in "0123456789abcdef" for v in
+                    (record["original_sha256"], record["blend_sha256"]) for c in v) or
+            (selected == "blend" and record["original_sha256"] !=
+             receipt.get("source_marathon_sha256")) or
+            type(reason) is not str or len(reason) > MAX_NOTE or
+            type(notes) is not list or len(notes) != event_count - 1 or
+            any(type(note) is not str or len(note) > MAX_NOTE for note in notes)):
+        raise ValueError("Private operator decision does not bind to the actual selected WAV")
+    return {"selected_master": selected, "sha256": receipt["wav_sha256"],
+            "source_identity_verified": True,
+            "other_master_independently_authenticated": False,
+            "private_only": True}
 
 
 def main():
