@@ -48,6 +48,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
   border:0;border-radius:0;padding:clamp(20px,4vw,60px);
   background:#080b15;color:#fff;display:flex;flex-direction:column;gap:16px}
 .event-mode main>p,.event-mode main>h1,.event-mode main>section:not(.hero){display:none}
+ .event-mode audio{display:none}
 .event-mode #event-board{display:grid;grid-template-columns:1fr auto;gap:14px;
   border:1px solid #514d7b;background:#19192d;padding:22px;border-radius:18px}
 .event-mode #event-title{font-size:clamp(1.5rem,3.8vw,3rem);font-weight:850}
@@ -173,6 +174,7 @@ data.chapters.forEach((ch,i)=>{
 let current=0;
 function highlight(){
   const t=Number.isFinite(audio.currentTime)?audio.currentTime:0;
+  current=0; // Recompute when seeking backwards; never keep a later chapter stale.
   for(let i=0;i<data.chapters.length;i++){
     if(data.chapters[i].start_seconds<=t+0.01)current=i;
     else break;
@@ -230,7 +232,7 @@ eventPlay.addEventListener("click",()=>{
   else audio.pause();
 });
 window.addEventListener("keydown",e=>{
-  if(!eventMode || e.key!=="p" || e.altKey || e.ctrlKey || e.metaKey)return;
+  if(!eventMode || e.key.toLowerCase()!=="p" || e.altKey || e.ctrlKey || e.metaKey)return;
   if(e.target instanceof HTMLElement && ["BUTTON","INPUT","TEXTAREA"].includes(e.target.tagName))return;
   e.preventDefault();eventPlay.click();
 });
