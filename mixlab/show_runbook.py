@@ -77,7 +77,10 @@ kbd{background:#183c37;border:1px solid #447b6c;border-radius:5px;padding:2px 5p
 <section class="panel">
 <h2>Export &amp; print</h2>
 <p class="meta">Save an offline CSV cue sheet including your own operator notes, chapter offsets, projected wall-clock times and full WAV SHA. It never includes original media paths or recordings.</p>
-<div class="actions no-print"><button id="csv" type="button">Export private cue-sheet CSV</button><button id="print" type="button" class="subtle">Print / save as PDF in browser</button></div>
+<div class="actions no-print"><button id="csv" type="button">Export private cue-sheet CSV</button><button id="notes-export" type="button" class="subtle">Export notes JSON</button><button id="print" type="button" class="subtle">Print / save as PDF in browser</button></div>
+<div class="no-print"><label for="notes-import">Import notes from Rehearsal Desk (same verified WAV SHA only)</label>
+<input id="notes-import" type="file" accept=".json,application/json">
+<p id="notes-status" class="meta" role="status" aria-live="polite">Imported notes also appear in your printable runbook and CSV export. Nothing is uploaded.</p></div>
 <p class="hash" id="sha"></p>
 </section>
 <section class="panel warning">
@@ -140,7 +143,7 @@ function build(){
   const duration=Math.max(0,Math.min(ch.duration_seconds,metadata.duration_seconds-ch.start_seconds));
   details.append(node("div","meta","Section duration "+formatTime(duration)+
     (ch.family?" · Style "+ch.family.replaceAll("_"," "):"")));
-  const input=document.createElement("textarea");input.rows=2;input.maxLength=400;
+  const input=document.createElement("textarea");input.rows=2;input.maxLength=1000;
   input.setAttribute("aria-label","Operator note for chapter "+String(index+1));
   input.placeholder="Operator note (optional, private)";details.append(input);notes.push(input);
   const wall=node("div","clock",wallClock(ch.start_seconds));wall.dataset.offset=String(ch.start_seconds);
@@ -178,8 +181,40 @@ function exportCsv(){
  document.body.append(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function exportNotesJson(){
+ const payload={schema_version:1,kind:"mixlab-private-rehearsal-notes",
+  wav_sha256:metadata.wav_sha256,chapter_count:chapters.length,
+  notes:notes.map(input=>input.value)};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)+"\n"],
+   {type:"application/json"}));
+ const a=document.createElement("a");a.href=url;a.download="mixlab-rehearsal.private.json";
+ document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ el("notes-status").textContent="Private SHA-bound notes exported for the Rehearsal Desk.";
+}
+async function importNotes(event){
+ const file=event.target.files&&event.target.files[0];event.target.value="";
+ if(!file)return;
+ if(file.size>131072){
+  el("notes-status").textContent="Notes import refused: file exceeds 128 KiB.";return;
+ }
+ try{
+  const incoming=JSON.parse(await file.text());
+  if(!incoming||incoming.kind!=="mixlab-private-rehearsal-notes"||
+      incoming.schema_version!==1||incoming.wav_sha256!==metadata.wav_sha256||
+      incoming.chapter_count!==chapters.length||
+      !Array.isArray(incoming.notes)||incoming.notes.length!==chapters.length||
+      incoming.notes.some(value=>typeof value!=="string"||value.length>1000))
+   throw new Error("incompatible rehearsal notes");
+  incoming.notes.forEach((value,i)=>{notes[i].value=value;});
+  el("notes-status").textContent="Rehearsal notes imported into this exact WAV runbook.";
+ }catch(_){
+  el("notes-status").textContent="Notes import refused: malformed data or a different WAV SHA.";
+ }
+}
 build();start.addEventListener("input",updateClock);
 el("csv").addEventListener("click",exportCsv);
+el("notes-export").addEventListener("click",exportNotesJson);
+el("notes-import").addEventListener("change",importNotes);
 el("print").addEventListener("click",()=>window.print());
 </script></body></html>"""
 
