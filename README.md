@@ -104,6 +104,30 @@ blinde kwaliteitsmeting: de stijlkeuzes zijn zichtbaar en de muziek
 blijft lokaal. Gebruik [de volledige Set Gallery-handleiding](docs/offline-full-set-gallery.md)
 voor tot vier varianten.
 
+### Event Brief Studio — stel een DJ-set samen vanuit één lokaal scherm
+
+Vanaf een lokale rechtenveilige muziekmap kun je **een echte event-brief
+instellen**, zonder zelf een commando voor elke plannerkeuze te typen.
+Kies een gewenste energiecurve, aantal nummers, handmatig geverifieerde BPM,
+mood/genre, vaste opener/afsluiter en nummers die niet gedraaid mogen worden.
+De browser toont direct een bewerkbare setvolgorde en energiecurve.
+
+~~~bash
+python3 -m mixlab.journey notes /private/music /private/music/energy-notes.private.json
+python3 -m mixlab.journey_workspace /private/music /private/music/energy-notes.private.json /private/music/event-studio.private.html
+~~~
+
+Open `/private/music/event-studio.private.html` lokaal. Exporteer een nieuw
+`mixlab-event-journey.private.json` naar je eigen muziekmap en gebruik dat
+als `--journey-plan` in de bestaande `mixlab.playlist_studio` (met
+`--full-set-wav` voor de werkelijke volledige mix). De Studio checkt de
+originele bronhashes opnieuw en vraagt expliciete toestemming, rechten,
+herkomst en de echte, door jou gecontroleerde overgangscues.
+
+**Dit analyseert geen geluid automatisch.** De volgorde is een beperkt,
+offline voorstel op basis van jouw notities; M1-kwaliteit en luistervoorkeur
+zijn niet bewezen. [Volledige Event Brief-handleiding](docs/offline-event-brief-studio.md).
+
 ### Nieuw: plan een energieboog en laat MixLab de volgorde voorstellen
 
 Je hoeft de volgorde niet meer volledig zelf te verzinnen. Leg eerst per
