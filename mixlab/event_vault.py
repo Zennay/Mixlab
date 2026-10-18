@@ -202,29 +202,48 @@ def _marathon_duration(folder, wav):
     sections = data.get("sections")
     if not isinstance(sections, list) or not 2 <= len(sections) <= 8:
         raise ValueError("Private Marathon receipt has no valid event sequence")
-    overlap = 0
+    overlaps = []
     if blended:
-        overlap = data.get("overlap_frames")
-        if (type(overlap) is not int or
-                overlap not in (2 * data["rate"], 4 * data["rate"],
-                                8 * data["rate"], 16 * data["rate"]) or
-                data.get("fade_seconds") != overlap // data["rate"] or
-                data.get("transition_curve") != "complementary-linear-pcm16-v1" or
+        joined = data.get("overlap_frames_by_join")
+        if joined is not None:
+            if (not isinstance(joined, list) or len(joined) != len(sections) - 1 or
+                    any(type(v) is not int or v not in (
+                        2 * data["rate"], 4 * data["rate"],
+                        8 * data["rate"], 16 * data["rate"]) for v in joined) or
+                    data.get("fade_seconds_by_join") !=
+                    [v // data["rate"] for v in joined]):
+                raise ValueError("Invalid per-event audio crossfade decisions")
+            overlaps = joined
+        else:
+            # Legacy uniform fades produced before per-boundary curation.
+            old = data.get("overlap_frames")
+            if (type(old) is not int or old not in (
+                    2 * data["rate"], 4 * data["rate"],
+                    8 * data["rate"], 16 * data["rate"]) or
+                    data.get("fade_seconds") != old // data["rate"]):
+                raise ValueError("Missing original uniform crossfade decision")
+            overlaps = [old] * (len(sections) - 1)
+        if (data.get("transition_curve") != "complementary-linear-pcm16-v1" or
                 not isinstance(data.get("source_marathon_sha256"), str) or
                 not SHA.fullmatch(data["source_marathon_sha256"]) or
                 data.get("no_automatic_tempo_matching") is not True):
-            raise ValueError("Blended event is missing explicit original SHA or fade provenance")
-    offset = 0
-    for i, row in enumerate(sections, 1):
-        if (not isinstance(row, dict) or row.get("index") != i or
+            raise ValueError("Blended event is missing original SHA or fade provenance")
+    running = 0
+    total_overlap = 0
+    for i, row in enumerate(sections):
+        incoming = overlaps[i - 1] if i else 0
+        outgoing = overlaps[i] if i < len(overlaps) else 0
+        if (not isinstance(row, dict) or row.get("index") != i + 1 or
                 type(row.get("start_frame")) is not int or
-                row["start_frame"] != offset - (i - 1) * overlap or
-                type(row.get("frames")) is not int or row["frames"] <= (2 * overlap if blended else 0) or
+                row["start_frame"] != running - total_overlap or
+                type(row.get("frames")) is not int or
+                row["frames"] <= incoming + outgoing or
                 not isinstance(row.get("source_sha256"), str) or
                 not SHA.fullmatch(row["source_sha256"])):
             raise ValueError("Joined event boundaries are not contiguous or receipt-bound")
-        offset += row["frames"]
-    if offset - (len(sections) - 1) * overlap != data["frames"]:
+        running += row["frames"]
+        total_overlap += outgoing
+    if running - total_overlap != data["frames"]:
         raise ValueError("Marathon chapter frames do not cover the real master")
     _digest_regular(wav, data["wav_sha256"], max_bytes=MAX_MARATHON)
     fd = os.open(wav, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |

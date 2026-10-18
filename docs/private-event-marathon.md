@@ -45,6 +45,33 @@ receipt, checks its entire PCM16 master, then asks for a fresh human
 event must be longer than twice that length. No render ever overwrites the
 existing master, source tracks or original Studio sessions.
 
+### Choose a different fade for each transition
+
+For an original Marathon of **four complete sets**, there are three joins.
+Give the exact durations in the intended order:
+
+~~~bash
+python3 -m mixlab.marathon_blend \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon-custom \
+  --join-fades 16,4,8 --bundle
+~~~
+
+This renders a 16-second first blend, a quick 4-second second blend and an
+8-second final blend. Each choice must be **2, 4, 8 or 16 seconds**.
+The number of entries must equal the number of actual joins; `--join-fades`
+and `--fade-seconds` cannot be combined. Every source set must be longer
+than its preceding plus following overlap, otherwise MixLab refuses it
+without creating a new audio file.
+
+The renderer prints every named source event pair and its chosen duration
+**before** asking for explicit `yes`. Actual output chapters, per-event
+start offsets, full-WAV SHA, optional show runbook and local player include
+the new frame-accurate transition arrangement. A receipt always records
+the full per-join durations and original Marathon SHA so no user or downstream
+tool can mistake this for a hard-cut master or a globally uniform fade.
+This works with the existing private ZIP exporter and offline restore.
+
 MixLab actually reads the **end of one event and the start of the next**
 from the original completed WAV and streams one complementary-gain PCM16
 crossfade per boundary. All untouched passage frames are copied unmodified.
