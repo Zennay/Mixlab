@@ -395,6 +395,14 @@ uitsluitend de menselijke definitieve keuze naar privé-MP3/FLAC of USB
 exporteren; de bron-WAVs blijven onveranderd. De doelmap voor de nieuwe
 HTML moet vooraf bestaan. [Master Review](docs/marathon-master-review.md).
 
+Een via **Master Review** gekozen privé-Marathon-USB-pakket kan voortaan
+optioneel ook de originele operator-keuze en per-overgangsnotities behouden.
+`marathon_master_review publish --bundle` levert dit op na de expliciete
+keuze; losse `marathon_bundle --master-choice CHOICE.json` kan dezelfde
+besloten bijlage meenemen, maar nooit automatisch zonder verzoek. De
+`event_restore`-route verifieert na extractie dat het besluit bij de
+daadwerkelijk herstelde WAV hoort. Geen externe identiteit/rechtenauthenticatie.
+
 ### Luister naar de twee échte Marathon-masters en lever alleen je keuze op
 
 Na een handmatig gerenderde crossfade bestaat naast het oorspronkelijke WAV

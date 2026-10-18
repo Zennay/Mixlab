@@ -32,7 +32,7 @@ def _source(folder, name, maximum):
     return path, metadata
 
 
-def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None):
+def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None, master_choice=None):
     """Package the real WAV, its exact receipt and its official offline player."""
     wav = Path(original_marathon_wav).absolute()
     if wav.name != "marathon.wav":
@@ -76,6 +76,15 @@ def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None):
             raise ValueError("Portable audio does not match the original private Marathon receipt")
         files.extend([(audio, audio_meta), (portable_receipt, receipt_meta), (page, page_meta)])
     with ExitStack() as stack:
+        if master_choice is not None:
+            # Explicit opt-in only: handwritten human notes can contain
+            # sensitive private event detail and must never leak by default.
+            from .marathon_master_review import bound_choice_for_master
+            selected = bound_choice_for_master(wav, master_choice)
+            if selected["sha256"] != receipt["wav_sha256"]:
+                raise ValueError("Chosen master differs from actual private WAV")
+            private_plan = Path(master_choice).absolute()
+            files.append(_source(private_plan.parent, private_plan.name, RECEIPT_LIMIT))
         if cues is not None:
             # Only an explicit opt-in can package human notes. The printed
             # sheet is rebuilt from receipt-bound JSON (not arbitrary HTML).
@@ -114,6 +123,7 @@ def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None):
                         "private_local_use_only": True,
                         "automatic_licensing": False,
                         "operator_cues_included": cues is not None,
+                        "master_choice_included": master_choice is not None,
                         "files": records,
                     }
                     descriptor = zipfile.ZipInfo(MANIFEST)
@@ -129,7 +139,8 @@ def export_marathon_bundle(original_marathon_wav, new_zip, *, cues=None):
         return {"private_bundle_zip": str(target), "wav_sha256": receipt["wav_sha256"],
                 "events_joined": sections, "private": True, "network_uploads": False,
                 "archive_authenticated": False, "source_media_included": False,
-                "operator_cues_included": cues is not None}
+                "operator_cues_included": cues is not None,
+                "master_choice_included": master_choice is not None}
 
 
 def main():
@@ -138,9 +149,11 @@ def main():
     parser.add_argument("marathon_wav", help="Existing receipt-bound marathon.wav")
     parser.add_argument("new_private_zip", help="NEW private .zip beside marathon.wav")
     parser.add_argument("--cues", help="Include the SHA-bound private Stage cue log and newly generated printable show sheet")
+    parser.add_argument("--master-choice", help="EXPLICIT opt-in to include private SHA-bound human Master Review selection/notes")
     args = parser.parse_args()
     try:
-        result = export_marathon_bundle(args.marathon_wav, args.new_private_zip, cues=args.cues)
+        result = export_marathon_bundle(args.marathon_wav, args.new_private_zip, cues=args.cues,
+                                        master_choice=args.master_choice)
     except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
         parser.exit(2, "MixLab Marathon ZIP: no complete package was published; "
                        "inspect your original local WAV and receipt.\n")
