@@ -61,7 +61,7 @@ button:hover,a:hover{background:#3b6684}
 <div class="controls"><button id="prev" type="button">Previous set</button>
 <button id="next" type="button">Next set</button>
 <a id="download" class="action" download>Save original continuous WAV</a>
-<button id="cue" type="button">Download chapter CUE</button></div>
+<button id="cue" type="button">Download chapter CUE</button><a id="showbook" class="action" hidden>Open show runbook</a></div>
 <p id="status" class="muted" role="status">The actual output PCM16 WAV must remain alongside this offline page. Your media player may provide better performance than a browser with large WAV files.</p>
 </section>
 <section class="panel"><h2>Actual event sequence</h2><ol class="list" id="sections"></ol></section>
@@ -81,6 +81,7 @@ const clock=s=>{
 };
 const media="./"+encodeURIComponent(data.wav_name);
 audio.src=media;$("download").href=media;
+if(data.showbook){$("showbook").href="./"+encodeURIComponent(data.showbook);$("showbook").hidden=false;}
 $("timeline").max=String(data.duration_seconds);
 const rendered=[];
 secs.forEach((section,i)=>{
@@ -186,7 +187,7 @@ def _digest_file(path):
     return h.hexdigest()
 
 
-def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False):
+def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False, start=None):
     if not 2 <= len(set_pairs) <= MAX_EVENTS:
         raise ValueError("Choose 2 to 8 completed private events")
     items=[_admit(session,wav) for session,wav in set_pairs]
@@ -208,6 +209,10 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
     if read("Type yes to create this exact private continuous event: ").strip()!="yes":
         raise ValueError("Explicit private-event compilation approval not given")
 
+    if start is not None:
+        from .marathon_showbook import CLOCK
+        if not isinstance(start, str) or not CLOCK.fullmatch(start):
+            raise ValueError("Planned local Marathon start must be HH:MM")
     destination.mkdir(mode=0o700)
     wav=destination/"marathon.wav"
     receipt=destination/"marathon.receipt.private.json"
@@ -261,7 +266,16 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
         with receipt.open("xb") as output:
             created.append(receipt);os.fchmod(output.fileno(),0o600)
             output.write((json.dumps(payload,sort_keys=True,indent=2,allow_nan=False)+"\n").encode("utf-8"))
+        showbook = None
+        showbook_warning = None
+        try:
+            from .marathon_showbook import create_runbook
+            showbook = create_runbook(wav, destination / "marathon.runbook.private.html", start=start)
+            created.append(showbook)
+        except (ValueError, TypeError, KeyError, OSError):
+            showbook_warning = "Completed WAV exists; optional private Marathon runbook unavailable"
         viewer={"wav_name":wav.name,"wav_sha256":observed,
+                "showbook":showbook.name if showbook else None,
                 "duration_seconds":payload["duration_seconds"],
                 "sections":[{"label":row["label"],"start_seconds":row["start_seconds"]}
                             for row in sections]}
@@ -280,7 +294,10 @@ def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bun
     result = {"continuous_wav":str(wav),"private_receipt":str(receipt),
               "private_player":str(player),"events_joined":len(items),
               "duration_seconds":payload["duration_seconds"],"wav_sha256":observed,
-              "automatic_tempo_matching":False,"private":True,"rights_proven":False}
+              "automatic_tempo_matching":False,"private":True,"rights_proven":False,
+              "private_show_runbook":str(showbook) if showbook else None}
+    if showbook_warning:
+        result["showbook_warning"] = showbook_warning
     if bundle:
         # Packaging is optional; never remove the already completed WAV if
         # the USB archive exceeds disk or file limits.
@@ -300,12 +317,13 @@ def main():
     parser.add_argument("new_private_folder")
     parser.add_argument("session_wav_pairs",nargs="+",help="Alternating Studio SESSION and original completed WAV")
     parser.add_argument("--bundle",action="store_true",help="Also create an optional trusted private USB ZIP")
+    parser.add_argument("--start",help="Optional planned local show start HH:MM")
     args=parser.parse_args()
     if not 4<=len(args.session_wav_pairs)<=MAX_EVENTS*2 or len(args.session_wav_pairs)%2:
         parser.exit(2,"Provide 2–8 SESSION WAV pairs after the new output folder\n")
     pairs=list(zip(args.session_wav_pairs[0::2],args.session_wav_pairs[1::2]))
     try:
-        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle)
+        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle,start=args.start)
     except (ValueError,TypeError,KeyError,OSError,EOFError,KeyboardInterrupt,wave.Error):
         parser.exit(2,"MixLab event marathon: source admission, approval or private export failed; "
                        "no completed new event was published.\n")

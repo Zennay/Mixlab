@@ -26,6 +26,40 @@ After successful publication:
 
 The offline page lets you play the whole actual WAV, jump between sets, skip to the next event, seek, download the WAV and export a standard cue sheet of the original event boundaries. It does not embed, upload or duplicate the original source songs. The output WAV itself **contains copyrighted rendered material** from the approved private sets and must remain private unless separately licensed for the intended use.
 
+## Operator runbook for the entire Marathon
+
+The normal Marathon command now also creates
+`marathon.runbook.private.html` when the completed WAV's original joined
+receipt can be verified. Give an optional planned local start time:
+
+~~~bash
+python3 -m mixlab.event_marathon \
+  /private/mixlab-marathon \
+  /private/event-friday/studio-session /private/event-friday/final-set.wav \
+  /private/event-saturday/studio-session /private/event-saturday/final-set.wav \
+  --start 20:30 --bundle
+~~~
+
+The runbook has **actual frame-derived event offsets**, projected wall-clock
+start/end times, a manual readiness checklist, per-event handoff notes,
+print/PDF styling and a private CSV cue-sheet export. This is a schedule
+for human operation, not live hardware or performance certification.
+
+You can create a **new** runbook later from an existing completed Marathon:
+
+~~~bash
+python3 -m mixlab.marathon_showbook \
+  /private/mixlab-marathon/marathon.wav \
+  /private/mixlab-marathon/another-marathon.runbook.private.html \
+  --start 20:30
+~~~
+
+The private offline Marathon player links to the default runbook when
+available. The portable Marathon ZIP includes that default page if it
+exists and is regular and bounded; private Event Restore also restores it
+and reports the path. Optional showbook/ZIP publication failure never
+deletes a successfully published continuous WAV.
+
 ## Optional portable private USB ZIP
 
 Add `--bundle` to the same `python3 -m mixlab.event_marathon` invocation.
