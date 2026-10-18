@@ -17,6 +17,7 @@ from .journey import (
 )
 from .project_wizard import _nonblank
 from .browser_sha256 import SHA256_BROWSER_JS
+from .approval_draft import DRAFT_JS
 
 KIND = "mixlab-private-approved-playlist-v1"
 MAX_FORM = 1024 * 1024
@@ -82,6 +83,19 @@ accept=".wav,.mp3,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff,audio/*"></label>
 No originals attached in bulk.</p>
 <div id="tracks"></div></section>
 <section class="card"><h2>Transitions · exact manual start positions</h2><p>The outgoing cue must not backtrack into the previous incoming transition, whose end is B cue + transition duration.</p><div id="pairs"></div></section>
+<section class="card"><h2>Save & resume your private work</h2>
+<p>Save unfinished human source-rights notes, downbeat/cue seconds and
+transition style without sending music or information to a server.
+A working draft is <strong>never an approval</strong>. When reopened,
+both explicit rights and order consent boxes are reset and must be
+confirmed again. Keep the file private: it contains your provenance notes.</p>
+<div class="row">
+<button id="draft-download" type="button">Download private working draft</button>
+<label for="draft-open">Reopen a private working draft
+<input id="draft-open" type="file" accept=".json,application/json"></label>
+</div>
+<p id="draft-status" class="feedback" role="status" aria-live="polite">
+No working draft saved or loaded.</p></section>
 <section class="card"><h2>Consent to create a private source manifest</h2>
 <label class="check"><input type="checkbox" id="rights-ack">
 <span>I explicitly confirm I have a valid basis to process and use each selected track, and have manually checked the rights, BPM and cues provided above. This is my declaration, not MixLab's legal proof.</span></label>
@@ -384,6 +398,7 @@ function exportApproval(){
  }catch(err){show(err.message||"Check the supplied manual metadata.",true)}
 }
 build();
+__DRAFT_JS__
 el("bulk-sources").addEventListener("change",async function(){
  const picker=this,status=el("bulk-status");
  const files=Array.from(picker.files||[]);
@@ -428,7 +443,8 @@ def prepare_form(music_folder, private_plan, new_html):
                            "plan_sha256": sha},
                           ensure_ascii=True, allow_nan=False, separators=(",", ":"))
     embedded = embedded.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
-    data = _PAGE.replace("__SEED__", embedded).replace("__SHA_JS__", SHA256_BROWSER_JS).encode("utf-8")
+    data = (_PAGE.replace("__SEED__", embedded).replace("__SHA_JS__", SHA256_BROWSER_JS)
+            .replace("__DRAFT_JS__", DRAFT_JS)).encode("utf-8")
     if len(data) > MAX_FORM:
         raise ValueError("Offline approval page is too large")
     with html.open("xb") as stream:

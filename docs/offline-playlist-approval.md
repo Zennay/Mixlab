@@ -22,6 +22,27 @@ python3 -m mixlab.journey plan /private/music /private/music/energy.private.json
 De audio en plannen staan **buiten Git**. Er worden geen bronrechten,
 cuepunten, lyrics of muzikale kwaliteitsclaims automatisch afgeleid.
 
+## Bewaar en hervat een onvoltooid privéwerkconcept
+
+Het lokale goedkeuringsformulier kan nu een **niet-goedgekeurd concept**
+downloaden via **Download private working draft**. Dit bewaart alleen
+de exact aan het oorspronkelijke playlistplan gekoppelde bron-SHA's,
+handmatig ingevulde rights/provenance-velden, optionele downbeats,
+A/B-cues, overgangsstijlen en de gekozen overgangsduur. Er wordt
+geen muziek opgeslagen, geanalyseerd of geüpload.
+
+Open je later hetzelfde brongebonden formulier opnieuw, kies
+**Reopen a private working draft** en selecteer het eerder gedownloade
+`mixlab-playlist-working-draft.private.json`. Het formulier weigert
+concepten van een andere plan-hash, andere trackvolgorde of andere
+bronhashes, extra velden en ongeldige cue-invoer. Het bestand is
+maximaal 64 KiB. **Het overnemen van een concept is nooit akkoord:**
+de twee toestemmingsvakjes worden bewust altijd *uitgevinkt*,
+ook als je ze eerder had aangezet. Herbeluister de broncues,
+controleer de originele rechtenverklaring en geef daarna zelf opnieuw
+akkoord. Het concept bevat jouw privé-provenance-notities: bewaar
+het alleen lokaal en voeg het niet aan publieke ZIPs toe.
+
 ## Stap 1 — browserformulier voor rechten en echte cues
 
 ~~~bash
