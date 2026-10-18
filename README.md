@@ -128,6 +128,32 @@ herkomst en de echte, door jou gecontroleerde overgangscues.
 offline voorstel op basis van jouw notities; M1-kwaliteit en luistervoorkeur
 zijn niet bewezen. [Volledige Event Brief-handleiding](docs/offline-event-brief-studio.md).
 
+### Eén opdracht: goedgekeurde set → echte WAV, optionele MP3 en draaiboek
+
+Na het lokaal opstellen van een Energy Journey/Event Brief-plan en het
+ondertekenen van je handmatig gecontroleerde rechten-/cueformulier kan de
+nieuwe **Event Publisher** in één opdracht het hele privéfeestpakket
+opleveren: een echte complete WAV uit de bestaande DSP-engine, offline
+hoofdstukspeler, eventueel MP3/FLAC en een printbaar operator-draaiboek
+met de daadwerkelijke hoofdstukoffsets.
+
+~~~bash
+python3 -m mixlab.event_publish \
+  /private/music \
+  /private/music/event-plan.private.json \
+  /private/music/mixlab-event-approved.private.json \
+  /private/mixlab-party-01 \
+  --delivery mp3 --start 19:30
+~~~
+
+De opgegeven outputmap moet **nieuw zijn** en buiten Git en de muziekmap
+liggen. MixLab hercontroleert bron- en planhashes en blijft expliciet
+vragen of je de gekozen volgorde echt goedkeurt. Per overgang worden de
+eigen reeds ondersteunde DSP-families gebruikt. Het audiomasterbestand
+blijft behouden als optionele compressie of draaiboekexport mislukt.
+Geen bronuploads, automatische rechtencontrole of onbewezen M1-bewijs.
+[Private Event Publisher-handleiding](docs/one-command-private-event-production.md).
+
 ### Offline eventdraaiboek uit je échte, complete DJ-set
 
 Heb je een volledige MixLab-WAV mét originele Studio en privéreceipt
