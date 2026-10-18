@@ -66,7 +66,7 @@ def _open_archive(source):
 
 def _inspect(archive):
     infos = archive.infolist()
-    if not 3 <= len(infos) <= MAX_ITEMS + 1:
+    if not 3 <= len(infos) <= MAX_ITEMS + 3:
         raise ValueError("Private bundle has an invalid number of outputs")
     names = [info.filename for info in infos]
     if len(set(names)) != len(names) or names.count(MANIFEST) != 1:
@@ -99,7 +99,7 @@ def _inspect(archive):
     ):
         raise ValueError("Not a supported private MixLab event manifest")
     entries = manifest.get("files")
-    if not isinstance(entries, list) or not 2 <= len(entries) <= MAX_ITEMS:
+    if not isinstance(entries, list) or not 2 <= len(entries) <= MAX_ITEMS + (2 if is_marathon else 0):
         raise ValueError("Bundle file inventory is missing or oversized")
     file_map = {}
     size_total = 0
@@ -123,7 +123,13 @@ def _inspect(archive):
         required = {"marathon.wav", "marathon.receipt.private.json", "index.html"}
         optional = {"marathon.runbook.private.html", "marathon.join-studio.private.html",
                     "marathon.mp3", "marathon.mp3.receipt.private.json", "marathon.mp3.player.html",
-                    "marathon.flac", "marathon.flac.receipt.private.json", "marathon.flac.player.html"}
+                    "marathon.flac", "marathon.flac.receipt.private.json", "marathon.flac.player.html",
+                    "mixlab-marathon-cues.private.json", "marathon.cues.private.html"}
+        cue_pair = {"mixlab-marathon-cues.private.json", "marathon.cues.private.html"}
+        contains_cues = set(file_map) & cue_pair
+        if (bool(contains_cues) != (manifest.get("operator_cues_included") is True) or
+                (contains_cues and not cue_pair.issubset(file_map))):
+            raise ValueError("Portable operator cues must be explicitly declared and complete")
         packed_codecs = [codec for codec in ("mp3", "flac")
                          if ("marathon." + codec) in file_map]
         if len(packed_codecs) > 1:
@@ -200,6 +206,24 @@ def restore_bundle(private_zip, new_private_folder):
                     # Check the actual joined WAV against its ORIGINAL continuous
                     # output receipt after extraction, not just the ZIP inventory.
                     _marathon_duration(output, output / master)
+                    if "mixlab-marathon-cues.private.json" in files:
+                        # The HTML is regenerated from the *restored*, SHA-
+                        # verified WAV/receipt + locally validated JSON, and
+                        # must match the claimed printout byte-for-byte.
+                        from .marathon_cue_sheet import create_cue_sheet
+                        check_sheet = output / "marathon.cues.check.private.html"
+                        try:
+                            create_cue_sheet(
+                                output / master,
+                                output / "mixlab-marathon-cues.private.json",
+                                check_sheet)
+                            expected = hashlib.sha256(check_sheet.read_bytes()).digest()
+                            observed = hashlib.sha256(
+                                (output / "marathon.cues.private.html").read_bytes()).digest()
+                            if expected != observed:
+                                raise ValueError("Marathon printed cues differ from validated Stage notes")
+                        finally:
+                            check_sheet.unlink(missing_ok=True)
                     for codec in ("mp3", "flac"):
                         name = "marathon." + codec
                         if name not in files:
@@ -233,6 +257,10 @@ def restore_bundle(private_zip, new_private_folder):
                     "continuous_marathon": master == "marathon.wav",
                     "offline_join_studio": str(output / "marathon.join-studio.private.html")
                         if master == "marathon.wav" and "marathon.join-studio.private.html" in files else None,
+                    "offline_marathon_cues": str(output / "mixlab-marathon-cues.private.json")
+                        if master == "marathon.wav" and "mixlab-marathon-cues.private.json" in files else None,
+                    "offline_marathon_cue_sheet": str(output / "marathon.cues.private.html")
+                        if master == "marathon.wav" and "marathon.cues.private.html" in files else None,
                     "private_mobile_audio": next((str(output / name)
                         for name in ("marathon.mp3", "marathon.flac") if name in files), None),
                     "offline_marathon_runbook": str(output / "marathon.runbook.private.html")
