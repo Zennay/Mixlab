@@ -154,6 +154,16 @@ blijft behouden als optionele compressie of draaiboekexport mislukt.
 Geen bronuploads, automatische rechtencontrole of onbewezen M1-bewijs.
 [Private Event Publisher-handleiding](docs/one-command-private-event-production.md).
 
+### Je complete event in één privé startpagina
+
+Dezelfde Event Publisher maakt nu optioneel automatisch
+\`/private/mixlab-party-01/index.html\`: open die lokale HTML
+om de daadwerkelijke setlengte, echte hoofdstukmarkeringen,
+de WAV-speler, eventuele MP3/FLAC en het operator-draaiboek
+vanuit één overzichtelijk dashboard te openen. De pagina
+is offline en gebouwd op de hashgecontroleerde master-WAV.
+[Handleiding](docs/private-event-dashboard.md).
+
 ### Offline eventdraaiboek uit je échte, complete DJ-set
 
 Heb je een volledige MixLab-WAV mét originele Studio en privéreceipt
