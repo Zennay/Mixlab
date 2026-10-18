@@ -69,8 +69,8 @@ const status=document.getElementById("status");
 let active=0;
 let wantedSeek=null;
 seek.max=String(metadata.duration_seconds);
-const fmt=(value)=>{const n=Math.max(0,Math.floor(value));return
- String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0")};
+const fmt=(value)=>{const n=Math.max(0,Math.floor(value));
+ return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0")};
 function switchTo(index){
  const at=player.currentTime||0, playing=!player.paused;
  active=index;
