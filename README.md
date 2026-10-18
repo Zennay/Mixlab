@@ -491,6 +491,33 @@ upload; notities worden pas privé gedownload na eigen actie. Dit is een
 niet-blinde handmatige preview, dus geen bewijs van muziekrechten of M1
 menselijke voorkeur. [Real Join Reels](docs/marathon-real-join-reels.md).
 
+### Mix de beste echte overgang per join tot één nieuwe master
+
+In dezelfde besloten Real Join Reels-speler kiest de DJ nu bij **elke**
+overgang bewust *originele harde join* of *de al bestaande echte crossfade*.
+Na het expliciet downloaden van een bron-SHA-gebonden JSON kan MixLab met
+beide oorspronkelijke, lokaal goedgekeurde WAV-masters de geselecteerde
+overgangen daadwerkelijk als **één nieuwe hybride PCM16-WAV** renderen:
+
+```bash
+python3 -m mixlab.marathon_reel_decisions \
+  /private/choices/mixlab-marathon-join-master-picks.private.json \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/new-hybrid-event --bundle
+```
+
+Inclusief nieuw volledig audio-receipt, lokale afspeelpagina en optionele
+printbare privé-cue-sheet met echte WAV-SHA en notities. **Harde joins blijven
+sample-exact**, gekozen fades zijn bestaande 2/4/8/16s PCM16-renderkeuzes.
+Afzonderlijke typed-`yes`-goedkeuring blijft vereist. Optioneel
+`--reels-output /private/hybrid-reels --reels-usb` maakt na nóg een
+toestemming meteen opnieuw een echte korte originele-versus-hybride PCM16
+luistermap en besloten USB-ZIP. Privékeuzes gaan
+niet automatisch mee in een ZIP, en vormen geen geblindeerd bewijs.
+[Human-selected Hybrid Master](docs/marathon-human-hybrid-master.md).
+
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.

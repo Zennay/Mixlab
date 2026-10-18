@@ -52,4 +52,6 @@ Unlike the existing Sequence Studio two-deck approximation, Join Reels play the 
 
 The clips are **not** a substitute for hearing the full chosen WAV. Their receipt demonstrates only internal consistency, not external media authenticity, permission to share the recordings or musical superiority. M1's independently frozen, rights-safe blind preference study remains open; user-entered operator notes here must not be treated as that experiment's ratings.
 
-For a real choice after listening, use [Marathon Master Review](marathon-master-review.md) to bind original/blended SHA fingerprints and publish just the selected private master.
+For a whole-master choice after listening, use [Marathon Master Review](marathon-master-review.md) to bind original/blended SHA fingerprints and publish only the selected private master.
+
+For a **different real choice at every join**, the offline Reel page now also records an explicit original-versus-approved-crossfade decision beside each pair. Download the SHA-locked `mixlab-marathon-join-master-picks.private.json` only after every join has a choice. Run `python3 -m mixlab.marathon_reel_decisions PICKS.json ORIGINAL/marathon.wav BLEND/marathon.wav NEW_PRIVATE_FOLDER` to verify both original full-source receipts and render a new, real hybrid master after separate typed approval. The new folder includes actual WAV, provenance receipt and printable operator cue sheet; no private notes enter portable ZIPs automatically. See [Human-selected Hybrid Master](marathon-human-hybrid-master.md).

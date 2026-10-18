@@ -131,8 +131,8 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
     else:
         if (not isinstance(join_fades, (list, tuple)) or
                 len(join_fades) != count - 1 or
-                any(type(v) is not int or v not in CHOICES for v in join_fades)):
-            raise ValueError("Specify exactly one 2, 4, 8 or 16-second fade per actual event boundary")
+                any(type(v) is not int or v not in (0, *CHOICES) for v in join_fades)):
+            raise ValueError("Choose 0s hard join or 2, 4, 8 or 16-second fade per event boundary")
         seconds_by_join = tuple(join_fades)
     overlaps = tuple(seconds * rate for seconds in seconds_by_join)
     for i, section in enumerate(original_sections):
@@ -196,7 +196,7 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
                             from_frame = section["start_frame"] + incoming
                             to_frame = section["start_frame"] + section["frames"] - outgoing
                             _copy_exact(src, writer, from_frame, to_frame - from_frame)
-                            if i + 1 < count:
+                            if i + 1 < count and outgoing:
                                 _overlap(src, writer, to_frame,
                                          original_sections[i + 1]["start_frame"], outgoing)
             if stamp != _meta_key(os.fstat(stream.fileno())):
@@ -310,13 +310,13 @@ def publish_blended_marathon(approved_marathon_wav, new_private_folder, *,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Actually render manual 2–16s crossfades between original SHA-verified finished event sets")
+        description="Render explicit hard joins or manual 2–16s crossfades from verified original event sets")
     parser.add_argument("original_marathon_wav")
     parser.add_argument("new_private_folder")
     fades = parser.add_mutually_exclusive_group()
     fades.add_argument("--fade-seconds", type=int, choices=CHOICES, default=8,
                        help="One duration used at every event boundary")
-    fades.add_argument("--join-fades", help="Comma-separated seconds for EACH join, e.g. 16,4,8")
+    fades.add_argument("--join-fades", help="Comma-separated 0 (hard cut) or 2/4/8/16s for EACH join, e.g. 0,4,8")
     fades.add_argument("--join-plan", help="Original SHA-locked private JSON exported by Join Studio")
     parser.add_argument("--start", help="Optional local show start HH:MM")
     parser.add_argument("--bundle", action="store_true", help="Also create optional private USB ZIP")
