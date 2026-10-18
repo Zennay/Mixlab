@@ -441,6 +441,29 @@ alleen de gekozen master wordt als nieuwe privé-uitvoer gecodeerd/verpakt.
 Het is geen geblindeerde luisterstudie, geen rechtenverklaring en geen live
 kwaliteitscertificaat. [Master Review-handleiding](docs/marathon-master-review.md).
 
+### Hoor de échte overgang zonder complete urenlange WAV te laden
+
+**Real Join Reels** maakt uit twee al officieel geverifieerde private
+Marathon-masters (origineel en bestaande PCM16-crossfadeversie) een **compact
+offline luisterpakket** met twee werkelijke WAV-fragmenten per event-overgang.
+Het zijn exacte frames uit de bestaande audio, geen benadering met twee
+browserdecks.
+
+```bash
+python3 -m mixlab.marathon_join_reels \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/handoff-listening
+```
+
+Na expliciet `yes` krijgt de DJ een besloten map met echte 2×-WAV snippets,
+een overzichtelijke lokale A/B-speler en brongebonden frame-/SHA-receipts.
+Schakel direct per overgang van originele harde join naar de daadwerkelijk
+gerenderde crossfade. De map bevat beperkte media maar géén externe
+upload; notities worden pas privé gedownload na eigen actie. Dit is een
+niet-blinde handmatige preview, dus geen bewijs van muziekrechten of M1
+menselijke voorkeur. [Real Join Reels](docs/marathon-real-join-reels.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
