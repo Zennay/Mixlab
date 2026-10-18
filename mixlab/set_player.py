@@ -42,12 +42,44 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 #chapters li[aria-current=true]{background:#292641;border-radius:10px;padding-left:10px;padding-right:10px}
 @media(max-width:600px){#chapters li{grid-template-columns:65px 1fr;gap:8px}#chapters li button{grid-column:1/3}}
 .time{font-variant-numeric:tabular-nums;color:#c6c2dc}small{color:#9faac2}
+button:disabled{opacity:.42;cursor:not-allowed}
+#event-board{display:none}
+.event-mode .hero{position:fixed;inset:0;z-index:30;overflow-y:auto;margin:0;
+  border:0;border-radius:0;padding:clamp(20px,4vw,60px);
+  background:#080b15;color:#fff;display:flex;flex-direction:column;gap:16px}
+.event-mode main>p,.event-mode main>h1,.event-mode main>section:not(.hero){display:none}
+.event-mode #event-board{display:grid;grid-template-columns:1fr auto;gap:14px;
+  border:1px solid #514d7b;background:#19192d;padding:22px;border-radius:18px}
+.event-mode #event-title{font-size:clamp(1.5rem,3.8vw,3rem);font-weight:850}
+.event-mode #event-countdown{font-size:clamp(2.3rem,7vw,5.5rem);
+  font-weight:850;letter-spacing:-.06em;font-variant-numeric:tabular-nums}
+.event-mode .wave-wrap{margin-top:auto}
+.event-mode canvas{height:clamp(110px,22vh,240px)}
+.event-mode .controls{display:none}
+.event-mode #meta{display:none}
+.event-mode #now{font-size:1.25rem;font-weight:700}
+#event-controls{display:flex;flex-wrap:wrap;gap:12px;align-self:start}
+#event-controls button{font-size:1.2rem;padding:15px 24px}
+@media(max-width:650px){.event-mode #event-board{grid-template-columns:1fr}}
+
 </style></head><body><main>
 <p class="eyebrow">MIXLAB / COMPLETE PRIVÉ MIX</p><h1>Playthrough.</h1>
 <p class="muted">Een volledige lokale mix met hoofdstukken voor iedere passage en overgang.
 De cuepunten komen uit jouw handmatig goedgekeurde Studio-sessie.</p>
 <section class="hero">
-<h2>Luister de hele set</h2><audio id="player" controls preload="metadata"></audio>
+<h2>Luister de hele set</h2>
+<button id="event-toggle" type="button" aria-pressed="false">⛶ Eventmodus</button>
+<p class="muted">Eventmodus toont live het huidige fragment en telt af tot de volgende overgang.
+Springknoppen, de golfvorm-seek en de normale audiobediening worden dan vergrendeld.
+De pauzeknop blijft altijd beschikbaar.</p>
+<div id="event-board" aria-live="polite">
+ <div><small>NU OP DE SET</small><div id="event-title">Set gereed</div>
+ <p id="event-next" class="muted">Volgende overgang</p></div>
+ <div><small>TIJD TOT VOLGEND MOMENT</small><div id="event-countdown">00:00:00</div>
+ <div id="event-controls"><button id="event-play" type="button">▶ Speel</button>
+ <button id="event-exit" type="button">Verlaat eventmodus</button></div></div>
+</div>
+<audio id="player" controls preload="metadata"></audio>
 <div class="wave-wrap"><canvas id="waveform" width="900" height="110" tabindex="0"
 role="slider" aria-label="Waveform. Klik of gebruik pijltjes links/rechts om te navigeren"
 aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
@@ -70,6 +102,11 @@ creatieve afspeelpagina, geen onafhankelijke DJ-beoordeling of rechtenverklaring
 const data=JSON.parse(document.getElementById("mixlab-player-data").textContent);
 const audio=document.getElementById("player");
 const waveform=document.getElementById("waveform");
+const eventToggle=document.getElementById("event-toggle");
+const eventPlay=document.getElementById("event-play");
+const eventExit=document.getElementById("event-exit");
+let eventMode=false;
+const chapterButtons=[];
 audio.src="./"+encodeURIComponent(data.wav_name);
 function drawWaveform(){
   const width=Math.max(1,Math.round(waveform.clientWidth*(window.devicePixelRatio||1)));
@@ -93,11 +130,13 @@ function drawWaveform(){
   ctx.fillRect((audio.currentTime/data.duration_seconds)*width,0,Math.max(2,window.devicePixelRatio||1),height);
 }
 waveform.addEventListener("click",e=>{
+  if(eventMode)return;
   const box=waveform.getBoundingClientRect();
   if(box.width>0)audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
     (e.clientX-box.left)/box.width*data.duration_seconds));
 });
 waveform.addEventListener("keydown",e=>{
+  if(eventMode)return;
   if(e.key!=="ArrowLeft" && e.key!=="ArrowRight")return;
   e.preventDefault();
   audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
@@ -115,7 +154,11 @@ function format(t) {
     String(Math.floor(n%3600/60)).padStart(2,"0")+":"+
     String(n%60).padStart(2,"0");
 }
-function jump(n){audio.currentTime=data.chapters[n].start_seconds;audio.play().catch(()=>{});}
+function jump(n){
+  if(eventMode)return; // no accidental live-set seeks from chapter controls
+  audio.currentTime=data.chapters[n].start_seconds;
+  audio.play().catch(()=>{now.textContent="Lokaal WAV-bestand kan niet worden afgespeeld.";});
+}
 data.chapters.forEach((ch,i)=>{
   const li=document.createElement("li");
   const time=document.createElement("span");
@@ -124,7 +167,7 @@ data.chapters.forEach((ch,i)=>{
   title.textContent=ch.kind==="transition"?
     "Overgang "+ch.label+" · "+ch.family.replaceAll("_"," "):"Track "+ch.label;
   const button=document.createElement("button");button.textContent="Luister vanaf hier";
-  button.addEventListener("click",()=>jump(i));
+  button.addEventListener("click",()=>jump(i));chapterButtons.push(button);
   li.append(time,title,button);list.append(li);rows.push(li);
 });
 let current=0;
@@ -139,9 +182,58 @@ function highlight(){
   drawWaveform();
   now.textContent="Nu: "+data.chapters[current].label+" ("+
     (data.chapters[current].kind==="transition"?"overgang":"track")+") · "+format(t);
+  updateEventClock(t);
 }
 audio.addEventListener("timeupdate",highlight);
 audio.addEventListener("seeked",highlight);
+audio.addEventListener("play",()=>{eventPlay.textContent="❚❚ Pauzeer";});
+audio.addEventListener("pause",()=>{eventPlay.textContent="▶ Hervat";});
+function updateEventClock(t){
+  const chapter=data.chapters[current];
+  document.getElementById("event-title").textContent=
+    (chapter.kind==="transition"?"Overgang ":"Track ")+chapter.label;
+  const upcoming=data.chapters.find(ch=>ch.kind==="transition" && ch.start_seconds>t+.05);
+  const seconds=Math.max(0,(upcoming?upcoming.start_seconds:data.duration_seconds)-t);
+  document.getElementById("event-countdown").textContent=format(seconds);
+  document.getElementById("event-next").textContent=upcoming?
+    "Volgende overgang: "+upcoming.label+" over "+format(seconds):
+    "Geen verdere overgang · resterend tot einde "+format(seconds);
+}
+function enterEventMode(active){
+  eventMode=active;
+  document.body.classList.toggle("event-mode",active);
+  audio.controls=!active;
+  waveform.setAttribute("aria-disabled",String(active));
+  waveform.tabIndex=active?-1:0;
+  const disabled=Boolean(active);
+  document.getElementById("prev").disabled=disabled;
+  document.getElementById("next").disabled=disabled;
+  chapterButtons.forEach(button=>{button.disabled=disabled;});
+  eventToggle.setAttribute("aria-pressed",String(active));
+  eventToggle.textContent=active?"Verlaat eventmodus":"⛶ Eventmodus";
+  if(active){
+    if(document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    }
+  }else if(document.fullscreenElement && document.exitFullscreen){
+    document.exitFullscreen().catch(()=>{});
+  }
+  highlight();
+}
+eventToggle.addEventListener("click",()=>enterEventMode(!eventMode));
+eventExit.addEventListener("click",()=>enterEventMode(false));
+eventPlay.addEventListener("click",()=>{
+  if(audio.paused)audio.play().catch(()=>{
+    document.getElementById("event-next").textContent=
+      "Audio niet beschikbaar. Controleer of de originele WAV naast deze HTML staat.";
+  });
+  else audio.pause();
+});
+window.addEventListener("keydown",e=>{
+  if(!eventMode || e.key!=="p" || e.altKey || e.ctrlKey || e.metaKey)return;
+  if(e.target instanceof HTMLElement && ["BUTTON","INPUT","TEXTAREA"].includes(e.target.tagName))return;
+  e.preventDefault();eventPlay.click();
+});
 document.getElementById("prev").addEventListener("click",()=>{
   if(audio.currentTime>data.chapters[current].start_seconds+3)jump(current);
   else jump(Math.max(0,current-1));
