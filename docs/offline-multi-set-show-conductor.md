@@ -47,6 +47,16 @@ Open the HTML locally on the machine with permission to play your recordings.
    Watch the verification progress. A wrong file with the same name, duration
    and byte length is rejected; a file-read failure also leaves playback
    locked. Use the original approved recording, never a substitute.
+   **Alternative for a complete event:** click **Load a full local show folder**
+   and choose a parent folder containing the original completed set-WAVs in
+   subfolders. The browser only considers candidate files with the exact
+   approved filename and byte size, then computes their entire SHA-256
+   offline; **only a full hash match** attaches a file to a set. This avoids
+   selecting 2–6 identically named `final-set.wav` files one by one.
+   The folder scan is bounded to 1,000 entries and 24 plausible WAV
+   candidates, reports what was verified or rejected, and never switches
+   currently playing audio. Use individual pickers when directory selection
+   is unavailable or the folder is too large. No folder paths are exported.
 3. Wait until **Verified full SHA-256** appears for that local WAV.
    Click **Arm set**, then use the native audio controls to start it yourself.
    Chapter buttons seek to **receipt-verified** positions. The Show Conductor
