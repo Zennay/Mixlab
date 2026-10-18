@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from .journey import NOTE_KIND, _private_json_path, _read_json, _records, _source_root
+from .event_audition import AUDITION_JS
 
 MAX_BOARD_BYTES = 1024 * 1024
 
@@ -50,6 +51,12 @@ ul,ol{padding-left:0;list-style:none}.timeline{display:grid;gap:9px;margin:14px 
 .notice{border-left:3px solid var(--blue);padding:7px 0 7px 13px;color:var(--muted);font-size:13px}
 .feedback{font-size:13px;min-height:22px}.feedback[role=alert]{color:var(--danger)}
 .explain{margin:0;color:var(--muted);font-size:12px}.footer{margin:24px 0;color:var(--muted);font-size:12px}
+.audition{margin-top:24px}.audition-top{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.audition-top strong{color:var(--mint)}.audition-controls{display:flex;gap:9px;flex-wrap:wrap}
+.audition audio{width:100%;margin:12px 0}.audition-list{display:grid;gap:6px;max-height:280px;overflow:auto}
+.audition-item{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:9px}
+.audition-name{flex:1;min-width:130px;overflow-wrap:anywhere;font-weight:700}.audition-item button{padding:7px 10px}
+#now-auditioning{overflow-wrap:anywhere}
 @media(max-width:930px){.layout{grid-template-columns:1fr}.controls{position:static}.wide{order:2}}
 @media(max-width:580px){.row{grid-template-columns:1fr}.track{flex-wrap:wrap}.actions{margin-left:auto}.card{padding:16px}}
 </style>
@@ -84,6 +91,27 @@ ul,ol{padding-left:0;list-style:none}.timeline{display:grid;gap:9px;margin:14px 
 <svg id="chart" class="chart" viewBox="0 0 820 285" role="img" aria-label="Energy shape comparison"></svg>
 <div class="legend">Green = manual track energy · Dashed blue = target energy curve · Scale 1–10</div>
 <ol id="timeline" class="timeline"></ol>
+<section class="audition" aria-labelledby="audition-title">
+<h3 id="audition-title">Listen before choosing · original local audio</h3>
+<p class="dim">Select your actual permitted local music, then MixLab checks
+each file's <strong>complete original SHA-256</strong> before allowing
+preview. Songs are not decoded, analyzed, uploaded or copied by MixLab.
+Listening changes no BPM, mood or energy annotation. Browser audio support varies.</p>
+<div class="audition-top"><label for="audition-file">Select original audio
+<input id="audition-file" type="file" multiple accept=".wav,.mp3,.flac,.m4a,.aac,.ogg,.opus,.aif,.aiff,audio/*"></label>
+<strong id="audition-count">0 source files verified</strong></div>
+<label for="audition-search">Search your annotated crate</label>
+<input id="audition-search" type="search" placeholder="Filename, mood or genre tag"
+ aria-label="Search human-annotated local music">
+<ol id="audition-list" class="audition-list"></ol>
+<p id="now-auditioning" class="dim">Nothing armed</p>
+<audio id="audition-audio" controls preload="metadata"></audio>
+<div class="audition-controls"><button id="audition-intro" type="button">Jump to intro</button>
+<button id="audition-outro" type="button">Jump to last 30s</button>
+<button id="audition-stop" type="button">Stop & detach</button></div>
+<p id="audition-status" class="feedback" role="status" aria-live="polite">
+No local files attached. Audio stays on your device and Play is manual.</p>
+</section>
 <div class="row"><button id="regenerate" type="button" disabled>Reset to suggestion</button>
 <button id="export" type="button" class="primary" disabled>Save private set plan</button></div>
 <p id="export-status" class="feedback" role="status" aria-live="polite"></p>
@@ -263,7 +291,7 @@ function show(){
    b.onclick=()=>{[order[i],order[other]]=[order[other],order[i]];show()};
    buttons.append(b);
   }
-  item.append(buttons);list.append(item);
+  buttons.append(auditionButtonFor(song));item.append(buttons);list.append(item);
  });
 }
 function save(){
@@ -285,6 +313,7 @@ function save(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
  el("export-status").textContent="Exported a NEW private plan. Move it beside your local music, then use Playlist Studio --journey-plan. Changes to sources invalidate hashes.";
 }
+__AUDITION_JS__
 setup();
 </script>
 </body></html>
@@ -305,7 +334,7 @@ def create_workspace(music_folder, private_notes, new_html):
     embedded = json.dumps({"source_sha256": sha, "tracks": checked}, ensure_ascii=True,
                           allow_nan=False, separators=(",", ":"))
     embedded = embedded.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    page = _HTML.replace("__NOTES_JSON__", embedded).encode("utf-8")
+    page = _HTML.replace("__NOTES_JSON__", embedded).replace("__AUDITION_JS__", AUDITION_JS).encode("utf-8")
     if len(page) > MAX_BOARD_BYTES:
         raise ValueError("Private event workspace exceeds 1 MiB")
     with output.open("xb") as stream:
