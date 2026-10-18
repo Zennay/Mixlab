@@ -143,6 +143,19 @@ Open de HTML lokaal, kies een route en geef het gedownloade plan door
 aan Playlist Studio met --journey-plan. Geen automatische muziekanalyse
 of blind-luisterbewijs; zie de Energy Journey-handleiding.
 
+### Leg een vaste openingsplaat en afsluiter vast
+
+Voor bruiloften, feesten en optredens kun je MixLab dwingen om een
+**specifiek nummer als eerste en laatste** te kiezen, terwijl de
+setopbouw ertussen geoptimaliseerd wordt. Sluit bovendien nummers uit
+die niet in de set mogen komen. Gebruik bij de Energy Journey Planner
+of vierwegvergelijking de extra argumenten
+--opening "Welcome Track.wav" --closing "Last Dance.wav"
+--exclude-track "Not Tonight.wav". De nummers moeten voorkomen in je
+handmatig geverifieerde notities en precies dezelfde BPM hebben. In
+de offline editor mag je de volgorde daarna alsnog bewust aanpassen.
+[Details](docs/energy-journey-planner.md).
+
 ### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
