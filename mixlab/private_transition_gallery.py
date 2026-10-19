@@ -53,12 +53,12 @@ def _gallery_html(receipt, receipt_sha256):
     return ("""<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy"
-content="default-src 'none'; media-src 'self' blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+content="default-src 'none'; media-src 'self' file: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>MixLab · Private transition gallery</title>
 <style>
 :root{color-scheme:dark}body{max-width:920px;margin:auto;padding:28px 18px;background:#111827;color:#f4f6fb;font:16px/1.55 system-ui,sans-serif}
 header{margin:0 0 26px}h1{font-size:clamp(28px,5vw,44px);line-height:1.13}h2{font-size:22px;margin:0 0 14px}
-p{color:#c5cee0}strong{color:white}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:18px}
+p{color:#c5cee0}strong{color:white}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:18px}
 article{background:#1d293b;border:1px solid #43516a;padding:20px;border-radius:16px}audio{width:100%;margin:8px 0}
 small{color:#93c5fd}.review{margin-top:24px;padding:24px;border-radius:16px;background:#1d293b;border:1px solid #43516a}
 .review label{display:block;margin:16px 0 6px}.review select,.review textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:8px;background:#111827;color:white;border:1px solid #64748b;font:inherit}
