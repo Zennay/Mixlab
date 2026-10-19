@@ -252,15 +252,15 @@ def apply(studio_dir, decision_file, destination):
                 or any(not _valid_sha(v) for v in sha_by_family.values())
                 or not _valid_sha(row.get("source_gallery_receipt_sha256"))):
                 raise ValueError("Revision candidate evidence is incomplete")
-            audio=f"{index:02d}-{family}.wav"
             chosen=f"{index:02d}-{family}.wav"
             path=stage / chosen
-            total+=_copy_and_verify_wav(studio/audio,path,sha_by_family[family])
+            total+=_copy_and_verify_wav(studio/chosen,path,sha_by_family[family])
             if total>MAX_MEDIA_BYTES:
                 raise ValueError("Revised rehearsal exceeds private audio budget")
             path.chmod(0o600)
             files.append(chosen)
-            human_digest=hashlib.sha256((plan_sha+":"+str(index)).encode("ascii")).hexdigest()
+            # One authentic human-downloaded plan governs all chapters.
+            # Keep its real SHA-256 rather than inventing per-chapter receipts.
             # No invented studio listening metrics: duration comes from the
             # actual regular PCM16 WAV header, not untrusted browser JSON.
             import wave
@@ -276,7 +276,8 @@ def apply(studio_dir, decision_file, destination):
                 "audio_sha256":sha_by_family[family],"seconds":duration,
                 "private_note":note,
                 "source_gallery_receipt_sha256":row["source_gallery_receipt_sha256"],
-                "human_choice_sha256":human_digest,
+                "human_choice_sha256":plan_sha,
+                "human_choice_source":"revision-plan",
             })
         receipt={"schema_version":1,"kind":"mixlab-private-rehearsal-reel",
                  "status":"human-selected-not-blind-study","rights_status":"unverified",
