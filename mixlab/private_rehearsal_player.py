@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import html
 import json
-import math
 import os
 from pathlib import Path
 import stat
@@ -247,14 +246,24 @@ def create_player(source_wav, dest_dir):
         page.write_text(_player_html(chapters, receipt["audio_sha256"], receipt_sha, frames/rate),
                         encoding="utf-8")
         page.chmod(0o600)
-        # Preserve the exact original private source receipt for offline
-        # traceability; read again from the stable bounded source before commit.
+        # Copy the original private receipt only after a second no-follow
+        # descriptor read and exact SHA match; never trust a reopened path.
         receipt_copy = stage / "original-receipt.json"
-        _read_json_and_digest(sidecar)
-        with open(sidecar, "rb") as source_file, open(receipt_copy, "wb") as destination_file:
-            destination_file.write(source_file.read(65537))
-        if hashlib.sha256(receipt_copy.read_bytes()).hexdigest() != receipt_sha:
-            raise ValueError("Private source receipt changed before publication")
+        fd = os.open(sidecar, READ_FLAGS)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or not 1 <= before.st_size <= 65536:
+                raise ValueError("Original private receipt is no longer a bounded regular file")
+            raw = os.read(fd, 65537)
+            after = os.fstat(fd)
+            if (len(raw) != before.st_size or
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or
+                    hashlib.sha256(raw).hexdigest() != receipt_sha):
+                raise ValueError("Original private receipt changed before publication")
+        finally:
+            os.close(fd)
+        receipt_copy.write_bytes(raw)
         receipt_copy.chmod(0o600)
         destination.mkdir(mode=0o700)
         published = []
