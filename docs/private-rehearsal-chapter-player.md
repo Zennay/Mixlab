@@ -17,6 +17,15 @@ Open `private-rehearsal-player-01/index.html` directly in a browser to:
 - Read and print the originally human-authored cue notes.
 - Add your own local rehearsal observations per chapter and explicitly download `mixlab-private-rehearsal-debrief.json`. This human-only debrief is bound to the exact original mixdown receipt hash and actual WAV SHA-256.
 
+
+## Resumeable private rehearsal notebook
+
+The offline chapter player also supports **Bookmark playback cue** at the actual WAV playhead. A bookmark retains the precise local time (rounded to 10 ms), source chapter, and a manually entered short note. At most 24 chapter-bound bookmarks are kept in the browser tab, with jump-to-time and explicit remove controls. They are included in the downloaded private debrief next to the original chapter-by-chapter annotations.
+
+Use **Reopen a debrief** after closing the browser to load a previously downloaded `mixlab-private-rehearsal-debrief.json`. The browser accepts the original v1 debrief without bookmarks as well as a v1 debrief containing optional bookmarks. It verifies **both** the original private WAV SHA-256 and mixdown receipt SHA-256, all canonical chapter identifiers, bounded human notes and any timestamp bookmarks against the source's actual chapter boundaries. An invalid or wrong-source file leaves all existing notes and markers untouched. No remote or persistent storage is used and no background autosave occurs.
+
+This is human rehearsal feedback for later manual improvement, not a blind preference result or automatic DSP quality evidence.
+
 The offline workspace contains `rehearsal.wav`, `original-receipt.json`, and `index.html`, all with owner-private permissions. It is created under a new mode-0700 directory via staging and exclusive same-filesystem hardlinks. **No existing filename or source is replaced.** No linked file, oversized (>128 MiB) source, changed SHA-256, short frame payload, impossible chapter timestamps or unrecognized receipt is silently accepted. The browser has no external assets, uploads, accounts, autoplay or automatic note persistence.
 
 A chapter player is a **human-oriented rehearsal tool**. It does not detect beats, synchronize tempo, make seamless transitions, improve loudness, check distribution rights, infer DJ quality or create independent blind human research evidence. It never changes the portfolio queue, worker ownership or production services. No standalone QA, regressions or tests were authored or manually run.
