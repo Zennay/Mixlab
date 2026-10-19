@@ -63,7 +63,7 @@ def _valid_sha(value):
 
 
 def _verified_choice(receipt, receipt_sha, choice):
-    if receipt.get("schema_version") != 1 or receipt.get("kind") != "mixlab-private-manual-transition-gallery":
+    if type(receipt.get("schema_version")) is not int or receipt["schema_version"] != 1 or receipt.get("kind") != "mixlab-private-manual-transition-gallery":
         raise ValueError("Unsupported gallery receipt")
     if receipt.get("status") != "rendered-not-listener-validated" or receipt.get("rights_status") != "unverified":
         raise ValueError("Gallery status changed or unsupported")
@@ -82,7 +82,7 @@ def _verified_choice(receipt, receipt_sha, choice):
         present[family] = entry
     if set(present) != set(FAMILY_NAMES):
         raise ValueError("Gallery family coverage incomplete")
-    if (choice.get("schema_version") != 1 or choice.get("kind") != "mixlab-private-dj-choice"
+    if (type(choice.get("schema_version")) is not int or choice["schema_version"] != 1 or choice.get("kind") != "mixlab-private-dj-choice"
             or choice.get("human_choice_not_blind_study") is not True):
         raise ValueError("Unsupported private DJ choice")
     if not _valid_sha(choice.get("receipt_sha256")) or choice["receipt_sha256"] != receipt_sha:
@@ -91,8 +91,14 @@ def _verified_choice(receipt, receipt_sha, choice):
     if not isinstance(family, str) or family not in present:
         raise ValueError("Unknown selected transition")
     note = choice.get("note")
-    if type(note) is not str or len(note) > 240 or len(note.encode("utf-8")) > 1024:
+    if type(note) is not str or len(note) > 240:
         raise ValueError("Private DJ note is not bounded text")
+    try:
+        note_bytes = note.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("DJ note contains invalid Unicode") from exc
+    if len(note_bytes) > 1024 or any(ord(ch) < 32 and ch not in "\\n\\t" for ch in note):
+        raise ValueError("Private DJ note contains unsupported control characters")
     return family, present[family], note
 
 
@@ -160,9 +166,11 @@ def export_choice(gallery_dir, choice_file, output_wav):
             "source_permission_verified": False,
             "human_blind_preference_verified": False,
         }
+        staged_wav.chmod(0o600)
         staged_evidence = Path(stage) / "chosen.choice.json"
         staged_evidence.write_text(json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n",
                                    encoding="utf-8")
+        staged_evidence.chmod(0o600)
         # File hardlinks on one filesystem only, exclusively (EEXIST refuses
         # colliding paths/symlinks). Roll back our own WAV if sidecar linking fails.
         os.link(staged_wav, output)
