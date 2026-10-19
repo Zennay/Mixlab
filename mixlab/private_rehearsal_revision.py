@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import html
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -17,6 +18,7 @@ from .private_transition_selection import (
     _copy_and_verify_wav, _read_json_and_digest, _verified_choice, _valid_sha,
 )
 from .private_rehearsal_mixdown import _chapters as _original_chapters
+from .private_rehearsal_player import _admit_source_receipt
 from .private_transition_reel import _page as _reel_page
 
 MAX_MEDIA_BYTES = 128 * 1024 * 1024
@@ -47,6 +49,74 @@ def _private_publish(staged, destination, filenames):
         raise
 
 
+def _read_original_human_feedback(mixdown_receipt_file, debrief_file, original_reel_sha):
+    """Admit only real original WAV-bound human feedback, never synthetic scoring."""
+    mixdown, mixdown_sha = _read_json_and_digest(mixdown_receipt_file)
+    if mixdown.get("original_reel_receipt_sha256") != original_reel_sha:
+        raise ValueError("The original rehearsal mixdown belongs to another reel")
+    _, _, _, original_markers = _admit_source_receipt(mixdown)
+    debrief, _ = _read_json_and_digest(debrief_file)
+    if (type(debrief.get("schema_version")) is not int
+            or debrief["schema_version"] != 1
+            or debrief.get("kind") != "mixlab-private-rehearsal-debrief"
+            or debrief.get("status") != "human-notes-not-blind-study"
+            or debrief.get("rights_status") != "unverified"
+            or debrief.get("source_receipt_sha256") != mixdown_sha
+            or debrief.get("audio_sha256") != mixdown.get("audio_sha256")):
+        raise ValueError("Debrief is not from this exact original rehearsal WAV")
+    rows = debrief.get("observations")
+    if type(rows) is not list or len(rows) != len(original_markers):
+        raise ValueError("The original debrief must cover every real audio chapter")
+    original_by_id = {p["original_chapter"]:p for p in original_markers}
+    result = {}
+    for expected, entry in zip(original_markers, rows):
+        if (type(entry) is not dict
+                or type(entry.get("position")) is not int
+                or entry["position"] != expected["position"]
+                or type(entry.get("original_chapter")) is not int
+                or entry["original_chapter"] != expected["original_chapter"]):
+            raise ValueError("Human debrief chapter/source identity is incomplete")
+        note = entry.get("note")
+        if type(note) is not str or len(note) > 300:
+            raise ValueError("Human debrief note length is invalid")
+        try:
+            encoded = note.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Unencodable human debrief note") from exc
+        if len(encoded) > 1200 or any(ord(ch) < 32 and ch not in "\\n\\t" for ch in note):
+            raise ValueError("Unsupported human debrief characters")
+        result[expected["original_chapter"]] = {"note":note, "bookmarks":[]}
+    marks = debrief.get("bookmarks", [])
+    if type(marks) is not list or len(marks) > 24:
+        raise ValueError("Human bookmarks are incomplete or exceed the supported limit")
+    for marker in marks:
+        if type(marker) is not dict:
+            raise ValueError("Malformed human timestamp marker")
+        second = marker.get("second")
+        original = marker.get("original_chapter")
+        note = marker.get("note")
+        if (type(second) not in (int,float) or not math.isfinite(second)
+                or second < 0 or second > original_markers[-1]["end_seconds"]
+                or type(original) is not int or original not in original_by_id
+                or type(note) is not str or len(note) > 200):
+            raise ValueError("Human timestamp marker is not source-bound")
+        # The original player attributes silence gaps to the preceding chapter.
+        marker_owner = original_markers[0]["original_chapter"]
+        for point in original_markers:
+            if second >= point["start_seconds"]:
+                marker_owner = point["original_chapter"]
+        if marker_owner != original:
+            raise ValueError("Human timestamp references the wrong original audio chapter")
+        try:
+            data=note.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Unencodable timestamp note") from exc
+        if len(data)>800 or any(ord(ch)<32 and ch not in "\\n\\t" for ch in note):
+            raise ValueError("Invalid timestamp annotation")
+        result[original]["bookmarks"].append({"second":second,"note":note})
+    return result, mixdown_sha
+
+
 def _prepare_page(document, fingerprint):
     cards = []
     for chapter in document["chapters"]:
@@ -63,12 +133,25 @@ def _prepare_page(document, fingerprint):
             )
         current = html.escape(chapter["selected_family"].replace("_", " ").title())
         note = html.escape(chapter["private_note"])
+        feedback = chapter.get("human_rehearsal_feedback") or {}
+        feedback_body = ""
+        if feedback:
+            written = html.escape(feedback["note"])
+            cue_items = "".join(
+                '<li>' + html.escape(str(item["second"])) + 's: '
+                + html.escape(item["note"]) + '</li>'
+                for item in feedback["bookmarks"]
+            )
+            feedback_body = ('<aside class="feedback"><h3>Original human rehearsal feedback</h3>'
+                             + '<p>' + (written or 'No chapter comment') + '</p>'
+                             + ('<ul>' + cue_items + '</ul>' if cue_items else '')
+                             + '<p>Read-only source-bound notes. Select the next take yourself.</p></aside>')
         cards.append(
             f'<section class="chapter" data-position="{n}"><h2>Chapter {n}: revise or keep</h2>'
             f'<p>Originally human-selected: <strong>{current}</strong>. '
             'Listen to each of the four original renders. All choices refer to one exact permitted '
             'local gallery; nothing is re-rendered or normalized.</p>'
-            + '<div class="options">' + "".join(players) + '</div>'
+            + feedback_body + '<div class="options">' + "".join(players) + '</div>'
             + '<label class="note">Updated human cue note (optional, max 240 characters)'
             + f'<textarea maxlength="240" rows="3">{note}</textarea></label></section>'
         )
@@ -81,7 +164,9 @@ content="default-src 'none'; media-src 'self' file: blob:; style-src 'unsafe-inl
 :root{color-scheme:dark}body{background:#111827;color:#f9fafb;font:16px/1.55 system-ui,sans-serif;max-width:1050px;margin:auto;padding:25px 18px}
 h1{font-size:clamp(30px,5vw,44px);line-height:1.15}p{color:#cbd5e1}
 small{color:#93c5fd}.chapter{background:#1e293b;border:1px solid #475569;border-radius:16px;padding:20px;margin:25px 0}
-.chapter h2{font-size:22px}.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr));gap:12px}
+ .chapter h2{font-size:22px}.feedback{border:1px solid #64748b;background:#283449;padding:12px;border-radius:10px;margin:16px 0}
+.feedback p{white-space:pre-wrap;overflow-wrap:anywhere}.feedback li{overflow-wrap:anywhere}
+.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr));gap:12px}
 .option{display:block;background:#111827;border:1px solid #64748b;padding:12px;border-radius:12px}
 .option span{display:inline-block;padding-left:6px;font-weight:650}.option:has(input:checked){border-color:#93c5fd;background:#253247}
 .option audio{display:block;width:100%;margin-top:14px}.note{display:block;margin-top:16px}
@@ -126,12 +211,22 @@ document.getElementById('export').onclick=()=>{
 """)
 
 
-def prepare(original_reel, galleries, destination):
+def prepare(original_reel, galleries, destination, *, debrief=None, mixdown_receipt=None):
     """Create a private four-family, human-selectable browser comparison."""
     if not 2 <= len(galleries) <= 8:
         raise ValueError("Specify exactly one original gallery for each of 2–8 chapters")
     original, original_sha = _read_json_and_digest(Path(original_reel) / "receipt.json")
     chapters = _original_chapters(original)
+    if (debrief is None) != (mixdown_receipt is None):
+        raise ValueError("Supply both the original mixdown receipt and its human debrief")
+    feedback = {}
+    mixdown_sha = None
+    if debrief is not None:
+        feedback, mixdown_sha = _read_original_human_feedback(
+            mixdown_receipt, debrief, original_sha
+        )
+        if set(feedback) != {entry["chapter"] for entry in chapters}:
+            raise ValueError("Original WAV human-feedback chapters do not match this reel")
     if len(galleries) != len(chapters):
         raise ValueError("Provide original galleries in the exact original chapter order")
     target = Path(destination)
@@ -174,11 +269,13 @@ def prepare(original_reel, galleries, destination):
                             "original_human_choice_sha256":prior["human_choice_sha256"],
                             "selected_family":prior["family"],
                             "private_note":prior["private_note"],
+                            "human_rehearsal_feedback":feedback.get(index),
                             "candidate_audio_sha256":sha_by_family})
         document = {
             "schema_version":1,"kind":"mixlab-private-human-revision-studio",
             "status":"prepared-for-human-choice","rights_status":"unverified",
             "original_reel_receipt_sha256":original_sha,"chapter_count":len(results),
+            "source_human_mixdown_receipt_sha256":mixdown_sha,
             "total_audio_bytes":total,"chapters":results,
         }
         receipt_path = stage / "receipt.json"
@@ -304,13 +401,16 @@ def main(argv=None):
     p.add_argument("output_studio")
     p.add_argument("--gallery",action="append",required=True,
                    help="Original gallery in its original reel chapter order (2–8 times)")
+    p.add_argument("--mixdown-receipt",help="Optional original .rehearsal.json for human feedback")
+    p.add_argument("--debrief",help="Optional original WAV-bound human debrief JSON (requires --mixdown-receipt)")
     a=commands.add_parser("apply",help="Render a fresh reel from a human-downloaded revision")
     a.add_argument("studio")
     a.add_argument("human_revision_json")
     a.add_argument("output_reel")
     args=parser.parse_args(argv)
     try:
-        result=(prepare(args.original_reel,args.gallery,args.output_studio)
+        result=(prepare(args.original_reel,args.gallery,args.output_studio,
+                        debrief=args.debrief, mixdown_receipt=args.mixdown_receipt)
                 if args.command=="prepare" else
                 apply(args.studio,args.human_revision_json,args.output_reel))
         print(result)
