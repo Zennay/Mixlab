@@ -31,7 +31,7 @@ def _level(value):
     return f"{20 * math.log10(value):.1f} dBFS"
 
 
-def _gallery_html(receipt):
+def _gallery_html(receipt, receipt_sha256):
     cards = []
     for entry in receipt["renders"]:
         title = html.escape(entry["family"].replace("_", " ").title())
@@ -42,6 +42,11 @@ def _gallery_html(receipt):
             f'<p>Peak: {_level(entry["pcm_peak"])} · RMS: {_level(entry["pcm_rms"])} '
             f'· {entry["seconds"]:.2f} seconds</p></article>'
         )
+    choices = "".join(
+        f'<option value="{html.escape(item["family"], quote=True)}">'
+        f'{html.escape(item["family"].replace("_", " ").title())}</option>'
+        for item in receipt["renders"]
+    )
     delta = receipt["requested_gain_db"] - receipt["shared_gain_db"]
     level_text = (f"Common gain: {receipt['shared_gain_db']:.1f} dB"
                   + (f" (reduced by {delta:.1f} dB to prevent clipping)" if delta > 0 else ""))
@@ -55,17 +60,45 @@ content="default-src 'none'; media-src 'self' blob:; style-src 'unsafe-inline'; 
 header{margin:0 0 26px}h1{font-size:clamp(28px,5vw,44px);line-height:1.13}h2{font-size:22px;margin:0 0 14px}
 p{color:#c5cee0}strong{color:white}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:18px}
 article{background:#1d293b;border:1px solid #43516a;padding:20px;border-radius:16px}audio{width:100%;margin:8px 0}
-small{color:#93c5fd}footer{margin-top:25px;border-top:1px solid #43516a;padding-top:16px}
+small{color:#93c5fd}.review{margin-top:24px;padding:24px;border-radius:16px;background:#1d293b;border:1px solid #43516a}
+.review label{display:block;margin:16px 0 6px}.review select,.review textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:8px;background:#111827;color:white;border:1px solid #64748b;font:inherit}
+.review button{padding:12px 18px;background:#93c5fd;color:#101827;font:inherit;font-weight:700;border:0;border-radius:8px;cursor:pointer}
+footer{margin-top:25px;border-top:1px solid #43516a;padding-top:16px}
 </style>
 <header><small>PRIVATE / LOCAL · MIXLAB</small><h1>Compare four real transitions</h1>
 <p>No source media leaves your computer. Each player uses the same manual BPM, cue points and gain;
 playing one pauses the others. These engineering metrics are not musical preference scores.</p>
 <p><strong>""" + html.escape(level_text) + """</strong></p></header>
 <main class="grid">""" + "".join(cards) + """</main>
+<section class="review" aria-labelledby="review-heading"><h2 id="review-heading">Your private DJ choice</h2>
+<p>Choose what worked for <em>your</em> set, and optionally add a short note. Export stays on this
+device, is bound to the exact original render receipt and is <strong>not</strong> a blinded
+music-quality study or rights approval.</p>
+<form id="review-form"><label for="preferred">Preferred transition</label>
+<select id="preferred" name="preferred" required><option value="">Select a family…</option>""" + choices + """</select>
+<label for="dj-note">Your cue note (optional, 240 characters max)</label>
+<textarea id="dj-note" name="note" rows="3" maxlength="240" placeholder="What would you change before rehearsal?"></textarea>
+<button type="submit">Download private choice (.json)</button><p id="choice-status" role="status" aria-live="polite"></p></form></section>
 <footer><p>All audio was rendered locally with the existing streaming PCM16 renderer.
 These variants are not LUFS-matched. No stems, beat detection, tempo stretching, music
 rights or listener preference are inferred. Keep originals and receipts private.</p></footer>
-<script>document.querySelectorAll('audio').forEach(a=>a.addEventListener('play',()=>document.querySelectorAll('audio').forEach(b=>{if(b!==a)b.pause()})));</script>
+<script>
+document.querySelectorAll('audio').forEach(a=>a.addEventListener('play',()=>document.querySelectorAll('audio').forEach(b=>{if(b!==a)b.pause()})));
+const receiptSha = """ + json.dumps(receipt_sha256) + """;
+document.getElementById('review-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const form=event.currentTarget;
+  const selected=form.elements.namedItem('preferred').value;
+  const note=form.elements.namedItem('note').value.trim().slice(0,240);
+  const record={schema_version:1,kind:'mixlab-private-dj-choice',receipt_sha256:receiptSha,
+    selected_family:selected,note:note,human_choice_not_blind_study:true};
+  const blob=new Blob([JSON.stringify(record,null,2)+'\\n'],{type:'application/json'});
+  const uri=URL.createObjectURL(blob);const link=document.createElement('a');
+  link.href=uri;link.download='mixlab-dj-choice.json';link.click();
+  setTimeout(()=>URL.revokeObjectURL(uri),1000);
+  document.getElementById('choice-status').textContent='Your private, receipt-bound choice has been downloaded.';
+});
+</script>
 </html>
 """)
 
@@ -154,7 +187,7 @@ def create_gallery(source_a, source_b, output_dir, *, bpm, beats=8,
         (complete / "receipt.json").write_text(
             json.dumps(receipt, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
         )
-        (complete / "index.html").write_text(_gallery_html(receipt), encoding="utf-8")
+        (complete / "index.html").write_text(_gallery_html(receipt, _sha256(complete / "receipt.json")), encoding="utf-8")
         # Exclusive mkdir + hardlinks: no existing gallery or source can be
         # overwritten, even if another operator creates the destination.
         destination.mkdir(mode=0o700)
