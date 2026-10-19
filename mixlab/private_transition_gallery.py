@@ -61,7 +61,7 @@ header{margin:0 0 26px}h1{font-size:clamp(28px,5vw,44px);line-height:1.13}h2{fon
 p{color:#c5cee0}strong{color:white}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:18px}
 article{background:#1d293b;border:1px solid #43516a;padding:20px;border-radius:16px}audio{width:100%;margin:8px 0}
 small{color:#93c5fd}.review{margin-top:24px;padding:24px;border-radius:16px;background:#1d293b;border:1px solid #43516a}
-.review label{display:block;margin:16px 0 6px}.review select,.review textarea{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:8px;background:#111827;color:white;border:1px solid #64748b;font:inherit}
+.review label{display:block;margin:16px 0 6px}.review select,.review textarea,.review input[type=file]{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:8px;background:#111827;color:white;border:1px solid #64748b;font:inherit}
 .review button{padding:12px 18px;background:#93c5fd;color:#101827;font:inherit;font-weight:700;border:0;border-radius:8px;cursor:pointer}
 footer{margin-top:25px;border-top:1px solid #43516a;padding-top:16px}
 </style>
@@ -78,6 +78,9 @@ music-quality study or rights approval.</p>
 <select id="preferred" name="preferred" required><option value="">Select a family…</option>""" + choices + """</select>
 <label for="dj-note">Your cue note (optional, 240 characters max)</label>
 <textarea id="dj-note" name="note" rows="3" maxlength="240" placeholder="What would you change before rehearsal?"></textarea>
+<label for="reopen-choice">Reopen a saved choice from this exact gallery (optional)</label>
+<input id="reopen-choice" type="file" accept=".json,application/json" aria-describedby="reopen-help">
+<p id="reopen-help">Nothing is uploaded or stored automatically. This does not certify a blinded study.</p>
 <button type="submit">Download private choice (.json)</button><p id="choice-status" role="status" aria-live="polite"></p></form></section>
 <footer><p>All audio was rendered locally with the existing streaming PCM16 renderer.
 These variants are not LUFS-matched. No stems, beat detection, tempo stretching, music
@@ -85,6 +88,37 @@ rights or listener preference are inferred. Keep originals and receipts private.
 <script>
 document.querySelectorAll('audio').forEach(a=>a.addEventListener('play',()=>document.querySelectorAll('audio').forEach(b=>{if(b!==a)b.pause()})));
 const receiptSha = """ + json.dumps(receipt_sha256) + """;
+// Explicit, local-only reopening of a browser-exported preference. No storage
+// or file-system permissions beyond the one file the operator selects.
+document.getElementById('reopen-choice').addEventListener('change', async event => {
+  const file = event.currentTarget.files && event.currentTarget.files[0];
+  if (!file) return;
+  const status = document.getElementById('choice-status');
+  try {
+    if (file.size < 2 || file.size > 8192) throw new Error('size');
+    const data = JSON.parse(await file.text());
+    const select = document.getElementById('preferred');
+    const families = [...select.options].map(option => option.value).filter(Boolean);
+    if (!data || Array.isArray(data) || data.schema_version !== 1 ||
+        data.kind !== 'mixlab-private-dj-choice' ||
+        data.human_choice_not_blind_study !== true ||
+        data.receipt_sha256 !== receiptSha ||
+        !families.includes(data.selected_family) ||
+        typeof data.note !== 'string' || data.note.length > 240 ||
+        new TextEncoder().encode(data.note).length > 1024 ||
+        [...data.note].some(ch => ch.codePointAt(0) < 32 && ch !== '\\n' && ch !== '\\t')) {
+      throw new Error('invalid');
+    }
+    // All fields validated before changing the form.
+    select.value = data.selected_family;
+    document.getElementById('dj-note').value = data.note;
+    status.textContent = 'Choice and note reopened from the same original gallery. Review before exporting.';
+  } catch {
+    status.textContent = 'Choice not loaded: unsupported, altered or from another gallery.';
+  } finally {
+    event.currentTarget.value = '';
+  }
+});
 document.getElementById('review-form').addEventListener('submit', event => {
   event.preventDefault();
   const form=event.currentTarget;
