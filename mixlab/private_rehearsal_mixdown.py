@@ -6,10 +6,8 @@ blend, normalized master, proof of source rights or validated listening study.
 import argparse
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
-import re
 import tempfile
 import wave
 
@@ -150,7 +148,7 @@ def render_mixdown(reel_dir, output_wav, *, order_json=None, gap_ms=350):
                             break
                         dst.writeframesraw(chunk)
                 if i < len(copied) - 1 and silent_frames:
-                    dst.writeframesraw(b"\\x00" * (silent_frames * channels * 2))
+                    dst.writeframesraw(bytes(silent_frames * channels * 2))
         generated.chmod(0o600)
         output_sha = _sha(generated)
         record = {
