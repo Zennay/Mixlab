@@ -10,11 +10,10 @@ import json
 import math
 import os
 from pathlib import Path
-import shutil
 import tempfile
 
 from .private_transition_selection import (
-    _read_json_and_digest, _verified_choice, _copy_and_verify_wav, _valid_sha,
+    _read_json_and_digest, _verified_choice, _copy_and_verify_wav,
 )
 
 MAX_CHAPTERS = 8
@@ -155,7 +154,7 @@ def create_reel(pairs, destination):
                 raise ValueError("Chosen transition has invalid duration")
             filename = f"{index:02d}-{family}.wav"
             output_file = stage / filename
-            size = _copy_and_verify_wav(gallery / filename[3:], output_file, chosen["audio_sha256"])
+            size = _copy_and_verify_wav(gallery / f"{family}.wav", output_file, chosen["audio_sha256"])
             total_bytes += size
             if total_bytes > MAX_TOTAL_PCM_BYTES:
                 raise ValueError("Rehearsal reel exceeds private audio size budget")
