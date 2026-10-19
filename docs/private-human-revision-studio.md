@@ -18,6 +18,24 @@ Open `rehearsal-revision-studio-01/index.html` directly in your browser. For eac
 
 The prepare command rejects mismatched gallery order, duplicate galleries, source-hash discrepancies, missing or changed WAVs, noncanonical families and excessive total audio (>128 MiB). Media stays locally in the new owner-private folder. No absolute source file paths are embedded into the exported studio or plan.
 
+## Optional: bring back actual human feedback from the prior WAV
+
+If you recorded notes with the [source-bound full-length chapter player](private-rehearsal-chapter-player.md), the revision studio can now display those **actual human notes and timestamp bookmarks alongside the four original variants** instead of making you recall why a chapter needs revision:
+
+```sh
+python3 -m mixlab.private_rehearsal_revision prepare \
+  ./private-rehearsal-01 ./rehearsal-revision-studio-02 \
+  --gallery ./original-pair-01-gallery \
+  --gallery ./original-pair-02-gallery \
+  --gallery ./original-pair-03-gallery \
+  --mixdown-receipt ./private-preview.rehearsal.json \
+  --debrief ./mixlab-private-rehearsal-debrief.json
+```
+
+Both optional inputs **must** be supplied together. The mixdown receipt must name the same exact original reel receipt SHA-256. The private human debrief must match **both** the mixdown receipt SHA-256 and its actual rendered WAV SHA-256, with the complete original source chapter identities in the authentic WAV playback order. At most 24 local timestamp bookmarks are accepted; they must point to their actual original chapter positions in the mixdown, including the player's documented gap attribution. Malformed, foreign or partial feedback is refused before any new studio files are published.
+
+The studio shows prior comments and timecodes as **read-only human context**, not ratings, scores, permission, automatic selections, or a forced revision. The four original PCM16 family choices and original human selection remain intact until you explicitly change them and export a new human plan. The resulting studio receipt includes the exact imported mixdown-receipt SHA-256 for later audit; no private filesystem paths or audio files are uploaded.
+
 ## Step 2 — Apply the human decisions to a new playable reel
 
 ```sh
