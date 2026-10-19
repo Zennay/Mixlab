@@ -53,7 +53,9 @@ content="default-src 'none'; media-src 'self' file: blob:; style-src 'unsafe-inl
 :root{color-scheme:dark}body{background:#101624;color:#f5f7fb;font:16px/1.6 system-ui,sans-serif;margin:auto;max-width:920px;padding:30px 18px}
 h1{font-size:clamp(28px,6vw,42px);line-height:1.16}h2{font-size:20px;margin:0}p{color:#cbd5e1}
 button{font:inherit;cursor:pointer;background:#93c5fd;color:#102035;border:0;border-radius:8px;padding:8px 13px;font-weight:600}
-button:focus-visible{outline:3px solid #fbbf24}button[disabled]{opacity:.3;cursor:not-allowed}
+button:focus-visible{outline:3px solid #fbbf24}
+.import{background:#1e293b;border:1px solid #64748b;border-radius:8px;padding:8px 12px;color:#f5f7fb}
+.import input{display:block;width:min(220px,100%);font-size:13px}button[disabled]{opacity:.3;cursor:not-allowed}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0}
 .chapter{background:#1e293b;border:1px solid #475569;border-radius:14px;padding:20px;margin:16px 0}
 .heading{display:flex;justify-content:space-between;gap:14px;align-items:center}
@@ -68,7 +70,8 @@ footer{border-top:1px solid #64748b;margin-top:36px;padding-top:18px}
 Tracks are separated clips; no seamless DJ set, beatmatching, loudness equalization or listener
 study is implied. Nothing is sent to a server. Changes remain in this browser tab until exported.</p></header>
 <div class="toolbar"><button id="play-all">▶ Play from start</button><button id="stop">■ Stop</button>
-<button id="download">↓ Export private running order</button><button id="print">Print cue sheet</button></div>
+<button id="download">↓ Export private running order</button><button id="print">Print cue sheet</button>
+<label class="import">↺ Reopen a private order <input type="file" id="import-order" accept=".json,application/json"></label></div>
 <p role="status" id="status" aria-live="polite">Original source order loaded.</p>
 <main id="reel">""" + "".join(articles) + """</main>
 <footer><p>Rights remain unverified. All chosen WAVs are copied without modifying source audio.
@@ -110,6 +113,36 @@ document.getElementById('play-all').onclick=()=>{
 };
 document.getElementById('stop').onclick=()=>{stop();status.textContent='Playback stopped.'};
 document.getElementById('print').onclick=()=>window.print();
+// Operator explicitly reopens a previously exported order; no browser storage,
+// background network traffic, or mutations to the original source receipt.
+document.getElementById('import-order').addEventListener('change', async event=>{
+  const file=event.currentTarget.files?.[0];
+  if(!file)return;
+  try{
+    if(file.size<4||file.size>8192)throw Error('size');
+    const data=JSON.parse(await file.text());
+    const existing=cards();
+    if(!data||Array.isArray(data)||data.schema_version!==1||
+      data.kind!=='mixlab-private-rehearsal-order'||
+      data.status!=='human-reordered-not-blind-study'||
+      data.rights_status!=='unverified'||data.receipt_sha256!==receiptSha||
+      !Array.isArray(data.order)||data.order.length!==existing.length)throw Error('identity');
+    const byId=new Map(existing.map(c=>[Number(c.dataset.chapter),c]));
+    const used=new Set(),next=[];
+    for(let i=0;i<data.order.length;i++){
+      const item=data.order[i];
+      if(!item||Array.isArray(item)||item.position!==i+1||
+        !Number.isInteger(item.original_chapter)||used.has(item.original_chapter)||
+        !byId.has(item.original_chapter))throw Error('order');
+      used.add(item.original_chapter);next.push(byId.get(item.original_chapter));
+    }
+    // Fully check the complete permutation before changing any DOM nodes.
+    stop();next.forEach(c=>reel.appendChild(c));display();
+    status.textContent='This exact source-bound private running order has been reopened.';
+  }catch{
+    status.textContent='Order not loaded: invalid, incomplete or from another reel.';
+  }finally{event.currentTarget.value=''}
+});
 document.getElementById('download').onclick=()=>{
   const order=cards().map((card,index)=>({position:index+1,original_chapter:Number(card.dataset.chapter)}));
   const payload={schema_version:1,kind:'mixlab-private-rehearsal-order',receipt_sha256:receiptSha,
