@@ -148,13 +148,18 @@ h1{font-size:clamp(28px,5vw,42px);line-height:1.15}p{color:#cbd5e1}.intro{max-wi
 small{color:#93c5fd}audio{width:100%;margin:10px 0}
 nav,.row{display:flex;align-items:center;justify-content:space-between;gap:12px}nav{justify-content:flex-start;flex-wrap:wrap;margin:18px 0}
 button{font:inherit;font-weight:600;background:#93c5fd;color:#111827;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}
-button:focus-visible,textarea:focus-visible{outline:3px solid #fbbf24}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #fbbf24}
+.bookmarks{background:#1e293b;border:1px solid #64748b;border-radius:14px;padding:16px;margin:20px 0}
+.bookmarks .mark{display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px solid #475569;padding:12px 0}
+.bookmarks input{font:inherit;background:#111827;border:1px solid #64748b;color:white;border-radius:8px;padding:8px;min-width:min(220px,65vw);flex:1}
+.restore{padding:8px;background:#1e293b;border:1px solid #64748b;border-radius:8px}
+.restore input{display:block;max-width:240px;font-size:13px}
 .chapter{border:1px solid #475569;background:#1e293b;border-radius:16px;padding:18px;margin:16px 0}
 .chapter.active{border-color:#93c5fd}.chapter h2{font-size:19px;margin:0}
 .chapter .time{font-size:14px;color:#94a3b8}.cue{white-space:pre-wrap;overflow-wrap:anywhere}
 label{display:block;color:#cbd5e1}textarea{display:block;width:100%;box-sizing:border-box;margin:8px 0;border-radius:8px;background:#111827;border:1px solid #64748b;color:#fff;padding:10px;font:inherit}
 footer{border-top:1px solid #64748b;margin-top:26px}
-@media print{body{color:#111;background:white}nav,audio,button,textarea{display:none}.chapter{background:white;color:#111;border:1px solid #888;break-inside:avoid}.chapter p,footer p{color:#222}}
+@media print{body{color:#111;background:white}nav,audio,button,textarea{display:none}.bookmarks{background:white;color:#111}.bookmarks input{border:none;color:#111;background:white}.chapter{background:white;color:#111;border:1px solid #888;break-inside:avoid}.chapter p,footer p{color:#222}}
 </style>
 <header><small>LOCAL · SOURCE-CHECKED · HUMAN REHEARSAL</small><h1>Full rehearsal, one audio file</h1>
 <p class="intro">Each marker is derived from the original chapter lengths and explicit silence gaps.
@@ -164,9 +169,14 @@ private notes. This is a hard-joined rehearsal preview, not a seamless DJ set or
 <audio id="master" preload="metadata" controls src="rehearsal.wav"></audio>
 <nav><button id="prev">← Previous</button><button id="next">Next →</button>
 <button id="start">Play from start</button><button id="stop">Stop</button>
-<button id="export">Download private debrief</button><button id="print">Print cue notes</button></nav>
+<button id="mark">Bookmark playback cue</button>
+<button id="export">Download private debrief</button><button id="print">Print cue notes</button>
+<label class="restore">Reopen a debrief <input id="reopen" type="file" accept=".json,application/json"></label></nav>
 <p id="status" role="status" aria-live="polite">Your private source-bound rehearsal is ready.</p>
 <main id="chapters">""" + "".join(cards) + """</main>
+<section class="bookmarks" aria-labelledby="bookmark-heading"><h2 id="bookmark-heading">My rehearsal cue markers</h2>
+<p>Bookmark up to 24 playback moments. Markers and observations remain in this browser tab until you explicitly download a debrief.</p>
+<div id="bookmarks"></div></section>
 <footer><p>No automatic uploads, storage, streaming, loudness normalization, music-rights
 verification or blind preference study. The original render receipt remains authoritative.</p></footer>
 <script>
@@ -177,10 +187,35 @@ const player=document.getElementById('master');
 const cards=[...document.querySelectorAll('.chapter')];
 const status=document.getElementById('status');
 let activeIndex=0;
-function currentIndex(){
-  const t=player.currentTime;
+let privateMarks=[];
+const maxSeconds=markers[markers.length-1].end;
+const atTime=t=>{
   for(let i=markers.length-1;i>=0;i--)if(t>=markers[i].start)return i;
   return 0;
+};
+const validNote=(value,cap)=>typeof value==='string' && value.length<=cap &&
+  new TextEncoder().encode(value).length<=cap*4 &&
+  [...value].every(ch=>ch.codePointAt(0)>=32 || ch==='\\n' || ch==='\\t');
+function drawMarks(){
+  const list=document.getElementById('bookmarks');
+  list.replaceChildren();
+  privateMarks.forEach((item,index)=>{
+    const row=document.createElement('div');row.className='mark';
+    const time=document.createElement('button');time.type='button';
+    time.textContent='▶ '+Math.floor(item.second/60)+':'+(item.second%60).toFixed(2).padStart(5,'0');
+    time.setAttribute('aria-label','Jump to rehearsal cue '+(index+1));
+    time.onclick=()=>{player.currentTime=item.second;player.play().catch(()=>{})};
+    const label=document.createElement('span');label.textContent='Chapter '+item.original_chapter;
+    const note=document.createElement('input');note.type='text';note.maxLength=200;
+    note.value=item.note;note.setAttribute('aria-label','Marker note '+(index+1));
+    note.oninput=()=>{item.note=note.value.slice(0,200)};
+    const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';
+    remove.onclick=()=>{privateMarks.splice(index,1);drawMarks()};
+    row.append(time,label,note,remove);list.appendChild(row);
+  });
+}
+function currentIndex(){
+  return atTime(player.currentTime);
 }
 function highlight(index){
   activeIndex=Math.max(0,Math.min(index,markers.length-1));
@@ -197,6 +232,45 @@ document.getElementById('next').onclick=()=>jump(Math.min(markers.length-1,curre
 document.getElementById('start').onclick=()=>jump(0);
 document.getElementById('stop').onclick=()=>{player.pause();player.currentTime=0;highlight(0)};
 document.getElementById('print').onclick=()=>window.print();
+document.getElementById('mark').onclick=()=>{
+  if(privateMarks.length>=24){status.textContent='24-marker limit reached; remove one to add another.';return}
+  const second=Math.round(Math.max(0,Math.min(maxSeconds,player.currentTime))*100)/100;
+  privateMarks.push({second,original_chapter:markers[atTime(second)].original_chapter,note:''});
+  drawMarks();status.textContent='Private cue bookmarked. Download your debrief to preserve it.';
+};
+document.getElementById('reopen').addEventListener('change',async event=>{
+  const file=event.currentTarget.files?.[0];if(!file)return;
+  try{
+    if(file.size<4||file.size>16384)throw Error('size');
+    const data=JSON.parse(await file.text());
+    if(!data||Array.isArray(data)||data.schema_version!==1||
+      data.kind!=='mixlab-private-rehearsal-debrief'||
+      data.source_receipt_sha256!==receiptSha||data.audio_sha256!==audioSha||
+      data.status!=='human-notes-not-blind-study'||data.rights_status!=='unverified'||
+      !Array.isArray(data.observations)||data.observations.length!==markers.length)throw Error('identity');
+    const checkedNotes=data.observations.map((entry,i)=>{
+      if(!entry||Array.isArray(entry)||entry.original_chapter!==markers[i].original_chapter||
+        entry.position!==markers[i].position||!validNote(entry.note,300))throw Error('notes');
+      return entry.note;
+    });
+    const rows=data.bookmarks===undefined?[]:data.bookmarks;
+    if(!Array.isArray(rows)||rows.length>24)throw Error('markers');
+    const checkedMarks=rows.map(entry=>{
+      if(!entry||Array.isArray(entry)||typeof entry.second!=='number'||
+        !Number.isFinite(entry.second)||entry.second<0||entry.second>maxSeconds||
+        !Number.isInteger(entry.original_chapter)||
+        entry.original_chapter!==markers[atTime(entry.second)].original_chapter||
+        !validNote(entry.note,200))throw Error('marker');
+      return {second:entry.second,original_chapter:entry.original_chapter,note:entry.note};
+    });
+    // Validate every field before changing any local human note.
+    cards.forEach((card,i)=>card.querySelector('textarea').value=checkedNotes[i]);
+    privateMarks=checkedMarks;drawMarks();
+    status.textContent='Exact source-bound private debrief reopened. Review before exporting.';
+  }catch{
+    status.textContent='Debrief not loaded: invalid, incomplete or from another WAV/receipt.';
+  }finally{event.currentTarget.value=''}
+});
 document.getElementById('export').onclick=()=>{
   const observations=cards.map((c,i)=>({
     original_chapter:markers[i].original_chapter,
@@ -205,7 +279,8 @@ document.getElementById('export').onclick=()=>{
   }));
   const data={schema_version:1,kind:'mixlab-private-rehearsal-debrief',
     source_receipt_sha256:receiptSha,audio_sha256:audioSha,
-    status:'human-notes-not-blind-study',rights_status:'unverified',observations};
+    status:'human-notes-not-blind-study',rights_status:'unverified',observations,
+    bookmarks:privateMarks.map(m=>({second:m.second,original_chapter:m.original_chapter,note:m.note}))};
   const href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)+'\\n'],{type:'application/json'}));
   const a=document.createElement('a');a.href=href;a.download='mixlab-private-rehearsal-debrief.json';a.click();
   setTimeout(()=>URL.revokeObjectURL(href),1000);
