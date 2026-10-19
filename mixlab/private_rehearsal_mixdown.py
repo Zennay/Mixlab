@@ -142,11 +142,14 @@ def render_mixdown(reel_dir, output_wav, *, order_json=None, gap_ms=350):
             dst.setframerate(sample_rate)
             for i, path in enumerate(copied):
                 with wave.open(str(path), "rb") as src:
-                    while True:
-                        chunk = src.readframes(4096)
-                        if not chunk:
-                            break
+                    remaining = src.getnframes()
+                    while remaining:
+                        frames_to_read = min(4096, remaining)
+                        chunk = src.readframes(frames_to_read)
+                        if len(chunk) != frames_to_read * channels * 2:
+                            raise ValueError("A selected chapter contains fewer PCM samples than its WAV header")
                         dst.writeframesraw(chunk)
+                        remaining -= frames_to_read
                 if i < len(copied) - 1 and silent_frames:
                     dst.writeframesraw(bytes(silent_frames * channels * 2))
         generated.chmod(0o600)
