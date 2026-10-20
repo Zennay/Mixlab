@@ -1,0 +1,207 @@
+"""Cross-gate regression for genuine frozen PCM and hostile *synthetic* ballots.
+
+This exercises the real packaged evaluator behind three different ML-07
+post-rating reports. The pre-rating side-assignment check has no ballot input.
+No person, music recording, licensed source or external service is involved.
+"""
+import copy
+import json
+import subprocess
+import sys
+import unittest
+
+from mixlab.quality.assignment_balance import audit_study_assignment
+from mixlab.quality.listener_position import inspect_listener_sides
+from mixlab.quality.pilot_sensitivity import inspect_real_pilot
+from mixlab.quality.reviewer_influence import inspect_real_reviewer_influence
+import test_quality_composed_m1_gates
+
+
+class FrozenBallotContractTests(unittest.TestCase):
+    def setUp(self):
+        self.base = test_quality_composed_m1_gates.CombinedM1GatesTests(
+            "test_all_four_gates_accept_checksum_bound_unanimous_candidate_votes"
+        )
+        self.base.setUp()
+        self.addCleanup(self.base.doCleanups)
+        self.base.generate_reviews([["candidate"] * 5 for _ in range(3)])
+        self.stash = tuple(self.base.ratings)
+        self.private = tuple(
+            self.base.pack / filename for filename in (
+                "receipt.json", "private/answer-key.json", "private/evidence.json"
+            )
+        )
+
+    def post_rating_gates(self):
+        b = self.base
+        return (
+            ("button", lambda: inspect_listener_sides(b.pack, b.ratings)),
+            ("pair", lambda: inspect_real_pilot(
+                b.study, b.pack, b.pinned, b.ratings)),
+            ("reviewer", lambda: inspect_real_reviewer_influence(
+                b.study, b.pack, b.pinned, b.ratings)),
+        )
+
+    def patch_rating(self, index, action):
+        file = self.stash[index]
+        data = json.loads(file.read_text(encoding="utf-8"))
+        action(data)
+        file.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+
+    def assert_no_private_leaks(self, report):
+        serialized = json.dumps(report, sort_keys=True, allow_nan=False)
+        for secret in (str(self.base.root), self.base.pinned,
+                       self.base.receipt["pack_id"], "synthetic-cross-gate-",
+                       "trial-001", "source_hashes"):
+            self.assertNotIn(secret, serialized)
+        self.assertIs(report["milestone_pass"], False)
+
+    def test_valid_ballots_remain_accepted_and_anonymized_by_all_gates(self):
+        before = [file.read_bytes() for file in self.private + self.stash]
+        result = audit_study_assignment(
+            self.base.study, self.base.pack, self.base.pinned)
+        self.assert_no_private_leaks(result)
+        for _, check in self.post_rating_gates():
+            self.assert_no_private_leaks(check())
+        self.assertEqual(
+            [file.read_bytes() for file in self.private + self.stash], before)
+
+    def test_all_ties_are_admissible_but_never_imply_preference(self):
+        self.base.generate_reviews([["Tie"] * 5 for _ in range(3)])
+        reports = dict((name, check()) for name, check in self.post_rating_gates())
+        for report in reports.values():
+            self.assert_no_private_leaks(report)
+        self.assertFalse(reports["button"]["sufficient_for_position_screen"])
+        self.assertFalse(reports["pair"]["minimum_data_for_pair_reference"])
+        self.assertTrue(reports["pair"]["pair_sensitivity_review_required"])
+        self.assertFalse(reports["reviewer"]["sufficient_for_reviewer_influence_screen"])
+        self.assertTrue(reports["reviewer"]["reviewer_influence_review_required"])
+
+    def test_eight_invalid_ballot_conditions_refused_by_every_rating_gate(self):
+        # Alter just the disposable private reviewer fixture; restore it before
+        # each next mutation. The same real ten WAVs and frozen hashes remain.
+        def one(index, callback):
+            self.patch_rating(index, callback)
+
+        cases = (
+            ("wrong_pack", lambda: one(0, lambda d: d.__setitem__("pack_id", "f" * 64))),
+            ("bad_reviewer", lambda: one(0, lambda d: d.__setitem__("reviewer", "listener 01"))),
+            ("duplicate_reviewer_casefold", lambda: one(1, lambda d: d.__setitem__(
+                "reviewer", "SYNTHETIC-CROSS-GATE-0"))),
+            ("bool_schema", lambda: one(0, lambda d: d.__setitem__("schema_version", True))),
+            ("missing_trial", lambda: one(0, lambda d: d["ratings"].pop())),
+            ("duplicate_trial", lambda: one(0, lambda d: d["ratings"].__setitem__(
+                1, copy.deepcopy(d["ratings"][0])))),
+            ("foreign_trial", lambda: one(0, lambda d: d["ratings"][0].__setitem__(
+                "trial", "trial-999"))),
+            ("unknown_choice", lambda: one(0, lambda d: d["ratings"][0].__setitem__(
+                "preference", "candidate"))),
+        )
+        frozen = [file.read_bytes() for file in self.private]
+        for label, mutate in cases:
+            with self.subTest(condition=label):
+                self.base.generate_reviews([["candidate"] * 5 for _ in range(3)])
+                mutate()
+                damaged_votes = [file.read_bytes() for file in self.stash]
+                for gate, check in self.post_rating_gates():
+                    with self.subTest(gate=gate):
+                        with self.assertRaises(ValueError) as error:
+                            check()
+                        for secret in (str(self.base.root), "listener 01",
+                                       "synthetic-cross-gate-", "trial-999"):
+                            self.assertNotIn(secret, str(error.exception))
+                        self.assertEqual([p.read_bytes() for p in self.stash],
+                                         damaged_votes)
+                        self.assertEqual([p.read_bytes() for p in self.private],
+                                         frozen)
+
+    def test_reusing_one_ballot_path_is_never_a_second_independent_listener(self):
+        self.base.ratings = [self.stash[0], self.stash[0], self.stash[2]]
+        for gate, check in self.post_rating_gates():
+            with self.subTest(gate=gate), self.assertRaises(ValueError):
+                check()
+        self.assert_no_private_leaks(audit_study_assignment(
+            self.base.study, self.base.pack, self.base.pinned))
+
+    def test_pre_rating_assignment_cannot_certify_invalid_ballots(self):
+        self.patch_rating(0, lambda d: d.__setitem__("pack_id", "f" * 64))
+        pre = audit_study_assignment(self.base.study, self.base.pack, self.base.pinned)
+        self.assert_no_private_leaks(pre)
+        self.assertNotIn("ratings", pre)
+        for gate, check in self.post_rating_gates():
+            with self.subTest(gate=gate), self.assertRaises(ValueError):
+                check()
+
+    def test_all_unusable_ballots_are_admitted_but_force_methodology_review(self):
+        self.base.generate_reviews([["Both unusable"] * 5 for _ in range(3)])
+        reports = {name: check() for name, check in self.post_rating_gates()}
+        for report in reports.values():
+            self.assert_no_private_leaks(report)
+        self.assertEqual(reports["button"]["decisive_vote_count"], 0)
+        self.assertIsNone(reports["pair"]["one_sided_pair_sign_reference_probability"])
+        self.assertTrue(reports["pair"]["pair_sensitivity_review_required"])
+        self.assertIsNone(reports["reviewer"]["full_candidate_preference_fraction"])
+        self.assertTrue(reports["reviewer"]["reviewer_influence_review_required"])
+
+    def test_public_clis_redact_invalid_ballot_paths_and_reviewers(self):
+        self.patch_rating(0, lambda d: d.__setitem__("reviewer", "listener 01"))
+        b = self.base
+        commands = (
+            ["mixlab.quality.listener_position", str(b.pack)],
+            ["mixlab.quality.pilot_sensitivity", str(b.study), str(b.pack)],
+            ["mixlab.quality.reviewer_influence", str(b.study), str(b.pack)],
+        )
+        for command in commands:
+            args = [sys.executable, "-m", *command, *map(str, b.ratings)]
+            if command[0] != "mixlab.quality.listener_position":
+                args += ["--expected-study-id", b.pinned]
+            with self.subTest(cli=command[0]):
+                result = subprocess.run(
+                    args, capture_output=True, text=True, timeout=12)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+                for secret in (str(b.root), "listener 01", b.pinned,
+                               b.receipt["pack_id"], "trial-001"):
+                    self.assertNotIn(secret, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+
+    def test_corrupted_raw_json_is_rejected_by_each_real_rating_gate(self):
+        # Use the actual bounded JSON readers, never patch the evaluator.
+        # Four syntactically/semantically malformed files must not be counted.
+        original = self.stash[0].read_bytes()
+        variants = (
+            ("trailing_document", original + b" []"),
+            ("duplicate_object_key", original.replace(
+                b'"schema_version": 1', b'"schema_version": 1, "schema_version": 1', 1)),
+            ("nonfinite_json", original.replace(
+                b'"schema_version": 1', b'"schema_version": NaN', 1)),
+            ("broken_utf8", original.replace(
+                b'"schema_version": 1', b'"schema_version": 1, "foreign": "\\xff"', 1)
+                .replace(b'\\xff', bytes([255]))),
+        )
+        for label, payload in variants:
+            with self.subTest(malformed=label):
+                self.stash[0].write_bytes(payload)
+                for gate, check in self.post_rating_gates():
+                    with self.subTest(gate=gate), self.assertRaises(ValueError) as e:
+                        check()
+                    self.assertNotIn(str(self.base.root), str(e.exception))
+                self.assertEqual(self.stash[0].read_bytes(), payload)
+                self.stash[0].write_bytes(original)
+
+    def test_symlinked_ballot_path_never_counts_as_independent_vote(self):
+        link = self.base.root / "private-synthetic-vote-link.json"
+        link.symlink_to(self.stash[0])
+        self.base.ratings = [link, self.stash[1], self.stash[2]]
+        for gate, check in self.post_rating_gates():
+            with self.subTest(gate=gate):
+                with self.assertRaises(ValueError) as e:
+                    check()
+                self.assertNotIn(str(self.base.root), str(e.exception))
+        self.assert_no_private_leaks(audit_study_assignment(
+            self.base.study, self.base.pack, self.base.pinned))
+
+
+if __name__ == "__main__":
+    unittest.main()
