@@ -41,6 +41,12 @@ _EMBED_ELEMENTS = frozenset({
     "iframe", "frame", "frameset", "object", "embed", "link", "base",
     "img", "picture", "source", "track", "video", "svg", "math",
 })
+# Python's HTMLParser reports tags in contexts that browsers treat as
+# inert/plaintext or conditionally hidden. Such a page could appear to
+# contain both correct A/B audio links while displaying no playable players.
+_INERT_OR_REINTERPRETED_CONTEXTS = frozenset({
+    "template", "plaintext", "xmp", "noscript", "textarea",
+})
 _RESOURCE_ATTRIBUTES = frozenset({
     "href", "srcset", "action", "formaction", "poster", "background",
     "cite", "manifest", "xlink:href", "data",
@@ -75,7 +81,7 @@ class _ReviewPageLinks(HTMLParser):
             self.unsafe_external_resource = True
         # HTMLParser lowercases element/attribute names. Do not whitelist
         # unknown resource-bearing tags or event-handler attributes.
-        if (tag in _EMBED_ELEMENTS
+        if (tag in _EMBED_ELEMENTS or tag in _INERT_OR_REINTERPRETED_CONTEXTS
                 or any(k.startswith("on") or k in _RESOURCE_ATTRIBUTES
                        or k == "style" or k in _HIDDEN_LISTENER_ATTRIBUTES
                        for k in attributes)
