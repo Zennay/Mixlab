@@ -1,0 +1,31 @@
+name: MixLab ML-07 envelope microtiming regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/alignment.py"
+      - "tests/test_quality_alignment.py"
+      - "docs/quality-envelope-microtiming.md"
+      - ".github/workflows/ml07-envelope-microtiming.yml"
+permissions:
+  contents: read
+jobs:
+  synthetic-envelope-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout immutable PR head (no credentials)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert immutable source SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile scoped source and synthetic tests
+        run: python3 -m py_compile mixlab/quality/alignment.py tests/test_quality_alignment.py
+      - name: Execute scoped synthetic QA without music or network
+        run: /usr/bin/time -f "ML07 synthetic wall_seconds=%e peak_rss_kib=%M" python3 -m unittest discover -s tests -p "test_quality_alignment.py" -v
+      - name: Execute canonical ML-07 quality and companion regressions
+        run: python3 -m unittest discover -s tests -p "test_quality.py" -v
