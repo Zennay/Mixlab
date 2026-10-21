@@ -31,6 +31,11 @@ def render_cue_timeline(duration, cue_details, *, clip_id):
         raise ValueError("Invalid private excerpt duration")
     if not isinstance(clip_id, str) or not clip_id.startswith("clip-"):
         raise ValueError("Invalid local clip label")
+    if duration == 0:
+        # A valid empty PCM excerpt contains no timeline to scale: do not
+        # turn a missing musical proposal into an HTML export failure.
+        return ('<p class="cue-timeline">Fragment zonder audiotijd: '
+                'geen cue-tijdlijn beschikbaar; handmatige controle vereist.</p>')
     safe_id = escape(clip_id, quote=True)
     title_id = safe_id + "-timeline-title"
     parts = [
