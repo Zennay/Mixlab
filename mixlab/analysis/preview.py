@@ -12,6 +12,7 @@ from . import EnergyOnsetProvider, ManualProvider
 from .meter import AccentMeterProvider
 from .source_receipt import source_identity, verify_source
 from .tonal import ChromaKeyProvider
+from .cue_timeline import render_cue_timeline
 from ..ingest import number
 
 MAX_CUES = 64
@@ -124,6 +125,11 @@ def _render_html(record):
                 (" … (eerste 64 zichtbaar)" if item["truncated"] else "") + "</p>")
     rhythm, tonality, structure = record["rhythm"], record["tonality"], record["structure"]
     warnings = "".join("<li>" + val(w) + "</li>" for w in record["warnings"])
+    timeline = render_cue_timeline(record["duration_seconds"], {
+        "beat_seconds": rhythm["beat_cues"],
+        "downbeat_seconds": structure["downbeat_cues"],
+        "phrase_seconds": structure["phrase_cues"],
+    }, clip_id="clip-01")
     return ("<!doctype html><html lang=\"nl\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             "<meta name=\"referrer\" content=\"no-referrer\">"
@@ -132,9 +138,10 @@ def _render_html(record):
             "<style>body{font:16px system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;"
             "line-height:1.5;color:#202124}main{display:grid;gap:1rem}section{border:1px solid #ccc;"
             "padding:1rem;border-radius:.6rem}th{text-align:left;padding-right:2rem}td{overflow-wrap:anywhere}"
-            "ul{padding-left:1.2rem}small{color:#555}</style></head><body><main>"
+            "ul{padding-left:1.2rem}small{color:#555}.cue-timeline{margin:1rem 0;max-width:100%}.cue-timeline svg{width:100%;height:auto;display:block}.cue-timeline figcaption{font-size:.87rem;color:#444;margin:.25rem 0}@media print{section{break-inside:avoid}}</style></head><body><main>"
             "<h1>MixLab · privé cue-voorstellen</h1><p>Alleen-lezen, lokaal verwerkt. "
             "Geen audio of bestandslocatie in dit overzicht. Geen renderautorisatie.</p>"
+            "<section><h2>Onbevestigde cue-tijdlijn</h2>" + timeline + "</section>"
             "<section><h2>Tempo en beatgrid</h2><table>" +
             rows([("BPM", rhythm["bpm"]), ("Herkomst", rhythm["source"]),
                   ("Indicatieve score", rhythm["tempo_score"]),
