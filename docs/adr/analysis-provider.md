@@ -177,3 +177,44 @@ correct source locally; HTML is **not** an independently signed review
 receipt. Even an apparently aligned beat/bar/phrase image is not proof
 of a musically usable transition or of legal rights. The human/manual
 cue-review and real-audio evidence gates remain unchanged.
+
+
+### 21 October · Side-by-side: saved private cue receipt versus proposals
+
+After saving the receipt from `analysis.manual_review`, the operator may
+inspect it next to a **fresh source-matched heuristic proposal**, locally:
+
+```bash
+python3 -m mixlab.analysis.receipt_compare \
+  /private/library/clip.wav /private/confirmed-cues.json \
+  --format html > /private/cue-comparison.html
+
+# Optional private, source-hash-addressed JSON for local archiving only:
+python3 -m mixlab.analysis.receipt_compare \
+  /private/library/clip.wav /private/confirmed-cues.json \
+  --format json > /private/cue-comparison.json
+```
+
+The route first reopens the saved receipt using its existing strict bounded
+JSON import and `ManualProvider` admission, reanalyses the same original PCM16
+locally with the existing read-only `preview` command, and checks the exact
+source content and physical file identity across both operations. It fails
+closed if a receipt refers to another source or that file changes during
+read. This is **file integrity**, not a cryptographic signature, proof that
+a real person listened, or permission to publish/mix the music.
+
+The HTML presents two visibly distinct panels on the same real seconds axis:
+(1) heuristic BPM, key, beats, downbeats, phrases and provider provenance;
+(2) operator-declared BPM, first beat, key, downbeats and phrases. The manual
+receipt **never stores a full confirmed beatgrid**, so its panel omits that
+lane entirely rather than showing a fabricated beatgrid or falsely claiming
+that musical beats were absent. Each cue lane lists its source count and
+displays at most the first 64 markers. The HTML contains neither private
+paths, annotator identity, audio bytes nor source hashes, and has no
+JavaScript/network access. The separate private JSON contains the source
+hash to let its owner match their own source; do not publish it.
+
+No changes to a mixing recipe, public research outcome, rights verification,
+automatic acceptance or render authorization result from comparing notes.
+The old independent real-audio/human approval gates remain unchanged; this
+new operator tool does not satisfy them.
