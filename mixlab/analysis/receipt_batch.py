@@ -12,6 +12,8 @@ import json
 
 from .cue_timeline import render_cue_timeline
 from .receipt_compare import compare_receipt, _cue
+from .receipt_session import load_session
+from .source_receipt import source_identity, verify_source
 
 MAX_PAIRS = 8
 
@@ -21,16 +23,24 @@ def compare_batch(pairs):
         raise ValueError("Choose one to eight explicit local receipt/source pairs")
     clips = []
     seen = set()
+    observed_sources = []
     for index, pair in enumerate(pairs, 1):
         if (not isinstance(pair, (tuple, list)) or len(pair) != 2 or
                 any(not isinstance(part, str) or not part for part in pair)):
             raise ValueError("Invalid private receipt/source selection")
+        observed = source_identity(pair[0])
         current = compare_receipt(pair[0], pair[1])
         sha = current["source_sha256"]
         if sha in seen:
             raise ValueError("Duplicate audio source in private comparison")
         seen.add(sha)
+        observed_sources.append((pair[0], observed, sha))
         clips.append({"id": f"clip-{index:02d}", "comparison": current})
+    # A report is valid only if the *entire selection* still refers to all
+    # the same physical PCM bytes at completion. Do not emit a partial
+    # report after the first source changes while later clips are analysed.
+    for path, identity, sha in observed_sources:
+        verify_source(path, identity, sha)
     return {
         "schema_version": 1,
         "kind": "private_operator_cue_batch",
@@ -137,13 +147,17 @@ def render_html(document):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Compare one to eight ordered, local PCM16/manual receipt pairs offline")
-    parser.add_argument("--pair", nargs=2, action="append", required=True,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--pair", nargs=2, action="append",
                         metavar=("WAV", "RECEIPT"),
                         help="exact source plus its own private manual-review JSON")
+    source.add_argument("--session",
+                        help="private local JSON session with 1-8 relative WAV/receipt pairs")
     parser.add_argument("--format", choices=("html", "json"), default="html")
     args = parser.parse_args(argv)
     try:
-        result = compare_batch(args.pair)
+        pairs = load_session(args.session) if args.session else args.pair
+        result = compare_batch(pairs)
         rendered = render_html(result) if args.format == "html" else json.dumps(
             result, allow_nan=False, sort_keys=True, indent=2) + "\n"
     except (OSError, ValueError, TypeError, OverflowError, KeyError, RecursionError):
