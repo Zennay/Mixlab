@@ -89,6 +89,9 @@ def _render_html(document):
 
     rows = []
     details = []
+    # One absolute time ruler across the eight locally selected excerpts;
+    # shorter clips visibly end early instead of appearing equally long.
+    common_duration = max(track["duration_seconds"] for track in document["clips"])
     for track in document["clips"]:
         cells = [
             track["id"], track["bpm"], track["key"],
@@ -106,7 +109,7 @@ def _render_html(document):
             "<details><summary>Inspecteer " + escape(track["id"]) +
             " · cuevoorstellen, niet bevestigd</summary>" +
             render_cue_timeline(track["duration_seconds"], cue_data,
-                                clip_id=track["id"]) +
+                                clip_id=track["id"], scale_seconds=common_duration) +
             cue("Beats", cue_data["beat_seconds"]) +
             cue("Maatstarts", cue_data["downbeat_seconds"]) +
             cue("Frasestarts", cue_data["phrase_seconds"]) +
@@ -135,7 +138,10 @@ def _render_html(document):
         "<section><table><thead><tr><th>Fragment</th><th>BPM</th><th>Toonsoort</th>"
         "<th>Beats</th><th>Maatstarts</th><th>Frasestarts</th><th>Status</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section>"
-        "<h2>Cue-inspectie per fragment</h2>" + "".join(details) +
+        "<h2>Cue-inspectie per fragment</h2>"
+        "<p>Alle fragmenten gebruiken dezelfde absolute seconden-as; "
+        "de gestippelde eindlijn toont een eerder eindigend fragment. "
+        "Dit is géén indicatie van mixbaarheid.</p>" + "".join(details) +
         "<h2>Beperkingen</h2><ul>" + notes +
         "</ul><small>Bronhashes en fysieke paden worden niet in deze HTML opgenomen.</small>"
         "</body></html>\n"
