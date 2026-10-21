@@ -68,6 +68,7 @@ def render_html(document):
     for entry in clips:
         item = entry["comparison"]
         proposal, manual = item["proposals"], item["operator_declaration"]
+        differences = item["review_differences"]
         ident = escape(entry["id"])
         def val(x):
             return escape(str(x)) if x is not None else "Onbekend"
@@ -75,7 +76,9 @@ def render_html(document):
             "<tr><th scope=\"row\">" + ident + "</th><td>" +
             val(proposal["bpm"]) + "</td><td>" + val(manual["bpm"]) +
             "</td><td>" + val(proposal["key"]) + "</td><td>" +
-            val(manual["key"]) + "</td></tr>"
+            val(manual["key"]) + "</td><td>" +
+            val(differences["bpm_absolute_difference"]) +
+            "</td><td>" + val(differences["key_text_relation"]) + "</td></tr>"
         )
         proposals = {
             "beat_seconds": proposal["beats"],
@@ -108,6 +111,16 @@ def render_html(document):
             ". Een volledig handmatig beatgrid is niet opgeslagen.</p>" +
             manual_svg + _cue("Zelf ingevoerde maatstarts", manual["downbeats"]) +
             _cue("Zelf ingevoerde frasestarts", manual["phrases"]) +
+            "<h3>Letterlijke verschillen · geen juistheidsbewijs</h3>"
+            "<p>Absoluut BPM-verschil: " +
+            val(differences["bpm_absolute_difference"]) +
+            " · maatstarts (voorstel / eigen): " +
+            val(differences["proposed_downbeat_count"]) + " / " +
+            val(differences["own_downbeat_count"]) +
+            " · frasestarts (voorstel / eigen): " +
+            val(differences["proposed_phrase_count"]) + " / " +
+            val(differences["own_phrase_count"]) +
+            ". Geen van beide bronnen is hier onafhankelijk op juistheid beoordeeld.</p>"
             "</details>"
         )
     limits = "".join("<li>" + escape(s) + "</li>" for s in document["limitations"])
@@ -134,7 +147,8 @@ def render_html(document):
         'De gestippelde grens markeert waar een korter fragment ophoudt.</p>'
         '<section><table><thead><tr><th>Fragment</th>'
         '<th>BPM-voorstel</th><th>Eigen BPM</th>'
-        '<th>Toonsoortvoorstel</th><th>Eigen toonsoort</th></tr>'
+        '<th>Toonsoortvoorstel</th><th>Eigen toonsoort</th>'
+        '<th>Absoluut BPM-verschil</th><th>Toonsoorttekst</th></tr>'
         '</thead><tbody>' + "".join(rows) + '</tbody></table></section>'
         '<h2>Bekijk details per fragment</h2>' + "".join(panels) +
         '<h2>Grenzen</h2><ul>' + limits + '</ul>'
