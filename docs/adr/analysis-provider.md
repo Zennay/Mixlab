@@ -129,3 +129,28 @@ anonymization. Empty cue categories stay unavailable, not magically
 verified. Nothing automatically updates recipe/cache, rights, public research
 evidence or production mixes. These are **product-facing manual controls**,
 not a substitute for real-track evaluation or blind listener review.
+
+
+### 21 October · Reopen your saved manual cue receipt
+
+A receipt produced by the explicit manual-review CLI can be saved privately and
+later inspected against its **original PCM16 audio** without activating any
+render or research gates:
+
+```bash
+python3 -m mixlab.analysis.receipt_reopen \
+  /private/library/clip.wav /private/confirmed-cues.json \
+  > /private/reopened-cues.json
+```
+
+The importer uses the existing bounded, duplicate-key-rejecting, regular-file
+JSON admission. It requires the complete v1 self-declaration contract with
+`rights_verified=false`, `render_authorized=false`, and
+`human_confirmation_independently_verified=false`. It reconstructs the
+original `ManualProvider` timing/key admission, checks strict ordered
+on-beat markers, validates the exact source bytes with the single-descriptor
+PCM reader, and refuses a replaced audio file. Paths and annotator identity are
+not emitted. The output is a **reopened, self-declared private cue note**, not
+proof that the original operator listened, that the original document was
+authentic/signed or that an audio excerpt may legally be published. Existing
+M1 rights and human musical-quality gates are still required.
