@@ -57,7 +57,7 @@ def confirm(path, *, expected_sha256, bpm, first_beat=0.,
     verify_source(path, original_identity, expected_sha256)
     return {
         "schema_version": 1,
-        "kind": "private_human_confirmed_cue_receipt",
+        "kind": "private_operator_declared_cue_receipt",
         "source_sha256": expected_sha256,
         "provider": record.provider,
         # ManualProvider's internal version includes the supplied human label.
@@ -71,14 +71,16 @@ def confirm(path, *, expected_sha256, bpm, first_beat=0.,
         "key": record.key,
         "timing_source": "manual",
         "key_source": record.key_source,
-        "human_confirmation": True,
+        "operator_declared_manual_review": True,
+        "human_confirmation_independently_verified": False,
         "human_identity_exported": False,
         "rights_verified": False,
         "render_authorized": False,
         "research_quality_verified": False,
-        "note": ("Only the explicitly entered cues are human-confirmed. "
-                 "Missing key/downbeats/phrases remain unavailable; "
-                 "this receipt does not modify any rendering metadata."),
+        "note": ("Only explicitly entered cues are labelled operator-declared manual. "
+                 "The program cannot establish a real human listened to the file. "
+                 "Missing key/downbeats/phrases remain unavailable and no "
+                 "rendering metadata is changed."),
     }
 
 
