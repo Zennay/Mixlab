@@ -16,6 +16,31 @@ from .receipt_reopen import reopen
 from .source_receipt import source_identity, verify_source
 
 
+def _review_differences(proposals, operator):
+    """Literal differences only; no accuracy score or choice of correct cue."""
+    measured_bpm = proposals["rhythm"]["bpm"]
+    own_bpm = operator["bpm"]
+    proposed_key = proposals["tonality"]["key"]
+    own_key = operator["key"]
+    key_relation = ("proposal_unavailable" if proposed_key is None else
+                    "manual_unavailable" if own_key is None else
+                    "same_text" if proposed_key == own_key else "different_text")
+    return {
+        "bpm_absolute_difference": (round(abs(own_bpm - measured_bpm), 3)
+                                    if measured_bpm is not None else None),
+        "key_text_relation": key_relation,
+        "proposed_downbeat_count": proposals["structure"]["downbeat_cues"]["count"],
+        "own_downbeat_count": len(operator["downbeats_seconds"]),
+        "proposed_phrase_count": proposals["structure"]["phrase_cues"]["count"],
+        "own_phrase_count": len(operator["phrase_starts_seconds"]),
+        "accuracy_established": False,
+        "interpretation": (
+            "Literal review differences only. Missing proposals are unknown; "
+            "the self-declared receipt and heuristics are not independently scored."
+        ),
+    }
+
+
 def compare_receipt(path, receipt):
     """Compare independent measured proposals with one exact-source manual receipt."""
     original = source_identity(path)
@@ -31,6 +56,12 @@ def compare_receipt(path, receipt):
         "kind": "private_cue_receipt_comparison",
         "source_sha256": manual["source_sha256"],
         "duration_seconds": suggestions["duration_seconds"],
+        "review_differences": _review_differences(suggestions, {
+            "bpm": manual["bpm"],
+            "key": manual["key"],
+            "downbeats_seconds": manual["downbeats_seconds"],
+            "phrase_starts_seconds": manual["phrase_starts_seconds"],
+        }),
         "proposals": {
             "bpm": suggestions["rhythm"]["bpm"],
             "bpm_source": suggestions["rhythm"]["source"],
@@ -75,6 +106,7 @@ def render_html(document):
     proposed = document["proposals"]
     manual = document["operator_declaration"]
     duration = document["duration_seconds"]
+    differences = document["review_differences"]
     def value(x):
         return escape(str(x)) if x is not None else "Onbekend"
     proposed_cues = {
@@ -129,7 +161,19 @@ def render_html(document):
         manual_panel +
         _cue("Zelf ingevoerde maatstarts", manual["downbeats"]) +
         _cue("Zelf ingevoerde frasestarts", manual["phrases"]) + '</section>'
-        '<section><h2>3. Beslissing blijft bij jou</h2><p>' +
+        '<section><h2>3. Letterlijke verschillen · geen nauwkeurigheid</h2>'
+        '<dl><dt>Absoluut BPM-verschil</dt><dd>' + value(
+            differences["bpm_absolute_difference"]) +
+        '</dd><dt>Toonsoorttekst</dt><dd>' + value(
+            differences["key_text_relation"]) +
+        '</dd><dt>Maatstarts voorstel / eigen</dt><dd>' +
+        value(differences["proposed_downbeat_count"]) + ' / ' +
+        value(differences["own_downbeat_count"]) +
+        '</dd><dt>Frasestarts voorstel / eigen</dt><dd>' +
+        value(differences["proposed_phrase_count"]) + ' / ' +
+        value(differences["own_phrase_count"]) + '</dd></dl>'
+        '<p>' + escape(differences["interpretation"]) + '</p></section>'
+        '<section><h2>4. Beslissing blijft bij jou</h2><p>' +
         escape(document["warning"]) + '</p><p>De bron is lokaal opnieuw '
         'geverifieerd, maar de JSON-notitie is niet cryptografisch ondertekend. '
         'Geen audio, namen, bestandspaden of bronhashes opgenomen. '
