@@ -24,8 +24,9 @@ def _position(second, duration):
     return LEFT + (WIDTH - LEFT - RIGHT) * second / duration
 
 
-def render_cue_timeline(duration, cue_details, *, clip_id, scale_seconds=None):
-    """Produce accessible, offline SVG on a common or per-clip time axis."""
+def render_cue_timeline(duration, cue_details, *, clip_id, scale_seconds=None,
+                        include_beats=True):
+    """Produce offline SVG, optionally omitting a nonexistent manual beatgrid."""
     if (isinstance(duration, bool) or not isinstance(duration, (int, float))
             or not isfinite(duration) or duration < 0 or duration > 250):
         raise ValueError("Invalid private excerpt duration")
@@ -63,7 +64,11 @@ def render_cue_timeline(duration, cue_details, *, clip_id, scale_seconds=None):
             'fill="#36404a" font-size="13">'
             f'{scale_seconds * fraction:.1f}s</text>'
         )
+    if type(include_beats) is not bool:
+        raise ValueError("Invalid cue lane selection")
     notes = []
+    if not include_beats:
+        notes.append("Handmatige volledige beatgrid niet opgeslagen; beatrij weggelaten.")
     if scale_seconds > duration:
         endpoint = _position(duration, scale_seconds)
         parts.append(
@@ -73,7 +78,7 @@ def render_cue_timeline(duration, cue_details, *, clip_id, scale_seconds=None):
             'stroke="#5f6873" stroke-width="2" stroke-dasharray="4 3"/>'
         )
         notes.append(f"Fragment eindigt op {duration:.1f}s; de as loopt door tot {scale_seconds:.1f}s.")
-    for index, (label, key, color) in enumerate(BANDS):
+    for index, (label, key, color) in enumerate(BANDS if include_beats else BANDS[1:]):
         row = 70 + index * 61
         item = cue_details[key]
         count, seconds, truncated = item["count"], item["seconds"], item["truncated"]
