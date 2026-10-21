@@ -79,3 +79,17 @@ sensitive user paths/annotation identifiers back into stderr. The returned
 aggregate JSON still contains the operator's explicitly supplied reference IDs,
 not audio paths. These are privacy/product-integrity changes, not a completed
 real-music evaluation; the separate ML-03/M1 human evidence gates remain intact.
+
+
+### 21 October · Inspectable multi-clip cue details
+
+The multi-clip HTML report now has **per-clip expandable panels** under the
+comparison table: up to 64 proposed beat timestamps, downbeats and phrase
+boundaries per clip, plus key correlation/margin, bar/phrase consistency and
+source-specific provider warnings. The full observed cue count and truncation
+notice remain present. JSON carries the same `cue_details` and
+`provider_warnings` alongside exact source hashes for private audit. Neither
+output guesses a compatible next song or promotes a proposed cue to a verified
+manual annotation; the HTML still omits file paths and SHA values. A human
+reviewer can inspect exactly where the heuristic suggests a transition without
+generating an audio render.
