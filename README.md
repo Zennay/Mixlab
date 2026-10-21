@@ -2,13 +2,625 @@
 
 An offline AI-DJ research project: understand track segments, discover surprising combinations, render real transitions and eventually build full sets around context and an energy journey.
 
-**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. The current main branch uses manually aligned, equal-tempo excerpts. The open ML-03 product PR adds optional CPU-only heuristic key/downbeat/phrase proposals and private cue review, but no real-music benchmark, render authorization or production acceptance is claimed; stems, discovery and set planning remain future work.
+**Current phase: M1 — Transition Lab (OPEN).** MixLab now has a private real-music import route, a visual two-deck cue editor, a local transition Studio, a two-song full-length WAV exporter, a continuous multi-track WAV+chaptered player, a guided private playlist and transition-idea workflow, and a one-command playable three-song synthetic DJ demo. These are creative product features, not proof of superior musical quality. Equal-BPM/manual-cue constraints remain. Automatic downbeat/phrase/key analysis, actual source separation, approved real-track listening evidence and blinded preference comparisons have **not** passed M1 gates.
 
 - [Notion project](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
 - [Current handoff](https://app.notion.com/p/3e79e19ac95581f4bf15c26a833da642)
 - [Architecture and evaluation](docs/architecture.md)
 - [Infrastructure plan](docs/infrastructure.md)
 - [Worker tasks and ownership](docs/worker-plan.md)
+
+## Probeer MixLab direct — geen muziekbestanden nodig
+
+Er is nu een **volledig lokale, luisterbare DJ-productdemo**. Deze maakt
+drie originele synthetische 120-BPM-nummers, rendert acht echte
+overgangsvarianten verdeeld over twee paren, één complete **drie-track
+WAV-set**, een visuele golfvormspeler met hoofdstukken en de Set
+Composer om zelf overgangen te kiezen. Er worden geen beschermde muziektracks, modellen of
+externe diensten gedownload; voor deze WAV-demo is geen FFmpeg nodig.
+
+~~~bash
+python3 -m mixlab.demo /private/mixlab-demo-01
+~~~
+
+Open vervolgens **/private/mixlab-demo-01/index.html** in je browser.
+Gebruik een nieuwe directory buiten je Git-checkout. De
+synthetische productdemo is géén bewijs voor echte muziekkwaliteit of een
+geblindeerde gebruikersstudie. Zie [de demo-handleiding](docs/offline-dj-demo.md).
+
+### Eigen muziek: een complete set in één begeleide opdracht
+
+Kies 2–11 nummers in een vaste afspeelvolgorde, leg handmatig de werkelijke
+BPM, bronrechten en overgangscues vast en laat MixLab **alle bestaande
+DSP-overgangen renderen**. De originele muziek blijft op je eigen computer;
+MP3/FLAC/M4A vereisen reeds geïnstalleerde FFmpeg/FFprobe en canonieke
+44,1 kHz PCM16-WAV werkt zonder extra runtimepakket.
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 --beats 16 \
+  --full-set-wav /private/mixlab-party.wav \
+  --family bass_swap
+~~~
+
+Met lokaal geïnstalleerde **FFmpeg/FFprobe** kun je in dezelfde
+opdracht ook een compacte privé-MP3 of verliesvrije FLAC publiceren.
+Voeg bijvoorbeeld `--delivery /private/mixlab-party.mp3 --bitrate-kbps 192`
+toe. Als optionele MP3/FLAC-export niet lukt, blijft de echte WAV
+beschikbaar. [Private Delivery-handleiding](docs/private-set-delivery.md).
+
+De wizard levert nu **meteen** de volledige
+**/private/mixlab-party.wav** én de offline
+**/private/mixlab-party.wav.player.html** naast de gewone Studio en Set Composer.
+Je kunt tijdens het invoeren ook `--style pair-002:echo_exit` kiezen
+om precies die tweede overgang expliciet een andere renderstijl te geven.
+
+Wil je de stijlkeuze juist eerst handmatig beluisteren? Open dan
+**/private/mixlab-playlist-01/set-composer/index.html**, kies je route,
+download `mixlab-set-plan.private.json` en render die later afzonderlijk:
+
+~~~bash
+python3 -m mixlab.set_composer render \
+  /private/mixlab-playlist-01 \
+  /private/mixlab-set-plan.private.json \
+  /private/mixlab-party.wav
+~~~
+
+De offline speler heeft een interactieve golfvorm, hoofdstukken per
+overgang en CUE-export. Je kunt
+de handmatige invoer vooraf vastleggen met `--manifest-only` en later
+zonder opnieuw typen renderen met `--resume`.
+
+Wil je creatieve cuevoorstellen op basis van een **handmatig bevestigd**
+beat/downbeat-grid en lokale RMS-energie, gebruik dan `--ideas`
+(vereist een expliciet ingevulde eerste downbeat voor iedere track).
+Elke keuze vereist handmatige goedkeuring; geen automatische muzikale
+kwaliteit of echte phrase-detectie wordt geclaimd.
+
+Lees [de Playlist Studio-handleiding](docs/guided-playlist-studio.md),
+[de offline Set Composer](docs/offline-set-composer.md),
+[de Full Set Player](docs/private-full-set-player.md) en
+[Transition Idea Board](docs/transition-idea-board.md),
+[de nieuwe complete cue-goedkeuringsflow](docs/cue-idea-production-workflow.md),
+[Instant Set](docs/instant-private-full-set.md) en
+[Set Gallery](docs/offline-full-set-gallery.md).
+
+### Vergelijk twee complete mixes zonder opnieuw te beginnen
+
+Render twee privé volledige playlists met verschillende al bestaande,
+écht gerenderde overgangsstijlen en wissel in de lokale browser
+op dezelfde afspeelpositie:
+
+~~~bash
+python3 -m mixlab.set_gallery \
+  /private/mixlab-playlist-01 \
+  /private/mixlab-variant-gallery
+~~~
+
+Open **/private/mixlab-variant-gallery/index.html**. Dit is geen
+blinde kwaliteitsmeting: de stijlkeuzes zijn zichtbaar en de muziek
+blijft lokaal. Gebruik [de volledige Set Gallery-handleiding](docs/offline-full-set-gallery.md)
+voor tot vier varianten.
+
+### Event Brief Studio — stel een DJ-set samen vanuit één lokaal scherm
+
+Vanaf een lokale rechtenveilige muziekmap kun je **een echte event-brief
+instellen**, zonder zelf een commando voor elke plannerkeuze te typen.
+Kies een gewenste energiecurve, aantal nummers, handmatig geverifieerde BPM,
+mood/genre, vaste opener/afsluiter en nummers die niet gedraaid mogen worden.
+De browser toont direct een bewerkbare setvolgorde en energiecurve.
+
+~~~bash
+python3 -m mixlab.journey notes /private/music /private/music/energy-notes.private.json
+python3 -m mixlab.journey_workspace /private/music /private/music/energy-notes.private.json /private/music/event-studio.private.html
+~~~
+
+Open `/private/music/event-studio.private.html` lokaal. Exporteer een nieuw
+`mixlab-event-journey.private.json` naar je eigen muziekmap en gebruik dat
+als `--journey-plan` in de bestaande `mixlab.playlist_studio` (met
+`--full-set-wav` voor de werkelijke volledige mix). De Studio checkt de
+originele bronhashes opnieuw en vraagt expliciete toestemming, rechten,
+herkomst en de echte, door jou gecontroleerde overgangscues.
+
+**Dit analyseert geen geluid automatisch.** De volgorde is een beperkt,
+offline voorstel op basis van jouw notities; M1-kwaliteit en luistervoorkeur
+zijn niet bewezen. [Volledige Event Brief-handleiding](docs/offline-event-brief-studio.md).
+
+### Eén opdracht: goedgekeurde set → echte WAV, optionele MP3 en draaiboek
+
+Na het lokaal opstellen van een Energy Journey/Event Brief-plan en het
+ondertekenen van je handmatig gecontroleerde rechten-/cueformulier kan de
+nieuwe **Event Publisher** in één opdracht het hele privéfeestpakket
+opleveren: een echte complete WAV uit de bestaande DSP-engine, offline
+hoofdstukspeler, eventueel MP3/FLAC en een printbaar operator-draaiboek
+met de daadwerkelijke hoofdstukoffsets.
+
+~~~bash
+python3 -m mixlab.event_publish \
+  /private/music \
+  /private/music/event-plan.private.json \
+  /private/music/mixlab-event-approved.private.json \
+  /private/mixlab-party-01 \
+  --delivery mp3 --start 19:30
+~~~
+
+De opgegeven outputmap moet **nieuw zijn** en buiten Git en de muziekmap
+liggen. MixLab hercontroleert bron- en planhashes en blijft expliciet
+vragen of je de gekozen volgorde echt goedkeurt. Per overgang worden de
+eigen reeds ondersteunde DSP-families gebruikt. Het audiomasterbestand
+blijft behouden als optionele compressie of draaiboekexport mislukt.
+Geen bronuploads, automatische rechtencontrole of onbewezen M1-bewijs.
+[Private Event Publisher-handleiding](docs/one-command-private-event-production.md).
+
+### Je complete event in één privé startpagina
+
+Dezelfde Event Publisher maakt nu optioneel automatisch
+\`/private/mixlab-party-01/index.html\`: open die lokale HTML
+om de daadwerkelijke setlengte, echte hoofdstukmarkeringen,
+de WAV-speler, eventuele MP3/FLAC en het operator-draaiboek
+vanuit één overzichtelijk dashboard te openen. De pagina
+is offline en gebouwd op de hashgecontroleerde master-WAV.
+[Handleiding](docs/private-event-dashboard.md).
+
+### Neem een complete privésessie mee als één ZIP
+
+Voor een eigen USB-drive of offline backup kun je in dezelfde
+\`python3 -m mixlab.event_publish ...\` opdracht de optionele
+\`--bundle\` vlag toevoegen. MixLab bouwt dan een nieuw
+\`final-set.private.zip\` uit de **werkelijk gerenderde**
+WAV/receipts, beschikbare MP3/FLAC, spelers, eventdashboard
+en draaiboek. In het ZIP zitten géén originele muzieksources
+of interne rechten-/cue-manifests. Alles blijft lokaal;
+de rechten om een mix te delen moet je zelf hebben.
+De bundel is optioneel zodat grote WAV-bestanden niet
+onnodig extra opslag vragen.
+[Handleiding](docs/private-portable-event-bundle.md).
+
+### Offline eventdraaiboek uit je échte, complete DJ-set
+
+Heb je een volledige MixLab-WAV mét originele Studio en privéreceipt
+gerenderd, dan kan MixLab er direct een **printbaar showdraaiboek** van
+maken. Dit gebruikt de exacte, hashgebonden WAV-hoofdstukken in plaats van
+geschatte tracklengtes, inclusief per overgang de echte start-offset.
+Voer optioneel zelf een geplande lokale begintijd in om kloktijden en
+verwacht eindmoment te projecteren; voeg DJ-notities toe, doorloop de
+soundcheck-checklist en exporteer een privé CSV-cuesheet.
+
+~~~bash
+python3 -m mixlab.show_runbook /private/mixlab-event-session /private/my-event.wav /private/my-event.runbook.private.html
+~~~
+
+Open de HTML lokaal. Een ontbrekend of gewijzigd bron-/renderreceipt maakt
+geen geldig draaiboek; de bestaande Studio/WAV-bronintegriteitscontrole
+blijft verplicht. De afspeelklok, niet de geplande tijd, is leidend bij
+pauzes of live onderbrekingen. [Show Runbook-handleiding](docs/offline-dj-show-runbook.md).
+
+### Rechten en overgangscues in één privé-browserformulier
+
+Maak van jouw voorgestelde DJ-set een echte volledige set zonder voor
+elk nummer opnieuw BPM/rechten/cues in de terminal over te typen.
+Een nieuw offline formulier toont alle SHA-gebonden nummers, verzamelt
+jouw expliciete gebruiksrechten en bronherkomst, en de echte door jou
+gecontroleerde A/B-cuepunten. Exporteer daarna een nieuw privé-
+goedkeuringsbestand en voer een **bestaande Playlist Studio-render**
+uit, met één laatste expliciete toestemming vóór er muziek verwerkt wordt.
+
+~~~bash
+python3 -m mixlab.playlist_approval /private/music /private/music/set-plan.private.json /private/music/playlist-approval.private.html
+# Open de HTML lokaal en exporteer mixlab-event-approved.private.json.
+python3 -m mixlab.playlist_studio /private/music /private/music/approved-sources.private.json /private/event-session --journey-plan /private/music/set-plan.private.json --approval-file /private/music/mixlab-event-approved.private.json --beats 16 --full-set-wav /private/event.wav
+~~~
+
+In dit formulier kun je inmiddels ook per nummer een **lokaal
+audiobestand kiezen en direct beluisteren**: tik op de afspeelkop en
+markeer eerste downbeat, outgoing A of incoming B cue. Er wordt alleen
+een lokale tijdelijke blob-afspeel-URL gebruikt; de originele audio
+wordt niet geüpload. Je handmatig opgegeven BPM ondersteunt
+vier-beat-sprongen, niet automatisch beatmatching.
+
+Je kunt vervolgens **twee lokale nummers als overgang samen voorluisteren**:
+de nieuwe knop \`Rehearse A→B transition\` maakt een tijdelijke
+equal-power browser-crossfade van de exact handmatig opgegeven
+startcues en overgangslengte, met stopknop en voortgang.
+Dit is een creatieve preview en **geen** rendering of maat voor
+kwaliteit van de definitieve DSP-overgang. Er wordt geen audio
+geüpload.
+
+Verder kies je voortaan in dit formulier **per overgang de echte
+rendermethode** (\`baseline\`, \`bass_swap\`, \`echo_exit\`
+of \`hard_cut\`). Bij een volledige \`--full-set-wav\`
+past de bestaande MixLab-renderer die expliciete pair-keuzes toe:
+geen losse \`--style pair-001:...\` argumenten nodig. De
+browser-crossfade is uitsluitend een creatieve vergelijking; de
+definitieve uitvoer komt uit de echte canonieke DSP-recepten.
+
+Een browserinvoer is **geen juridisch rechtenbewijs** en vervangt geen
+muzikale analyse of echte luisteracceptatie. De renderer controleert bron-
+SHA, plan-SHA, cuegrenzen, rechtenverklaring en finale menselijke
+goedkeuring opnieuw. [Volledige formulierhandleiding](docs/offline-playlist-approval.md).
+
+### Nieuw: plan een energieboog en laat MixLab de volgorde voorstellen
+
+Je hoeft de volgorde niet meer volledig zelf te verzinnen. Leg eerst per
+lokaal nummer de **handmatig geverifieerde BPM**, energie (1–10) en eventueel
+genre/mood vast. Laat de offline planner vervolgens een opbouwende, piekende
+of aflopende set van 2–11 nummers voorstellen. In een lokale browser kun je
+de energiecurve bekijken en nummers omhoog of omlaag bewegen.
+
+~~~bash
+python3 -m mixlab.journey notes /private/music /private/music/energy-notes.private.json
+python3 -m mixlab.journey plan /private/music /private/music/energy-notes.private.json /private/music/journey.private.json --tracks 5 --shape late-peak
+python3 -m mixlab.journey_board /private/music /private/music/journey.private.json /private/music/journey-board.private.html
+~~~
+
+Open daarna `/private/music/journey-board.private.html`, bewerk de
+voorgestelde volgorde en exporteer de nieuwe privé-JSON in je muziekmap.
+Geef die aan de gewone Playlist Studio met
+`--journey-plan /private/music/mixlab-journey-curated.private.json` en
+eventueel `--full-set-wav /private/my-event.wav`. De Studio verifieert alle
+SHA-256-bronnen opnieuw, vraagt expliciet toestemming voor de voorgestelde
+volgorde, rechten, herkomst en handmatige cues en rendert pas daarna de
+bestaande echte WAV-set. Er wordt **geen BPM of muzikaal oordeel automatisch
+uit muziek afgeleid**: dit is heuristische setplanning op menselijke notities.
+[Volledige handleiding](docs/energy-journey-planner.md).
+
+### Vier setopbouwen vergelijken in een offline browser
+
+Met dezelfde handmatige BPM- en energie-notities kun je vier complete
+trackvolgordes naast elkaar vergelijken, inclusief de voorgestelde
+energiecurve, en één route rechtstreeks exporteren als nieuw privéplan.
+
+~~~bash
+python3 -m mixlab.journey_compare /private/music /private/music/energy-notes.private.json /private/music/all-journeys.private.html --tracks 5
+~~~
+
+Open de HTML lokaal, kies een route en geef het gedownloade plan door
+aan Playlist Studio met --journey-plan. Geen automatische muziekanalyse
+of blind-luisterbewijs; zie de Energy Journey-handleiding.
+
+### Leg een vaste openingsplaat en afsluiter vast
+
+Voor bruiloften, feesten en optredens kun je MixLab dwingen om een
+**specifiek nummer als eerste en laatste** te kiezen, terwijl de
+setopbouw ertussen geoptimaliseerd wordt. Sluit bovendien nummers uit
+die niet in de set mogen komen. Gebruik bij de Energy Journey Planner
+of vierwegvergelijking de extra argumenten
+--opening "Welcome Track.wav" --closing "Last Dance.wav"
+--exclude-track "Not Tonight.wav". De nummers moeten voorkomen in je
+handmatig geverifieerde notities en precies dezelfde BPM hebben. In
+de offline editor mag je de volgorde daarna alsnog bewust aanpassen.
+[Details](docs/energy-journey-planner.md).
+
+### Alternatief: visuele cue-editor voor één zelfgekozen overgang
+
+MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
+cues visueel laten goedkeuren en een volledige mix exporteren.
+Gecomprimeerde audio vereist bestaande FFmpeg/FFprobe; 44,1 kHz PCM16-WAV
+werkt ook direct met de Python-standaardbibliotheek.
+
+~~~bash
+python3 -m mixlab.project_wizard /private/music /private/music/sources.json
+python3 -m mixlab.interactive_session start /private/music/sources.json /private/mixlab-project-01
+~~~
+
+Open **/private/mixlab-project-01/sources/cue-editor.html**, beluister de
+nummers, selecteer handmatig de A/B-startmomenten en download de keuze-JSON.
+Rond vervolgens af en maak optioneel direct één volledig tweetrack-WAV:
+
+~~~bash
+python3 -m mixlab.interactive_session finish /private/mixlab-project-01 /private/mixlab-cue-selections.json \
+  --pair pair-001 --full-song --full-song-family bass_swap
+~~~
+
+Open **/private/mixlab-project-01/studio/index.html** voor de korte
+transities of **/private/mixlab-project-01/full-song/index.html** voor de
+volledige mix. Zie [interactieve workflow](docs/interactive-private-studio.md),
+[complete mix](docs/full-song-mix-export.md) en
+[volledige sets met meerdere tracks](docs/continuous-set-export.md).
+
+**Privacy / grens:** bronmuziek blijft buiten Git en wordt niet geüpload.
+Een rechtenverklaring is geen juridisch bewijs. Automatische BPM-
+matching, echt key/phrase/downbeat-begrip en human-preference bewijs
+zijn niet afgerond; experimenteer alleen met bronnen die je mag gebruiken.
+
+### DJ-marathon draaien en operator-cues bewaren
+
+Elke originele of handmatig geblende **Event Marathon** heeft in zijn
+bestaande offline `index.html` nu een groot **Stage-paneel** met de
+werkelijke WAV-playhead, huidige set, volgende handoff, seconden-aftelling
+en fullscreenbediening. Markeer handmatige cues tijdens het beluisteren,
+exporteer een bron-SHA-gebonden privé-JSON en maak daarvan een **printbaar
+evenementdraaiboek**:
+
+```bash
+python3 -m mixlab.marathon_cue_sheet /private/marathon/marathon.wav \
+  /private/mixlab-marathon-cues.private.json /private/marathon/cues.private.html
+```
+
+Ook terugzetten op een andere computer kan door de JSON in de offline
+Stage te importeren. Er is geen upload, automatische rechtencontrole,
+audio-opname of nieuwe AI-engine. Bewaar voor echte optredens altijd een
+separate WAV-back-up. [Stage-handleiding](docs/marathon-stage.md).
+
+### Offline een reeks bestaande DJ-sets herschikken en écht renderen
+
+De **Marathon Sequence Studio** ordent complete reeds toegestane, privé
+DJ-master-WAVs vanuit een offline browser. Verplaats events, sluit ongewenste
+events uit en exporteer een plan dat aan de exacte WAV-hashes is gekoppeld.
+Daarna verwerkt de canonieke renderer die keuze na expliciet `yes` tot een
+**nieuw doorlopend WAV-bestand** met privé player, receipt en optioneel USB-pakket.
+
+```bash
+python3 -m mixlab.marathon_sequence prepare /private/mixlab-sequence.html \
+  /private/set-a/session /private/set-a/final.wav \
+  /private/set-b/session /private/set-b/final.wav \
+  /private/set-c/session /private/set-c/final.wav
+
+# Maak met de browser het bestand mixlab-marathon-sequence.private.json.
+python3 -m mixlab.marathon_sequence render /private/mixlab-marathon-sequence.private.json \
+  /private/new-marathon \
+  /private/set-a/session /private/set-a/final.wav \
+  /private/set-b/session /private/set-b/final.wav \
+  /private/set-c/session /private/set-c/final.wav --bundle
+```
+
+Je kunt in de nieuwe offline editor ook **eigen originele WAV-bestanden
+lokaal aankoppelen en beluisteren**: de eerste/laatste 12 seconden per
+afgeronde DJ-set, en een benaderende tweedeksoverlap voor een gekozen
+2/4/8/16-secondenovergang. Alleen naam en bestandsgrootte worden door
+de browser gecontroleerd; de daadwerkelijke bron-SHA en authorisatie
+worden pas bij de officiële CLI-render volledig opnieuw gevalideerd.
+Geen upload, sessieopslag of audio-embedding.
+
+Voor **echt gerenderde handmatige crossfades per overgang** kies je in de
+offline editor *Separate manually blended WAV* en de gewenste 2/4/8/16 seconden
+per inkomende set. Voeg bij de bovenstaande `render`-opdracht toe:
+`--blend-output /private/nieuwe-aparte-crossfade-marathon`. MixLab bewaart
+de originele complete WAV, vraagt daarna **opnieuw expliciete goedkeuring**,
+en gebruikt de bestaande PCM16-blendengine om een tweede WAV te schrijven.
+Ook als de extra crossfade-render niet lukt, blijft het origineel behouden.
+
+Geen muziek wordt geüpload. Zowel bronbestanden als sessiereceipts worden
+opnieuw gecontroleerd; handmatige toestemming voor de uiteindelijke nieuwe
+WAV blijft verplicht. Muzikale kwaliteit en rechten voor openbaar gebruik
+blijven apart te beoordelen. [Sequence Studio-handleiding](docs/marathon-sequence-studio.md).
+
+Als je bij `marathon_sequence render` óók `--review-output
+/private/review/mixlab-master-review.private.html` opgeeft, maakt MixLab na
+de twee afzonderlijk goedgekeurde echte WAV-renders meteen een nieuwe offline
+**Master Review** aan. Zo kun je beide WAVs direct vergelijken en daarna
+uitsluitend de menselijke definitieve keuze naar privé-MP3/FLAC of USB
+exporteren; de bron-WAVs blijven onveranderd. De doelmap voor de nieuwe
+HTML moet vooraf bestaan. [Master Review](docs/marathon-master-review.md).
+
+Een via **Master Review** gekozen privé-Marathon-USB-pakket kan voortaan
+optioneel ook de originele operator-keuze en per-overgangsnotities behouden.
+`marathon_master_review publish --bundle` levert dit op na de expliciete
+keuze; losse `marathon_bundle --master-choice CHOICE.json` kan dezelfde
+besloten bijlage meenemen, maar nooit automatisch zonder verzoek. De
+`event_restore`-route verifieert na extractie dat het besluit bij de
+daadwerkelijk herstelde WAV hoort. Geen externe identiteit/rechtenauthenticatie.
+
+Bij de expliciet aangevinkte keuze-overdracht levert MixLab nu ook
+`marathon.master-choice.private.html`: een volledig offline,
+printbare DJ-handoff met de werkelijke WAV-overgangstijden, gekozen
+fade-duren en de eigen privénotities. Je kunt die ook los maken met
+`python3 -m mixlab.marathon_master_review brief SELECTED.wav CHOICE.json NEW.html`.
+Na USB-herstel controleert de bestaande herstelroute dat de printbrief
+uit de echte SHA-geverifieerde WAV en bijbehorende notities opnieuw
+identiek te maken is. Standaard ZIP-pakketten blijven zonder notities.
+
+### Luister naar de twee échte Marathon-masters en lever alleen je keuze op
+
+Na een handmatig gerenderde crossfade bestaat naast het oorspronkelijke WAV
+ook een tweede WAV met echte PCM16-overgangen. Met de nieuwe **Marathon Master
+Review** vergelijk je die twee reeds bestaande lokale masters direct op hun
+werkelijke eventovergangen. Je kiest zelf de definitieve versie en geeft pas
+daarna toestemming voor het mobiele bestand of de USB-bundel.
+
+```bash
+python3 -m mixlab.marathon_master_review prepare \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/review/mixlab-master-review.private.html
+
+# Open de offline HTML, beluister beide échte WAVs en exporteer
+# mixlab-marathon-master-choice.private.json.
+python3 -m mixlab.marathon_master_review publish \
+  /private/review/mixlab-marathon-master-choice.private.json \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  --delivery mp3 --bundle
+```
+
+Deze route controleert opnieuw de originele én afgeleide WAV-receipts en
+SHA-256-bronrelatie. De operator moet de exacte selectie met `yes` bevestigen;
+alleen de gekozen master wordt als nieuwe privé-uitvoer gecodeerd/verpakt.
+Het is geen geblindeerde luisterstudie, geen rechtenverklaring en geen live
+kwaliteitscertificaat. [Master Review-handleiding](docs/marathon-master-review.md).
+
+Bij de bestaande `marathon_sequence render`-opdracht kun je nu
+`--reels-output /private/nieuwe-luistermap` meegeven naast
+`--blend-output /private/nieuwe-blendmap`. Na de echte originele én
+apart goedgekeurde blended WAV vraagt MixLab om afzonderlijke toestemming
+om korte fragmenten rond alle overgangen uit de echte WAVs te kopiëren.
+Daarna is de luistermap meteen klaar. Het optionele luisterpakket faalt
+of wordt geweigerd zonder de twee afgewerkte masters weg te halen.
+
+Wil je de **korte echte PCM-overgangen** meenemen naar een andere computer,
+zonder de volledige originele en gemixte Marathon-WAVs te kopiëren? Maak de
+besloten `join-reels.private.zip` met
+`python3 -m mixlab.marathon_reels_transfer pack REELS_DIR REELS_DIR/join-reels.private.zip`
+en zet deze op de andere computer terug met
+`python3 -m mixlab.marathon_reels_transfer restore ZIP NEW_FOLDER`.
+De originele fragmentreceipts en WAVs worden opnieuw gecontroleerd.
+De ZIP bewijst geen externe identiteit of muziekrechten.
+
+Een visual-Sequence-Studio-render kan nu ook meteen een privé-USB-bestand
+maken van de korte echte PCM-overgangen: voeg expliciet
+`--reels-output /private/nieuwe-luistermap --reels-usb` toe naast
+`--blend-output /private/nieuw-blendresultaat`.
+Na afzonderlijke toestemming voor de originele master, het echte
+crossfade-resultaat en de excerpt-kopie verschijnt ook
+`join-reels.private.zip` in de nieuwe luistermap. Er gaan géén volledige
+Marathon-WAVs of originele tracks mee in dit kleine pakket; mislukte
+optionele packaging raakt bestaande outputs niet.
+
+### Hoor de échte overgang zonder complete urenlange WAV te laden
+
+**Real Join Reels** maakt uit twee al officieel geverifieerde private
+Marathon-masters (origineel en bestaande PCM16-crossfadeversie) een **compact
+offline luisterpakket** met twee werkelijke WAV-fragmenten per event-overgang.
+Het zijn exacte frames uit de bestaande audio, geen benadering met twee
+browserdecks.
+
+```bash
+python3 -m mixlab.marathon_join_reels \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/handoff-listening
+```
+
+Na expliciet `yes` krijgt de DJ een besloten map met echte 2×-WAV snippets,
+een overzichtelijke lokale A/B-speler en brongebonden frame-/SHA-receipts.
+Schakel direct per overgang van originele harde join naar de daadwerkelijk
+gerenderde crossfade. De map bevat beperkte media maar géén externe
+upload; notities worden pas privé gedownload na eigen actie. Dit is een
+niet-blinde handmatige preview, dus geen bewijs van muziekrechten of M1
+menselijke voorkeur. [Real Join Reels](docs/marathon-real-join-reels.md).
+
+### Mix de beste echte overgang per join tot één nieuwe master
+
+In dezelfde besloten Real Join Reels-speler kiest de DJ nu bij **elke**
+overgang bewust *originele harde join* of *de al bestaande echte crossfade*.
+Na het expliciet downloaden van een bron-SHA-gebonden JSON kan MixLab met
+beide oorspronkelijke, lokaal goedgekeurde WAV-masters de geselecteerde
+overgangen daadwerkelijk als **één nieuwe hybride PCM16-WAV** renderen:
+
+```bash
+python3 -m mixlab.marathon_reel_decisions \
+  /private/choices/mixlab-marathon-join-master-picks.private.json \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/new-hybrid-event --bundle
+```
+
+Inclusief nieuw volledig audio-receipt, lokale afspeelpagina, printbare
+privé-cue-sheet met echte WAV-SHA/notities **én de nieuwe offline live
+operator-mode `master-picks.stage.html`**: nu/volgende set, countdown tot
+de werkelijke gerenderde join, terug/vooruit en ±15 seconden zoeken,
+8 seconden voor overgang cuen en fullscreen op laptop/tablet. **Harde joins blijven
+sample-exact**, gekozen fades zijn bestaande 2/4/8/16s PCM16-renderkeuzes.
+Afzonderlijke typed-`yes`-goedkeuring blijft vereist. Optioneel
+`--reels-output /private/hybrid-reels --reels-usb` maakt na nóg een
+toestemming meteen opnieuw een echte korte originele-versus-hybride PCM16
+luistermap en besloten USB-ZIP. Privékeuzes gaan
+niet automatisch mee in een ZIP, en vormen geen geblindeerd bewijs.
+[Human-selected Hybrid Master](docs/marathon-human-hybrid-master.md).
+
+Voor een tweede offline podiumapparaat is nu ook een strikt opt-in
+**kleine ZIP met uitsluitend besloten DJ-notities** beschikbaar:
+`--operator-notes-usb` vraagt pas na de goedgekeurde echte hybride WAV
+nog een afzonderlijke `yes`. Met
+`python3 -m mixlab.marathon_operator_transfer pack|restore` neem je de
+keuzes veilig mee naar een **reeds apart ontvangen, SHA-geverifieerde**
+hybride audiomaster. Restore genereert daarop de printbare cue-sheet en
+offline stagepagina opnieuw. Geen muziek in de notitie-ZIP; geen privénotities
+automatisch in de reguliere muziekexport.
+
+Hetzelfde offline podiumscherm kan nu bij een repetitie de **werkelijke
+afspeelpositie markeren** wanneer je een overgang hoort, met het verschil ten
+opzichte van de SHA-/receipt-gebonden join. Expliciete export geeft alleen
+een privaat JSON-journal; met
+`python3 -m mixlab.marathon_stage_journal WAV LOG NEW_REPORT_HTML`
+ontstaat een **printbaar privé-repetitieverslag** naast de reeds geverifieerde
+hybride WAV. Dit meet alleen handmatige browserafspeelposities en claimt
+geen echte podiumtijden, luisterpreferentie of muziekrechten.
+
+
+
+
+### Nieuw: een volledig evenement bedienen met meerdere echte DJ-sets
+
+Met **Show Conductor** combineer je nu 2–6 onafhankelijke, reeds afgeronde,
+SHA-gecontroleerde privé-DJ-masters in **één offline handmatig showdraaiboek**.
+MixLab leest de bestaande echte WAVs, officiële receipts en hoofdstukcues
+opnieuw; er wordt geen muziek geüpload of verborgen geremixed.
+
+~~~bash
+python3 -m mixlab.show_conductor prepare \
+  /private/event-ops/mixlab-show-control.html \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav \
+  --start 19:30 --break-minutes 10
+~~~
+
+Open de HTML lokaal en koppel de complete WAV van elke set handmatig via de
+browser; arm en start de volgende set **alleen zelf**. Je ziet de huidige
+set, geplande pauzes, echte hoofdstukken en operatornotities. Via het
+expliciet gedownloade privé-JSON genereert
+`python3 -m mixlab.show_conductor print ...` na hercontrole van alle
+volledige WAV-SHAs een afdrukbaar evenementdraaiboek. Geen automatische
+crossfade, cloud, browseropslag of garantie voor professioneel livegeluid.
+[Show Conductor-handleiding](docs/offline-multi-set-show-conductor.md). Eerder opgeslagen
+showplanning terughalen zonder opnieuw pauzes/notities in te voeren kan nu
+via `mixlab.show_conductor resume OLD_PRIVATE_PLAN NEW_MIXLAB_HTML DEZELFDE_SESSION_WAV_PAREN`:
+volledige WAV- en bron-SHAs worden opnieuw gecontroleerd, alle menselijke
+operator-keuzes ingevuld en het plan blijft lokaal bewerkbaar.
+
+
+### Één echt showbestand uit meerdere goedgekeurde privé-sets
+
+Na het plannen in **Show Conductor** kan MixLab nu ook **één nieuwe,
+werkelijk gerenderde PCM16-show-WAV** maken uit 2–6 eerdere complete
+MixLab-sets en door jou gekozen echte digitale stilte tussen de sets.
+Geen browser- of realtime mix: alle oorspronkelijke complete WAVs worden
+opnieuw op SHA/receipt en bronidentiteit gecontroleerd en onveranderd
+in begrensde blokken gekopieerd. De 768 MiB-outputgrens beschermt opslag.
+
+~~~bash
+python3 -m mixlab.show_master \
+  /private/event-ops/mixlab-show-conductor.private.json \
+  /private/new-real-show \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav
+~~~
+
+Na getypte `yes` komt er een nieuwe besloten outputmap met echte `show.wav`,
+volledige SHA-/frames-receipt en een lokale hoofdstuk-/pauzespeler.
+De bronnen worden nooit aangepast of automatisch gepubliceerd. Pauzes
+zijn letterlijke stilte, geen automatisch gemixte overgangen; bij
+flexibele evenementen gebruik je de handmatige Show Conductor.
+[Complete Show Master](docs/private-complete-show-master.md).
+
+### Privé-showmaster meenemen als MP3/FLAC of USB-ZIP
+
+Een al afzonderlijk goedgekeurde **echte `show.wav`** kan nu optioneel via
+lokaal geïnstalleerde FFmpeg/FFprobe naar een private MP3 of FLAC, of met
+een apart getypte `yes` als brongebonden ZIP worden geëxporteerd:
+
+~~~bash
+python3 -m mixlab.show_delivery encode /private/new-real-show/show.wav --format mp3
+python3 -m mixlab.show_delivery pack /private/new-real-show/show.wav --include-encoded
+~~~
+
+Zowel de originele volledige WAV als optionele compressie worden opnieuw op
+SHA, receipt, frames en herkomst gecontroleerd. **De lokale originele show-
+receipt en HTML bevatten privénotities**: de ZIP exporteert daarom
+uitsluitend een nieuw gegenereerde, **opgeschoonde** receipt en offline speler
+zonder DJ-notities, eventfoldernamen of de privé-aanvangstijd. Het echte
+WAV-bestand blijft onveranderd, brontracks worden niet meegeleverd en er
+wordt niets geüpload. Zonder `--include-encoded` bevat de ZIP alleen
+originele show-WAV plus opgeschoonde metadata/speler.
+[Portable Complete Show](docs/portable-complete-show-delivery.md). Een eenmaal toegestaan
+privé-ZIP herstel je op een tweede offline apparaat via
+`python3 -m mixlab.show_restore ZIP NEW_PRIVATE_FOLDER`. De applicatie
+controleert daarna alle echte WAV-/metadata-SHA's opnieuw en accepteert
+alleen de exact opnieuw gegenereerde, opgeschoonde officiële HTML-spelers;
+gewijzigde HTML uit een ZIP wordt niet vertrouwd. Geen automatische
+muziektoestemming of internetverbinding.
 
 ## Implemented
 
@@ -22,6 +634,12 @@ An offline AI-DJ research project: understand track segments, discover surprisin
 - Replaceable analysis provider, measured regular-tempo proposals, manual cue/key annotations, content-addressed private feature cache and beat-error evaluation.
 - Streaming transition renderer with exclusive complete-file publication, clipping rejection and post-PCM metrics.
 - Checksum-bound rating aggregation with duplicate/coverage validation and explicit volume confounds.
+- One-command private playlist Studio (2–11 tracks), manual tempo/rights/cues,
+  ordered transition pair graph, immutable stage/resume and offline Set Composer.
+- Checksum-bound transition-energy Idea Board with explicit DJ approval into a
+  new development manifest; no silent changes to frozen evaluations.
+- Full private continuous WAV, chaptered offline player, clickable sampled
+  waveform, keyboard navigation and CUE/JSON chapter exports.
 - No runtime dependencies beyond Python 3.10+ standard library.
 
 ## Reproduce on the VPS runner
@@ -37,7 +655,7 @@ python3 -m mixlab benchmark /tmp/mixlab-example-library/library.json /tmp/mixlab
 
 Use fresh output directories; existing packs are never overwritten. Open `review/index.html` locally. Only the `review/` directory goes to listeners; `private/` contains identity mappings, recipes, source paths and metrics. Omit `--seed` for real listening pilots. The synthetic fixture is **not** a music benchmark.
 
-Supported input: short uncompressed PCM16 WAV excerpts, identical channel count/sample rate (8–96 kHz), manually verified equal BPM and corresponding starting beats. Input caps are 32 MiB and 2 million frames per excerpt. Prepare excerpts privately; full-track decoding and tempo stretching are not implemented. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
+The canonical M1 benchmark still consumes short uncompressed PCM16 WAV excerpts with identical source channel count/sample rate (8–96 kHz), manual equal BPM, and max 32 MiB / 2 million frames per excerpt. **Separate new product modules do accept bounded full-length WAV and optionally FFmpeg-decoded MP3/FLAC/M4A**, and can export private continuous mixes. Tempo stretching and automatic musical alignment remain separate, unfinished work. The benchmark renderer now processes bounded blocks and a compact delay ring; the original array renderer remains as a regression reference. The exact-source VPS run must establish measured memory and timing.
 
 The current pilot uses common gain, not matched perceived loudness; this is a known listening confound to fix before a milestone-quality benchmark. Objective diagnostics are not a musical preference score. Do not tune on a frozen evaluation set.
 
@@ -47,6 +665,23 @@ The fixture command writes a complete example. Replace sources only with explici
 
 Keep source media, derived stems, private renders, manifests with personal paths and credentials outside this public repository. Only synthetic CI fixtures and sanitized aggregate evidence may be uploaded by the foundation workflow.
 
+## Direct een complete lokale WAV-set maken
+
+De nieuwe private `party_mix` route voert bestaande stappen achter elkaar
+uit: rechten- en SHA-gebonden lokale muziekinvoer → handmatige cue-Studio →
+zelfgekozen overgangen → één doorlopende PCM16-WAV.
+
+```bash
+python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /private/full-set.wav \
+  --transition pair-001:bass_swap --transition pair-002:echo_exit
+```
+
+De volgorde van de paren is expliciet en moet één doorlopende route vormen;
+er wordt geen maat, BPM of muziekrecht automatisch geraden. Bekijk
+[de complete set-handleiding](docs/continuous-set-export.md) en
+[de één-commando route](docs/one-command-studio.md) voor grenzen,
+herstel na fouten en de niet-bewezen muzikale kwaliteit.
+
 ## Engine tools
 
 ```bash
@@ -55,23 +690,38 @@ python3 -m mixlab.analysis /private/library/clip.wav --cache /private/features
 python3 -m mixlab.evaluation /private/pack /private/ratings/listener-*.json
 ```
 
-On main, the basic analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. The open ML-03 branch additionally offers **unverified heuristic key and bar/phrase proposals**, plus separate offline visual comparison of those proposals with operator-declared manual cue receipts. Neither branch silently overwrites manual rendering metadata. ManualProvider retains independently labelled manual provenance; opening a self-declared receipt does **not** prove a human listened, that the cues are correct, or that the music is licensed.
-
-For permitted local excerpts, the open ML-03 source provides:
-
-```bash
-# Fresh read-only cue overview; no file names or audio in HTML.
-python3 -m mixlab.analysis.preview /private/library/clip.wav --format html > /private/clip-cues.html
-# Up to eight chosen excerpts aligned to one absolute-seconds ruler.
-python3 -m mixlab.analysis.playlist_preview /private/library/a.wav /private/library/b.wav --format html > /private/cue-overview.html
-# Compare an already-saved private manual-review receipt with fresh proposals.
-python3 -m mixlab.analysis.receipt_compare /private/library/clip.wav /private/confirmed-cues.json --format html > /private/cue-comparison.html
-```
-
-Source integrity checks are not independent human evidence. Keep all audio, manual receipts and reports containing local source hashes private. The HTML is offline and does not upload audio or enable mixing. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
+The analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. It does not identify musical phrases, vocals or key automatically, and never silently overwrites manual rendering metadata. ManualProvider accepts verified downbeats/phrases/key; these stay labelled manual. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
 
 ## Continue
 
 > Werk verder aan MixLab. Kijk in Notion naar de huidige fase en wat er nog moet gebeuren, claim een vrije taak en werk die uit.
 
 Detailed coordination belongs in [AGENTS.md](AGENTS.md) and the worker plan. GitHub holds code and task specifications; the zCloud VPS SQLite queue holds live claims and scheduling. Notion is the product/decision/handoff mirror. Do not infer a live queue entry from an issue or a plan file.
+
+### Revisie van reeds afgeronde hybride DJ-masters
+
+Nieuwe `python3 -m mixlab.marathon_revision_desk CURRENT_HYBRID_WAV ORIGINAL_WAV BLEND_WAV NEW_MIXLAB_HTML` opent een **besloten revisiestudio** voor de reeds werkelijk afgemaakte hybride WAV. De DJ kan per overgang de eerdere harde join/echte crossfade wijzigen, eerdere keuzes herstellen en het effect op de echte WAV-duur zien. Het nieuwe plan bindt aan de exacte SHA van de vorige master. `mixlab.marathon_reel_decisions ... --previous-hybrid CURRENT_HYBRID_WAV` verifieert oorspronkelijke én vorige complete WAVs/keuzelog opnieuw en rendert na typed `yes` een **aparte nieuwe versie**, zonder oudere masters of muziekbronnen aan te passen. [Hybrid Revision Desk](docs/marathon-human-hybrid-master.md#7-reopen-revise-and-re-render-a-completed-real-hybrid-set).
+
+Na de revisie kan `python3 -m mixlab.marathon_revision_reels OLD_HYBRID_WAV NEW_REVISED_WAV NEW_PRIVATE_LISTEN_FOLDER` de **werkelijk gewijzigde overgangen in de twee echte WAVs** als losse korte PCM16-vergelijkingsfragmenten publiceren. Beide volledige SHA-/receipt-gebonden masters en de echte ouder-kind-herkomst worden gecontroleerd, de DJ moet opnieuw `yes` typen, en de originele WAVs blijven intact. Je kunt dit ook in één renderroute aanvragen met `marathon_reel_decisions --previous-hybrid OLD_WAV --revision-reels-output NEW_FOLDER`; de nieuwe lokale A/B-speler bevat alleen werkelijk gewijzigde joins, geen gegenereerde browserovergangen. [Handleiding](docs/marathon-human-hybrid-master.md#8-audition-only-the-real-wav-joins-changed-by-your-revision).
+
+### Eén daadwerkelijke DJ-master selecteren uit versies
+
+`python3 -m mixlab.marathon_revision_history prepare NEW_MIXLAB_HTML HYBRID_V1.wav HYBRID_V2.wav [...]`
+maakt na verificatie van elke complete WAV, receipts en ononderbroken
+SHA-ouderketen een **besloten offline geschiedenis** met echte duur,
+gewijzigde overgangen en handmatig geselecteerde lokale WAV-voorluistering.
+De DJ kiest één al gerenderde master en exporteert een brongebonden privé-
+selectie. Met `marathon_revision_history publish CHOICE_JSON DEZELFDE_WAVS
+--bundle [--delivery mp3|flac]` wordt uitsluitend die versie na een nieuwe
+getypte `yes` via de officiële besloten USB-/MP3-/FLAC-route gepubliceerd.
+Geen her-render, automatische beoordeling, muziek-upload of ongevraagde
+privénotities in het audiopakket.
+
+De bestaande hybride **Revision Desk** kan optioneel meteen echte korte
+originele/crossfade-WAVs bij elke overgang laten horen: maak of herstel eerst
+de officiële SHA-geverifieerde `Real Join Reels` en plaats het nieuwe
+`mixlab-revision.html` in diezelfde besloten map met de extra optie
+`--reels-folder PRIVATE_REAL_REELS_DIR`. De CLI controleert de volledige
+masterbron-SHA's, de daadwerkelijke PCM16-fragmenten en exacte joinfades;
+de browser gebruikt alleen deze lokaal bestaande WAVs, zonder eigen fades of
+uploads. [Hybrid Revision Desk](docs/marathon-human-hybrid-master.md#10-audition-genuine-originalblend-wav-excerpts-while-revising).
