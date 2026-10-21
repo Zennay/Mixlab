@@ -60,7 +60,9 @@ def confirm(path, *, expected_sha256, bpm, first_beat=0.,
         "kind": "private_human_confirmed_cue_receipt",
         "source_sha256": expected_sha256,
         "provider": record.provider,
-        "provider_version": record.provider_version,
+        # ManualProvider's internal version includes the supplied human label.
+        # A deterministic unkeyed digest is not anonymization: keep it local.
+        "provider_version": "manual-v1",
         "duration_seconds": record.duration_seconds,
         "bpm": record.bpm,
         "first_beat_seconds": first_beat,
