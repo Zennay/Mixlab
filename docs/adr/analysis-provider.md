@@ -299,3 +299,23 @@ directory paths and immutable source hashes appear in their own private
 local command and optional JSON report, **not in the static HTML**. A
 session is a reusable convenience for manual review, not a playlist
 recommendation, automatic mix, data rights grant or a verified annotation.
+
+
+### 21 October · Literal difference dashboard, without scoring a human
+
+The existing single-source `receipt_compare` and up-to-eight-source
+`receipt_batch` views now expose **inspection differences** between
+the operator's unsigned cue note and the heuristic proposal:
+- Absolute numerical difference between the declared and proposed BPM,
+  or *unknown* if the heuristic abstains. This is **not tempo error**.
+- Whether proposed and declared key spellings are identical, different,
+  or unavailable; the tool never picks a musically correct key.
+- Separate counts of proposed versus hand-entered downbeat/phrase
+  markers. Count differences do not establish cue-timing accuracy.
+
+The saved local JSON calls this field `review_differences` and always
+states `accuracy_established=false`. The offline HTML presents those
+literal differences in a source-by-source dashboard, with manual and
+automatic origin visible. There is no automatic correction of the
+self-declared receipt, cache, recipe, saved session or the underlying
+media. Human musical assessment and actual rights remain separate.
