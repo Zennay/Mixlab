@@ -251,3 +251,51 @@ No audio, media paths, annotator identity or SHA is included in the
 HTML. Optional `--format json` does include private SHA values and
 must remain local. No JavaScript, API request, storage write, mixing,
 copyright approval, research integrity promotion or render occurs.
+
+
+### 21 October · Reopen a saved private cue-review session
+
+The multi-clip cue desk now accepts a local, **operator-authored** JSON
+session as an alternative to repeating up to eight command-line pairs.
+The source and its unsigned manual note remain two separate inputs: a
+manifest never grants music rights or independent review authorization.
+
+Save the following JSON privately next to a directory of **local**
+excerpts and self-declared receipt files. Paths are relative to the JSON
+file; they may use nested directories but cannot escape via `..`, absolute
+paths, symlink entries or duplicate selection:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "private_cue_review_session",
+  "pairs": [
+    {"wav": "library/a.wav", "receipt": "notes/a.json"},
+    {"wav": "library/b.wav", "receipt": "notes/b.json"}
+  ]
+}
+```
+
+Then reopen the *same ordered* cue-review session:
+
+```bash
+python3 -m mixlab.analysis.receipt_batch \
+  --session /private/review/session.json \
+  --format html > /private/review/local-review.html
+```
+
+The bounded strict JSON admission rejects duplicate properties, invalid
+Unicode, unsafe file kinds, partial reads and oversized inputs. The v1
+session requires exactly one to eight unique source/receipt pairs and no
+extra schema fields. Each receipt undergoes its **original strict**
+receipt-source check and the current audio is freshly analyzed. Finally,
+**every original PCM source is checked again** after the last pair, so
+a source modified while a later entry was processed invalidates the
+entire export. No partial result is silently presented as complete.
+
+Both `--pair` and `--session` use the same private read-only cue desk,
+and cannot be combined in one invocation. Only the operator's input
+directory paths and immutable source hashes appear in their own private
+local command and optional JSON report, **not in the static HTML**. A
+session is a reusable convenience for manual review, not a playlist
+recommendation, automatic mix, data rights grant or a verified annotation.
