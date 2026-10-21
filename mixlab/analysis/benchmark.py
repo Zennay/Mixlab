@@ -90,8 +90,11 @@ def evaluate(path, tolerance=.07):
         def bound(record):
             # Every provider hashes the bytes it analysed; all of them must be
             # the annotated recording, so a swap between providers fails closed.
-            if (record.source_sha256 != item["sha256"] or
-                    source_identity(item["path"]) != original_identity):
+            if record.source_sha256 != item["sha256"]:
+                # Keep the established public API's distinguishable mismatch
+                # contract, but the CLI masks the operator's private ID/path.
+                raise ValueError(f"Source checksum mismatch for {item['id']}")
+            if source_identity(item["path"]) != original_identity:
                 raise ValueError("Private PCM changed during reference analysis")
             return record
         beats = bound(beat_provider.analyze(item["path"]))
