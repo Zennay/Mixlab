@@ -57,3 +57,25 @@ python3 -m mixlab.analysis.playlist_preview /private/library/a.wav /private/libr
 `mixlab.analysis.playlist_preview` uses the same source-bound preview for up to eight explicitly passed files, rejects duplicate audio hashes, labels entries only as `clip-01`, `clip-02`, etc., and indicates missing key/tempo/downbeat proposals as **unknown**. It preserves input order, not an inferred DJ set order. HTML excludes filenames, local paths and file hashes; JSON retains source hashes for private matching and omits paths. All audio rights checks, human musical assessment and M1 evidence gates remain independent.
 
 These are production-facing **operator features in an existing draft PR**, not a synthetic QA study, claimed accuracy improvement, proof of a permitted music evaluation dataset or approval to run automatic mixes. CI, review and merge gates still apply.
+
+
+### 21 October · Verified source identity for independent cue providers
+
+The single-clip preview, up-to-eight-clip comparison and human-annotation
+benchmark now share `source_receipt.py`: a bounded regular-file `lstat`
+identity (device/inode/size/mtime/ctime) captured **before** any provider read.
+Every independently opened beat/key/meter provider must report the same original
+content SHA-256 and leave that file identity unchanged. After all reads,
+`inspect_wav_and_digest` checks PCM16 and hashes the source through **one
+regular-file descriptor**, followed by a final pathname-identity comparison.
+Ordinary swaps or in-place edits between provider passes fail closed instead
+of mixing cue fields from different recordings. It is deliberately not a
+cryptographic immutable filesystem snapshot against a hostile writer forging
+the same metadata. Do not use it as rights, benchmark quality, or release proof.
+
+The manual benchmark CLI also emits **fixed private-error messages** for invalid
+references, unavailable files and changed PCM, rather than reflecting potentially
+sensitive user paths/annotation identifiers back into stderr. The returned
+aggregate JSON still contains the operator's explicitly supplied reference IDs,
+not audio paths. These are privacy/product-integrity changes, not a completed
+real-music evaluation; the separate ML-03/M1 human evidence gates remain intact.
