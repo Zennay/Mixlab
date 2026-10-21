@@ -14,6 +14,7 @@ on:
       - "mixlab/analysis/cue_timeline.py"
       - "mixlab/analysis/manual_review.py"
       - "mixlab/analysis/receipt_reopen.py"
+      - "mixlab/analysis/receipt_compare.py"
       - "tests/test_analysis_benchmark.py"
       - "tests/test_analysis_tonal_meter.py"
       - ".github/workflows/ml03-key-meter-proposals.yml"
