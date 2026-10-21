@@ -2,7 +2,7 @@
 
 An offline AI-DJ research project: understand track segments, discover surprising combinations, render real transitions and eventually build full sets around context and an energy journey.
 
-**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. This first slice uses manually aligned, equal-tempo excerpts; regular-tempo beat proposals and manual annotation providers are implemented, but automatic downbeat/phrase/key analysis, stems, discovery and set planning remain future work.
+**Current phase: M0 foundation / partial M1 implementation.** Musical quality is unproven. The current main branch uses manually aligned, equal-tempo excerpts. The open ML-03 product PR adds optional CPU-only heuristic key/downbeat/phrase proposals and private cue review, but no real-music benchmark, render authorization or production acceptance is claimed; stems, discovery and set planning remain future work.
 
 - [Notion project](https://app.notion.com/p/3e79e19ac95581a78ee3f24aa5e7e8b6)
 - [Current handoff](https://app.notion.com/p/3e79e19ac95581f4bf15c26a833da642)
@@ -55,7 +55,20 @@ python3 -m mixlab.analysis /private/library/clip.wav --cache /private/features
 python3 -m mixlab.evaluation /private/pack /private/ratings/listener-*.json
 ```
 
-The analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. It does not identify musical phrases, vocals or key automatically, and never silently overwrites manual rendering metadata. ManualProvider accepts verified downbeats/phrases/key; these stay labelled manual. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
+On main, the basic analyzer proposes a constant beatgrid from regular percussive excerpts and abstains on insufficient evidence. The open ML-03 branch additionally offers **unverified heuristic key and bar/phrase proposals**, plus separate offline visual comparison of those proposals with operator-declared manual cue receipts. Neither branch silently overwrites manual rendering metadata. ManualProvider retains independently labelled manual provenance; opening a self-declared receipt does **not** prove a human listened, that the cues are correct, or that the music is licensed.
+
+For permitted local excerpts, the open ML-03 source provides:
+
+```bash
+# Fresh read-only cue overview; no file names or audio in HTML.
+python3 -m mixlab.analysis.preview /private/library/clip.wav --format html > /private/clip-cues.html
+# Up to eight chosen excerpts aligned to one absolute-seconds ruler.
+python3 -m mixlab.analysis.playlist_preview /private/library/a.wav /private/library/b.wav --format html > /private/cue-overview.html
+# Compare an already-saved private manual-review receipt with fresh proposals.
+python3 -m mixlab.analysis.receipt_compare /private/library/clip.wav /private/confirmed-cues.json --format html > /private/cue-comparison.html
+```
+
+Source integrity checks are not independent human evidence. Keep all audio, manual receipts and reports containing local source hashes private. The HTML is offline and does not upload audio or enable mixing. See [analysis decisions](docs/adr/analysis-provider.md), [renderer decisions](docs/adr/renderer-quality.md), [manifest contract](docs/dataset-manifest.md) and [evaluation rules](docs/benchmark-report.md).
 
 ## Continue
 
