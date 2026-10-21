@@ -24,13 +24,19 @@ def _position(second, duration):
     return LEFT + (WIDTH - LEFT - RIGHT) * second / duration
 
 
-def render_cue_timeline(duration, cue_details, *, clip_id):
-    """Produce accessible, offline SVG, with source-count and truncation honesty."""
+def render_cue_timeline(duration, cue_details, *, clip_id, scale_seconds=None):
+    """Produce accessible, offline SVG on a common or per-clip time axis."""
     if (isinstance(duration, bool) or not isinstance(duration, (int, float))
             or not isfinite(duration) or duration < 0 or duration > 250):
         raise ValueError("Invalid private excerpt duration")
     if not isinstance(clip_id, str) or not clip_id.startswith("clip-"):
         raise ValueError("Invalid local clip label")
+    if scale_seconds is None:
+        scale_seconds = duration
+    if (isinstance(scale_seconds, bool) or not isinstance(scale_seconds, (int, float))
+            or not isfinite(scale_seconds) or scale_seconds < duration
+            or scale_seconds > 250):
+        raise ValueError("Invalid common cue timeline duration")
     if duration == 0:
         # A valid empty PCM excerpt contains no timeline to scale: do not
         # turn a missing musical proposal into an HTML export failure.
@@ -49,15 +55,24 @@ def render_cue_timeline(duration, cue_details, *, clip_id):
     ]
     # A fixed count of tick labels makes the same UI legible at all durations.
     for fraction in (0, .25, .5, .75, 1):
-        x = _position(duration * fraction, duration)
+        x = _position(scale_seconds * fraction, scale_seconds)
         parts.append(
             f'<line x1="{x:.2f}" y1="42" x2="{x:.2f}" y2="205" '
             'stroke="#d4dbe1" stroke-width="1"/>'
             f'<text x="{x:.2f}" y="226" text-anchor="middle" '
             'fill="#36404a" font-size="13">'
-            f'{duration * fraction:.1f}s</text>'
+            f'{scale_seconds * fraction:.1f}s</text>'
         )
     notes = []
+    if scale_seconds > duration:
+        endpoint = _position(duration, scale_seconds)
+        parts.append(
+            f'<rect x="{endpoint:.2f}" y="43" width="{WIDTH - RIGHT - endpoint:.2f}" '
+            'height="162" fill="#e9edf1" opacity=".65"/>'
+            f'<line x1="{endpoint:.2f}" y1="43" x2="{endpoint:.2f}" y2="205" '
+            'stroke="#5f6873" stroke-width="2" stroke-dasharray="4 3"/>'
+        )
+        notes.append(f"Fragment eindigt op {duration:.1f}s; de as loopt door tot {scale_seconds:.1f}s.")
     for index, (label, key, color) in enumerate(BANDS):
         row = 70 + index * 61
         item = cue_details[key]
@@ -77,7 +92,7 @@ def render_cue_timeline(duration, cue_details, *, clip_id):
             if (isinstance(second, bool) or not isinstance(second, (int, float))
                     or not isfinite(second) or second < 0 or second > duration + .0001):
                 raise ValueError("Invalid private cue time")
-            x = _position(min(second, duration), duration)
+            x = _position(min(second, duration), scale_seconds)
             parts.append(
                 f'<line x1="{x:.2f}" y1="{row - 15}" '
                 f'x2="{x:.2f}" y2="{row + 15}" '
