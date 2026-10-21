@@ -44,6 +44,16 @@ def compare(paths, *, verified_bpm=None, first_beat=0., beats_per_bar=4,
             "phrase_count": item["structure"]["phrase_cues"]["count"],
             "assumed_beats_per_bar": item["structure"]["assumed_beats_per_bar"],
             "assumed_phrase_bars": item["structure"]["assumed_phrase_bars"],
+            "cue_details": {
+                "beat_seconds": item["rhythm"]["beat_cues"],
+                "downbeat_seconds": item["structure"]["downbeat_cues"],
+                "phrase_seconds": item["structure"]["phrase_cues"],
+                "key_correlation_not_probability": item["tonality"]["correlation_not_probability"],
+                "key_margin": item["tonality"]["margin"],
+                "downbeat_consistency": item["structure"]["downbeat_consistency"],
+                "phrase_consistency": item["structure"]["phrase_consistency"],
+            },
+            "provider_warnings": item["warnings"][:16],
             "requires_manual_review": True,
             "has_unknown_critical_cues": (
                 item["rhythm"]["bpm"] is None or
@@ -70,7 +80,14 @@ def compare(paths, *, verified_bpm=None, first_beat=0., beats_per_bar=4,
 
 
 def _render_html(document):
+    def cue(label, value):
+        times = ", ".join(f"{t:.2f}s" for t in value["seconds"])
+        suffix = " — eerste 64 van " + str(value["count"]) if value["truncated"] else ""
+        return ("<p><strong>" + escape(label) + "</strong>: " +
+                escape(times or "geen betrouwbaar voorstel") + escape(suffix) + "</p>")
+
     rows = []
+    details = []
     for track in document["clips"]:
         cells = [
             track["id"], track["bpm"], track["key"],
@@ -81,6 +98,22 @@ def _render_html(document):
         rows.append("<tr>" + "".join(
             "<td>" + escape(str(v) if v is not None else "Onbekend") + "</td>"
             for v in cells) + "</tr>")
+        cue_data = track["cue_details"]
+        notes = "".join("<li>" + escape(note) + "</li>"
+                        for note in track["provider_warnings"])
+        details.append(
+            "<details><summary>Inspecteer " + escape(track["id"]) +
+            " · cuevoorstellen, niet bevestigd</summary>" +
+            cue("Beats", cue_data["beat_seconds"]) +
+            cue("Maatstarts", cue_data["downbeat_seconds"]) +
+            cue("Frasestarts", cue_data["phrase_seconds"]) +
+            "<p>Key-correlatie (geen kans): " +
+            escape(str(cue_data["key_correlation_not_probability"])) +
+            " · marge: " + escape(str(cue_data["key_margin"])) +
+            " · maatconsistentie: " + escape(str(cue_data["downbeat_consistency"])) +
+            " · fraseconsistentie: " + escape(str(cue_data["phrase_consistency"])) +
+            "</p><ul>" + notes + "</ul></details>"
+        )
     notes = "".join("<li>" + escape(x) + "</li>" for x in document["limitations"])
     return (
         "<!doctype html><html lang=\"nl\"><head><meta charset=\"utf-8\">"
@@ -91,13 +124,15 @@ def _render_html(document):
         "<style>body{font:16px system-ui,sans-serif;max-width:1020px;margin:2rem auto;"
         "padding:0 1rem;line-height:1.5;color:#202124}"
         "table{border-collapse:collapse}th,td{border:1px solid #bbb;padding:.45rem;text-align:left}"
-        "section{overflow:auto}small{color:#555}</style></head><body>"
+        "section{overflow:auto}details{border:1px solid #bbb;padding:.7rem;margin:.7rem 0}"
+        "summary{cursor:pointer;font-weight:600}small{color:#555}</style></head><body>"
         "<h1>MixLab · privé cue-overzicht</h1>"
         "<p>Lokale voorstellen — geen audio of bestandsnamen geëxporteerd. "
         "Geen trackselectie, remixadvies, release- of rechtenverklaring.</p>"
         "<section><table><thead><tr><th>Fragment</th><th>BPM</th><th>Toonsoort</th>"
         "<th>Beats</th><th>Maatstarts</th><th>Frasestarts</th><th>Status</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section>"
+        "<h2>Cue-inspectie per fragment</h2>" + "".join(details) +
         "<h2>Beperkingen</h2><ul>" + notes +
         "</ul><small>Bronhashes en fysieke paden worden niet in deze HTML opgenomen.</small>"
         "</body></html>\n"
