@@ -154,3 +154,24 @@ not emitted. The output is a **reopened, self-declared private cue note**, not
 proof that the original operator listened, that the original document was
 authentic/signed or that an audio excerpt may legally be published. Existing
 M1 rights and human musical-quality gates are still required.
+
+### 21 October · Offline cue timelines (single and up to eight clips)
+
+The existing `analysis.preview --format html` and
+`analysis.playlist_preview --format html` operator screens now include a
+**static, accessible three-lane timeline** for beats, bar starts and phrase
+starts. The timeline uses only the already calculated private cue values:
+no additional PCM reads, models, external network requests, JavaScript,
+browser permissions, auto-DJ decisions or render-side mutations.
+
+Each lane displays the actual total number of proposed cues. Only the
+previously bounded first 64 timestamps are plotted; if more exist, the
+screen says so, rather than implying a complete visualization. The x-axis
+uses the actual excerpt duration, and the timestamp list remains visible
+below each chart for manual cross-checking. No source SHA, path, track
+name, audio or annotator identity is embedded in the HTML. The private
+JSON still carries the source SHA for operators who need to match the
+correct source locally; HTML is **not** an independently signed review
+receipt. Even an apparently aligned beat/bar/phrase image is not proof
+of a musically usable transition or of legal rights. The human/manual
+cue-review and real-audio evidence gates remain unchanged.
