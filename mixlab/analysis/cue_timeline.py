@@ -27,7 +27,7 @@ def _position(second, duration):
 def render_cue_timeline(duration, cue_details, *, clip_id):
     """Produce accessible, offline SVG, with source-count and truncation honesty."""
     if (isinstance(duration, bool) or not isinstance(duration, (int, float))
-            or not isfinite(duration) or duration <= 0 or duration > 250):
+            or not isfinite(duration) or duration < 0 or duration > 250):
         raise ValueError("Invalid private excerpt duration")
     if not isinstance(clip_id, str) or not clip_id.startswith("clip-"):
         raise ValueError("Invalid local clip label")
