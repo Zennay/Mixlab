@@ -10,9 +10,10 @@ from pathlib import Path
 import statistics
 from . import EnergyOnsetProvider, beat_errors
 from .meter import AccentMeterProvider
+from .source_receipt import source_identity, verify_source
 from .tonal import KEYS, ChromaKeyProvider, key_report
 from ..evaluation.json_admission import load_bounded_json
-from ..ingest import HASH, ID, digest, number
+from ..ingest import HASH, ID, number
 
 MAX_ITEMS = 200
 FIELDS = {"id", "path", "sha256", "bpm", "first_beat", "downbeats", "key", "annotator"}
@@ -80,11 +81,18 @@ def evaluate(path, tolerance=.07):
     beat_provider, meter, tonal = EnergyOnsetProvider(), AccentMeterProvider(), ChromaKeyProvider()
     rows = []
     for item in items:
+        # Observe one physical regular-file identity before all separate
+        # provider reads. An in-place edit or swap must not mix source A's
+        # reference beatgrid with source B's key or meter analysis.
+        original_identity = source_identity(item["path"])
+        if not isinstance(item["sha256"], str):
+            raise ValueError("Invalid private PCM checksum")
         def bound(record):
             # Every provider hashes the bytes it analysed; all of them must be
             # the annotated recording, so a swap between providers fails closed.
-            if record.source_sha256 != item["sha256"]:
-                raise ValueError(f"Source checksum mismatch for {item['id']}")
+            if (record.source_sha256 != item["sha256"] or
+                    source_identity(item["path"]) != original_identity):
+                raise ValueError("Private PCM changed during reference analysis")
             return record
         beats = bound(beat_provider.analyze(item["path"]))
         reference_grid = _grid(item, beats.duration_seconds)
@@ -108,8 +116,7 @@ def evaluate(path, tolerance=.07):
         if item["key"] is not None:
             estimate = bound(tonal.analyze(item["path"]))
             row["reference_key"], row["estimated_key"] = item["key"], estimate.key
-        if digest(item["path"]) != item["sha256"]:
-            raise ValueError(f"Source checksum mismatch for {item['id']}")
+        verify_source(item["path"], original_identity, item["sha256"])
         rows.append(row)
     downbeat_rows = [r for r in rows if "downbeat_abstained_reference_grid" in r]
     key_rows = [(r["reference_key"], r["estimated_key"]) for r in rows if "reference_key" in r]
