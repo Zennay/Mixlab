@@ -11,6 +11,7 @@ on:
       - "mixlab/analysis/source_receipt.py"
       - "mixlab/analysis/preview.py"
       - "mixlab/analysis/playlist_preview.py"
+      - "mixlab/analysis/cue_timeline.py"
       - "mixlab/analysis/manual_review.py"
       - "mixlab/analysis/receipt_reopen.py"
       - "tests/test_analysis_benchmark.py"
