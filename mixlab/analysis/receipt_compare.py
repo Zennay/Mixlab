@@ -83,14 +83,14 @@ def render_html(document):
         "phrase_seconds": proposed["phrases"],
     }
     # A manual receipt stores BPM and the first beat, not a reviewed beatgrid.
-    # Never fabricate manual beat positions or treat generated beats as human cues.
+    # Do not fabricate beat positions: omit that lane in the declared view.
     declared_cues = {
-        "beat_seconds": {"count": 0, "seconds": [], "truncated": False},
         "downbeat_seconds": manual["downbeats"],
         "phrase_seconds": manual["phrases"],
     }
     proposed_panel = render_cue_timeline(duration, proposed_cues, clip_id="clip-01-proposal")
-    manual_panel = render_cue_timeline(duration, declared_cues, clip_id="clip-01-operator")
+    manual_panel = render_cue_timeline(
+        duration, declared_cues, clip_id="clip-01-operator", include_beats=False)
     return (
         '<!doctype html><html lang="nl"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
