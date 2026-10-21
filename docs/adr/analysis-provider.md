@@ -31,3 +31,29 @@ python3 -m mixlab.analysis.meter /private/library/clip.wav --bpm 128 --first-bea
 ### Reference benchmark harness
 
 `python3 -m mixlab.analysis.benchmark /private/annotations/refs.json` scores the three measured providers against private manual references. Schema v1: `{"schema_version": 1, "items": [{"id", "path" (relative, beside the JSON), "sha256", "bpm", "first_beat"?, "downbeats"?, "key"?, "annotator"}]}`. Every provider record (beat, both meter runs, key) must carry the annotated `sha256`, and the file is re-hashed after the last provider, so a recording replaced between providers fails closed. This is a consistency check, not an immutable snapshot. Output has track IDs and scores only: beat F1/abstention, downbeat F1 on the verified grid (bar-phase error only) and on the estimated grid (end-to-end), and `key_report`. Annotate the whole excerpt, because unannotated trailing bars count as false positives. This harness is the M1 analysis gate measurement; synthetic references only exercise it.
+
+
+### Private musical-cue preview and side-by-side overview (21 October)
+
+Measured key/beat/meter estimators are now usable together **without modifying the core cache or a render recipe**. Both new operator routes read explicitly chosen permitted short PCM16 files locally; nothing is uploaded and neither route infers licensing, human confirmation, musical preference or release-readiness.
+
+```bash
+# One local clip: all available rhythm/key/structure proposals as JSON
+python3 -m mixlab.analysis.preview /private/library/clip.wav
+
+# Optional human-supplied timing input; it is never treated as a verified key/bar
+python3 -m mixlab.analysis.preview /private/library/clip.wav \
+  --verified-bpm 128 --first-beat 0.31 --format html > /private/cue-preview.html
+
+# Compare at most eight selected clips without filenames or PCM in the report
+python3 -m mixlab.analysis.playlist_preview /private/library/a.wav /private/library/b.wav \
+  --format html > /private/cue-overview.html
+python3 -m mixlab.analysis.playlist_preview /private/library/a.wav /private/library/b.wav \
+  --format json > /private/cue-overview.json
+```
+
+`mixlab.analysis.preview` reports BPM, source-labelled beatgrid, heuristic key with correlation **not probability**, and bar/phrase cues where enough evidence exists. Cue displays are capped at 64 timestamps per type while preserving the complete count and an explicit truncation flag. It validates equality of each provider's content hash and re-hashes the source at the end to reject ordinary changes between reads; this remains weaker than one immutable source descriptor, so the output is advisory. HTML is offline, no JavaScript or network, and excludes audio paths. JSON contains a source SHA-256 so the operator can privately pin the actual excerpt; do not publish this private output as rights evidence.
+
+`mixlab.analysis.playlist_preview` uses the same source-bound preview for up to eight explicitly passed files, rejects duplicate audio hashes, labels entries only as `clip-01`, `clip-02`, etc., and indicates missing key/tempo/downbeat proposals as **unknown**. It preserves input order, not an inferred DJ set order. HTML excludes filenames, local paths and file hashes; JSON retains source hashes for private matching and omits paths. All audio rights checks, human musical assessment and M1 evidence gates remain independent.
+
+These are production-facing **operator features in an existing draft PR**, not a synthetic QA study, claimed accuracy improvement, proof of a permitted music evaluation dataset or approval to run automatic mixes. CI, review and merge gates still apply.
