@@ -93,3 +93,36 @@ output guesses a compatible next song or promotes a proposed cue to a verified
 manual annotation; the HTML still omits file paths and SHA values. A human
 reviewer can inspect exactly where the heuristic suggests a transition without
 generating an audio render.
+
+
+### 21 October · Human confirmation handoff (manual only)
+
+The private operator can now explicitly confirm a proposal **on the same SHA-256
+source** and obtain an independent, manually labelled JSON receipt. The input
+is the content hash from the initial private `analysis.preview` JSON, the
+human's own BPM and chosen cue fields, a private annotator label, and the
+`--confirm-manual-cues` switch. The command refuses source hash mismatches,
+replaced files, unsupported keys, non-grid/unsorted marker timings, missing
+human identity/confirmation, and empty key-and-structure reviews. It uses the
+pre-existing immutable `ManualProvider` (human annotation) rather than
+promoting measured-heuristic provider output automatically.
+
+```bash
+# Human inspects own track and copies source_sha256 from its private preview.
+python3 -m mixlab.analysis.preview /private/library/clip.wav > /private/cue.json
+
+# Only AFTER personally confirming BPM, first beat, key and selected markers:
+python3 -m mixlab.analysis.manual_review /private/library/clip.wav \
+  --source-sha256 <64-hex-from-cue.json> --bpm 128 --first-beat 0.25 \
+  --key "C major" --downbeat 0.25 --downbeat 2.125 \
+  --annotator "private-operator" --confirm-manual-cues > /private/confirmed-cues.json
+```
+
+The source SHA-256, human-selected BPM, exact confirmed cue times, manual
+provenance/version and explicit non-authorization flags go into the private
+receipt. Neither path, media nor the annotator label are exported; only its
+private salted-by-config version hash is retained, as already produced by
+`ManualProvider`. Empty cue categories stay unavailable, not magically
+verified. Nothing automatically updates recipe/cache, rights, public research
+evidence or production mixes. These are **product-facing manual controls**,
+not a substitute for real-track evaluation or blind listener review.
