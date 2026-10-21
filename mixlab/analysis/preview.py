@@ -36,6 +36,8 @@ def preview(path, *, verified_bpm=None, first_beat=0.,
     if verified_bpm is not None:
         number(verified_bpm, "verified BPM", 30, 300)
     number(first_beat, "first beat", 0, 250)
+    if verified_bpm is None and first_beat != 0.:
+        raise ValueError("First beat requires manually supplied verified BPM")
     # Check parameter constraints before reading any private audio.
     meter_provider = AccentMeterProvider(beats_per_bar, phrase_bars)
     beat = (ManualProvider(verified_bpm, first_beat, annotator="operator-cli").analyze(path)
