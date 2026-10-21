@@ -48,7 +48,7 @@ def compare(paths, *, verified_bpm=None, first_beat=0., beats_per_bar=4,
             "has_unknown_critical_cues": (
                 item["rhythm"]["bpm"] is None or
                 item["tonality"]["key"] is None or
-                not item["structure"]["downbeat_cues"]),
+                item["structure"]["downbeat_cues"]["count"] == 0),
         })
     return {
         "schema_version": 1,
