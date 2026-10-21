@@ -10,6 +10,7 @@ from html import escape
 import json
 
 from .preview import preview
+from .cue_timeline import render_cue_timeline
 
 MAX_CLIPS = 8
 
@@ -104,6 +105,8 @@ def _render_html(document):
         details.append(
             "<details><summary>Inspecteer " + escape(track["id"]) +
             " · cuevoorstellen, niet bevestigd</summary>" +
+            render_cue_timeline(track["duration_seconds"], cue_data,
+                                clip_id=track["id"]) +
             cue("Beats", cue_data["beat_seconds"]) +
             cue("Maatstarts", cue_data["downbeat_seconds"]) +
             cue("Frasestarts", cue_data["phrase_seconds"]) +
@@ -125,7 +128,7 @@ def _render_html(document):
         "padding:0 1rem;line-height:1.5;color:#202124}"
         "table{border-collapse:collapse}th,td{border:1px solid #bbb;padding:.45rem;text-align:left}"
         "section{overflow:auto}details{border:1px solid #bbb;padding:.7rem;margin:.7rem 0}"
-        "summary{cursor:pointer;font-weight:600}small{color:#555}</style></head><body>"
+        "summary{cursor:pointer;font-weight:600}small{color:#555}.cue-timeline{margin:1rem 0;max-width:100%}.cue-timeline svg{width:100%;height:auto;display:block}.cue-timeline figcaption{font-size:.87rem;color:#444;margin:.25rem 0}@media print{details{break-inside:avoid}summary{font-weight:700}}</style></head><body>"
         "<h1>MixLab · privé cue-overzicht</h1>"
         "<p>Lokale voorstellen — geen audio of bestandsnamen geëxporteerd. "
         "Geen trackselectie, remixadvies, release- of rechtenverklaring.</p>"
