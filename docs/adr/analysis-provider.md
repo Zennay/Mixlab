@@ -120,9 +120,11 @@ python3 -m mixlab.analysis.manual_review /private/library/clip.wav \
 
 The source SHA-256, human-selected BPM, exact confirmed cue times, manual
 provenance/version and explicit non-authorization flags go into the private
-receipt. Neither path, media nor the annotator label are exported; only its
-private salted-by-config version hash is retained, as already produced by
-`ManualProvider`. Empty cue categories stay unavailable, not magically
+receipt. Neither path, media, annotator label nor its deterministic internal
+config fingerprint are exported; the receipt exposes only `manual-v1` as the
+provider label. `ManualProvider` still uses its internal configuration hash
+for identity, but an unkeyed label-derived hash must not be advertised as
+anonymization. Empty cue categories stay unavailable, not magically
 verified. Nothing automatically updates recipe/cache, rights, public research
 evidence or production mixes. These are **product-facing manual controls**,
 not a substitute for real-track evaluation or blind listener review.
