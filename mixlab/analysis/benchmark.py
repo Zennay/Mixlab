@@ -153,7 +153,7 @@ def main(argv=None):
     except ValueError:
         # Some malformed file/annotation errors can contain private values.
         # CLI messages are intentionally stable and never echo paths or IDs.
-        parser.exit(2, "MixLab analysis benchmark: invalid reference or changed PCM (details withheld)\\n")
+        parser.exit(2, "MixLab analysis benchmark: invalid reference or changed PCM (details withheld)\n")
     except (OSError, TypeError):
         # OS errors carry private operator paths; never echo them.
         parser.exit(2, "MixLab analysis benchmark: input unavailable (details withheld)\n")
