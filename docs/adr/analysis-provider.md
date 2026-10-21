@@ -166,8 +166,10 @@ browser permissions, auto-DJ decisions or render-side mutations.
 
 Each lane displays the actual total number of proposed cues. Only the
 previously bounded first 64 timestamps are plotted; if more exist, the
-screen says so, rather than implying a complete visualization. The x-axis
-uses the actual excerpt duration, and the timestamp list remains visible
+screen says so, rather than implying a complete visualization. In the multi-clip view, **all clips use one shared absolute-seconds axis**
+(maximum of the selected durations): shorter excerpts display a clear dashed
+end boundary and shaded out-of-source time rather than falsely filling the
+whole panel. The single-clip preview still uses its own full duration. The timestamp list remains visible
 below each chart for manual cross-checking. No source SHA, path, track
 name, audio or annotator identity is embedded in the HTML. The private
 JSON still carries the source SHA for operators who need to match the
