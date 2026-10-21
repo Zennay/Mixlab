@@ -10,8 +10,9 @@ from html import escape
 import json
 from . import EnergyOnsetProvider, ManualProvider
 from .meter import AccentMeterProvider
+from .source_receipt import source_identity, verify_source
 from .tonal import ChromaKeyProvider
-from ..ingest import digest, number
+from ..ingest import number
 
 MAX_CUES = 64
 
@@ -40,19 +41,24 @@ def preview(path, *, verified_bpm=None, first_beat=0.,
         raise ValueError("First beat requires manually supplied verified BPM")
     # Check parameter constraints before reading any private audio.
     meter_provider = AccentMeterProvider(beats_per_bar, phrase_bars)
+    original_identity = source_identity(path)
     beat = (ManualProvider(verified_bpm, first_beat, annotator="operator-cli").analyze(path)
             if verified_bpm is not None else EnergyOnsetProvider().analyze(path))
+    if source_identity(path) != original_identity:
+        raise ValueError("Private PCM changed during rhythm analysis")
     key = ChromaKeyProvider().analyze(path)
-    if beat.source_sha256 != key.source_sha256:
+    if (beat.source_sha256 != key.source_sha256 or
+            source_identity(path) != original_identity):
         raise ValueError("Audio changed between provider reads")
     meter = None
     if len(beat.beats_seconds) >= 4 * beats_per_bar:
         meter = meter_provider.analyze(path, list(beat.beats_seconds))
-        if meter.source_sha256 != beat.source_sha256:
+        if (meter.source_sha256 != beat.source_sha256 or
+                source_identity(path) != original_identity):
             raise ValueError("Audio changed between provider reads")
-    # A final byte digest detects ordinary swaps after the source providers.
-    if digest(path) != beat.source_sha256:
-        raise ValueError("Audio changed while preparing the preview")
+    # Final single-descriptor checksum plus physical identity refuses ordinary
+    # source swaps and in-place edits between independent provider reads.
+    verify_source(path, original_identity, beat.source_sha256)
     automatic = verified_bpm is None
     return {
         "schema_version": 1,
@@ -99,7 +105,7 @@ def preview(path, *, verified_bpm=None, first_beat=0.,
              )),
              "Not a calibrated accuracy score, track-rights proof or a DJ mixpoint.",
              "Manually check meter, downbeats, key and transition suitability.",
-             "Separate provider file reads are not an immutable audio snapshot."])),
+             "Physical identity and final checksum checks are not an immutable audio snapshot."])),
     }
 
 
