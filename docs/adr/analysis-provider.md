@@ -118,9 +118,10 @@ python3 -m mixlab.analysis.manual_review /private/library/clip.wav \
   --annotator "private-operator" --confirm-manual-cues > /private/confirmed-cues.json
 ```
 
-The source SHA-256, human-selected BPM, exact confirmed cue times, manual
-provenance/version and explicit non-authorization flags go into the private
-receipt. Neither path, media, annotator label nor its deterministic internal
+The source SHA-256, user-entered BPM, exact operator-declared cue times,
+manual source labels and explicit non-authorization flags go into the private
+receipt. The approval switch is a **self-declaration**, never evidence that
+someone actually listened to or correctly annotated the recording. Neither path, media, annotator label nor its deterministic internal
 config fingerprint are exported; the receipt exposes only `manual-v1` as the
 provider label. `ManualProvider` still uses its internal configuration hash
 for identity, but an unkeyed label-derived hash must not be advertised as
