@@ -218,3 +218,36 @@ No changes to a mixing recipe, public research outcome, rights verification,
 automatic acceptance or render authorization result from comparing notes.
 The old independent real-audio/human approval gates remain unchanged; this
 new operator tool does not satisfy them.
+
+
+### 21 October · One private review desk for eight source/receipt pairs
+
+For more than one locally saved cue note, use the additional operator
+command. Each `--pair` consists of an **original permitted PCM16 source**
+and its own saved self-declared private JSON receipt, in the desired
+display order:
+
+```bash
+python3 -m mixlab.analysis.receipt_batch \
+  --pair /private/library/a.wav /private/notes/a.json \
+  --pair /private/library/b.wav /private/notes/b.json \
+  --format html > /private/my-cue-desk.html
+```
+
+The full report is produced only when **all** selected inputs (1–8)
+individually reopen against their original content, retain physical
+identity through fresh heuristic analysis, and contain **distinct audio
+source hashes**. Invalid, duplicated, swapped or unavailable items fail
+the **entire output**, never a misleading partial playlist. Input order
+is display order, **not** a suggested DJ set order.
+
+The offline HTML displays a small key/BPM provenance table and one
+expandable pair of proposed and self-declared timelines per clip. Every
+clip uses the same absolute seconds axis; a shorter source visibly ends
+before the common end. The operator side never invents a full human
+beatgrid because the receipt contract does not contain one. At most
+64 cues per lane are shown with accurate source counts/truncation text.
+No audio, media paths, annotator identity or SHA is included in the
+HTML. Optional `--format json` does include private SHA values and
+must remain local. No JavaScript, API request, storage write, mixing,
+copyright approval, research integrity promotion or render occurs.
