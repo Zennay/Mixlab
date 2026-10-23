@@ -7,6 +7,7 @@ produces analysis evidence for M1.
 """
 import math
 from pathlib import Path
+import stat
 import statistics
 from . import EnergyOnsetProvider, beat_errors
 from .meter import AccentMeterProvider
@@ -18,6 +19,28 @@ from ..ingest import HASH, ID, number
 MAX_ITEMS = 200
 FIELDS = {"id", "path", "sha256", "bpm", "first_beat", "downbeats", "key", "annotator"}
 
+
+
+def _reference_path(root, relative):
+    """Keep annotation references inside real, non-symlinked child directories."""
+    parts = Path(relative).parts
+    if not parts:
+        raise ValueError("Reference path must identify a file")
+    candidate = root
+    for index, part in enumerate(parts):
+        candidate = candidate / part
+        try:
+            metadata = candidate.lstat()
+        except OSError as exc:
+            raise ValueError("Reference PCM source unavailable") from exc
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("Reference path cannot traverse symbolic links")
+        if index < len(parts) - 1:
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise ValueError("Reference path parent must be a real directory")
+        elif not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("Reference PCM source must be a regular file")
+    return candidate
 
 def _item(raw, root):
     if not isinstance(raw, dict) or not set(raw) <= FIELDS or not {"id", "path", "sha256", "bpm",
@@ -47,7 +70,7 @@ def _item(raw, root):
     key = raw.get("key")
     if key is not None and key not in KEYS:
         raise ValueError("Unsupported reference key")
-    return dict(id=raw["id"], path=root / relative, sha256=raw["sha256"], bpm=bpm,
+    return dict(id=raw["id"], path=_reference_path(root, relative), sha256=raw["sha256"], bpm=bpm,
                 first_beat=first, downbeats=tuple(downbeats), key=key)
 
 
