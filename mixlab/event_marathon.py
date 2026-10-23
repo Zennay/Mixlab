@@ -1,0 +1,590 @@
+"""Make one continuous offline event from already approved, receipt-verified sets.
+
+This is sample-preserving, gapless concatenation. No automatic beat/key
+matching, stem work, crossfades or new rights inference is performed.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import wave
+import zipfile
+import subprocess
+
+from .set_player import build_chapters
+
+BLOCK_FRAMES = 16384
+MAX_EVENTS = 8
+MAX_BYTES = 768 * 1024 * 1024
+MAX_HTML = 512 * 1024
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,59}\Z")
+SOURCE_FINGERPRINT = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+
+_PAGE = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src 'self'; connect-src 'none'; object-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<title>MixLab / Private Event Marathon</title>
+<style>
+:root{color-scheme:dark;--bg:#09111b;--panel:#192638;--line:#3e546b;--fg:#f1f8ff;--muted:#b5c8d8;--accent:#9cf9cc}
+*{box-sizing:border-box}body{background:radial-gradient(at 70% -20%,#21554e,var(--bg) 64%);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0}
+main{max-width:1200px;margin:auto;padding:clamp(18px,4vw,58px)}
+.eyebrow{font-weight:800;letter-spacing:.18em;color:var(--accent);font-size:11px}
+h1{font-size:clamp(38px,6vw,78px);letter-spacing:-.06em;line-height:1;margin:10px 0 20px}
+h2{font-size:22px;margin:0 0 12px}p{color:var(--muted)}
+.panel{background:var(--panel);border:1px solid var(--line);padding:clamp(16px,3vw,30px);border-radius:22px;margin:20px 0}
+audio{width:100%;margin:12px 0}
+.controls{display:flex;gap:11px;flex-wrap:wrap;margin:17px 0}
+button,a.action{color:#f5fbff;background:#2c5069;border:1px solid #668ba0;padding:11px 16px;border-radius:12px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:hover,a:hover{background:#3b6684}
+.timeline{width:100%;accent-color:var(--accent)}
+.time{font-size:clamp(25px,4vw,44px);font-weight:850;font-variant-numeric:tabular-nums}
+.list{display:grid;gap:10px;padding:0;list-style:none;margin:0}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:15px;border:1px solid var(--line);border-radius:14px}
+.row button{flex:1;text-align:left}
+.row .stamp{color:var(--accent);font-variant-numeric:tabular-nums}
+.row[aria-current=true]{border-color:var(--accent);background:#21433e}
+.muted{color:var(--muted)}.hash{word-break:break-word;font:11px ui-monospace,monospace;color:var(--muted)}
+
+/* Operator Stage: one real WAV clock, no audio copy and no network dependency. */
+.stage{border-color:#548975;background:linear-gradient(125deg,#172f32,#11243a 65%);position:relative}
+.stage .stage-header{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}
+.stage .stage-badge{background:#254d42;color:#c1ffe0;padding:6px 11px;border-radius:100px;font-size:12px;font-weight:850}
+.stage-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:17px;margin:20px 0}
+.stage-card{padding:20px;background:#0a1a25;border:1px solid #486a76;border-radius:18px}
+.stage-kicker{font-size:12px;font-weight:850;letter-spacing:.12em;color:#abd4c4}
+.stage-title{font-size:clamp(24px,3.5vw,46px);font-weight:850;line-height:1.15;overflow-wrap:anywhere;margin:10px 0}
+.stage-counter{font-size:clamp(33px,5vw,68px);font-variant-numeric:tabular-nums;line-height:1.15;font-weight:900;margin:8px 0;color:#b9ffdc}
+.stage progress{width:100%;height:16px;accent-color:#a2ffcb}
+.stage-actions{display:flex;gap:10px;flex-wrap:wrap;margin:15px 0}
+.stage-actions>*{min-width:145px;flex:1}
+.stage textarea{width:100%;min-height:85px;border:1px solid #678e9b;background:#091923;color:#fff;padding:12px;border-radius:12px;resize:vertical;font:inherit}
+.stage .stage-notes{font-size:13px;padding-left:22px;max-height:220px;overflow-y:auto}
+.stage .stage-notes li{margin:7px 0;overflow-wrap:anywhere}
+.stage .stage-meta{font-size:13px;color:#c0d9e1}
+.stage-cue{background:#0b2026;border:1px solid #619783;padding:17px 21px;border-radius:18px}
+.stage-cue strong{display:block;font-size:clamp(20px,3vw,32px);overflow-wrap:anywhere}
+.stage-cue .stage-queue-clock{color:#bdffe0;font-size:clamp(27px,4vw,49px);font-weight:900;font-variant-numeric:tabular-nums}
+.stage .stage-notes li{display:flex;align-items:start;gap:12px;justify-content:space-between;border-bottom:1px solid #43616c;padding-bottom:8px}
+.stage .stage-notes li span{overflow-wrap:anywhere;flex:1}
+.stage .stage-notes button{padding:5px 9px;font-size:12px}
+.stage .stage-notes li[data-passed=true]{opacity:.55}
+.stage .stage-actions label.action{background:#2c5069;padding:11px 16px;border:1px solid #668ba0;border-radius:12px;font-weight:800}
+.stage .stage-actions input[type=file]{max-width:280px}
+
+.stage:fullscreen{overflow:auto;padding:clamp(18px,3vw,54px);border:none;border-radius:0;background:#081923}
+.stage:fullscreen .stage-counter{font-size:clamp(65px,10vw,180px)}
+@media(max-width:700px){.stage-grid{grid-template-columns:1fr}.stage-actions>*{min-width:120px}}
+</style></head><body><main>
+<div class="eyebrow">MIXLAB / PRIVATE CONTINUOUS EVENT</div>
+<h1>One long<br>uninterrupted set.</h1>
+<p>A gapless assembly of real, independently completed private MixLab sets. No artificial remix, automatic harmonic matching, tempo shift or re-encoding.</p>
+<section class="panel"><h2>Play the continuous master</h2>
+<audio id="audio" controls preload="metadata"></audio>
+<div class="time" id="clock">00:00:00 / 00:00:00</div>
+<label for="timeline" class="muted">Seek in the full event</label>
+<input id="timeline" class="timeline" type="range" min="0" step="0.1" value="0">
+<div class="controls"><button id="prev" type="button">Previous set</button>
+<button id="next" type="button">Next set</button>
+<a id="download" class="action" download>Save original continuous WAV</a>
+<button id="cue" type="button">Download chapter CUE</button><a id="showbook" class="action" hidden>Open show runbook</a><a id="join-studio" class="action" hidden>Arrange transitions</a></div>
+<p id="status" class="muted" role="status">The actual output PCM16 WAV must remain alongside this offline page. Your media player may provide better performance than a browser with large WAV files.</p>
+</section>
+
+<section class="panel stage" id="stage">
+ <div class="stage-header"><div class="eyebrow">MIXLAB / OFFLINE STAGE CONTROL</div><span class="stage-badge" id="stage-state">PAUSED / READY</span></div>
+ <div class="stage-grid">
+  <div class="stage-card"><div class="stage-kicker">NOW PLAYING · VERIFIED MASTER</div><div class="stage-title" id="stage-current">Loading event…</div>
+   <div class="stage-kicker">PLAYHEAD</div><div class="stage-counter" id="stage-elapsed">00:00:00</div>
+   <progress id="stage-progress" value="0" max="100" aria-label="Progress through current event"></progress><div id="stage-progress-label" class="stage-meta">0% of this set</div>
+  </div>
+  <div class="stage-card"><div class="stage-kicker">NEXT EVENT / HANDOFF</div><div class="stage-title" id="stage-next">—</div>
+   <div class="stage-kicker">TIME UNTIL NEXT ENTRY</div><div class="stage-counter" id="stage-countdown">--:--:--</div>
+   <div id="stage-join" class="stage-meta">Source-receipt chapter boundaries, not automatic DJ beatmatching.</div>
+  </div>
+ </div>
+ <div class="stage-cue" aria-label="Upcoming manual operator cues">
+ <div class="stage-kicker">NEXT OPERATOR CUE · TIMED TO THIS MASTER</div>
+ <strong id="stage-next-cue">No operator markers loaded</strong>
+ <div class="stage-queue-clock" id="stage-cue-countdown">--:--:--</div>
+ <div class="stage-meta" id="stage-cue-detail">Import an exact-master cue log or mark a cue at the current playhead.</div>
+ </div>
+ <div class="stage-actions"><button id="stage-play" type="button">Play WAV / Space</button><button id="stage-fullscreen" type="button">Full screen / F</button>
+ <button id="stage-add" type="button">Mark cue / M</button><button id="stage-cancel-edit" type="button" hidden>Cancel edit</button><button id="stage-export" type="button">Export cue log</button></div>
+ <label for="stage-note" class="stage-kicker">Operator cue (stored in this page only; max 300 characters)</label>
+ <textarea id="stage-note" maxlength="300" placeholder="Crowd request, handoff cue, mix observation…"></textarea>
+ <div class="stage-actions"><label for="stage-import" class="action">Import a SHA-matched cue log</label>
+ <input id="stage-import" type="file" accept=".json,application/json" aria-label="Import private MixLab cue log"></div>
+ <ol id="stage-notes" class="stage-notes" aria-label="Cues in this browser session"></ol>
+ <p class="stage-meta" id="stage-message" role="status">No sound is recorded, uploaded or stored. Export your notes before closing this page. Browser playback is not certified for live shows; keep an independent WAV player and backup available.</p>
+</section>
+<section class="panel"><h2>Actual event sequence</h2><ol class="list" id="sections"></ol></section>
+<p>The original events and source songs are not embedded in this page. Each joint is an intentional, sample-exact boundary between completed sets. This is not a DJ-quality transition or evidence of listening preference. Only play this event where you have separately verified the required permissions.</p>
+<p class="hash" id="hash"></p>
+</main>
+<script id="mixlab-event-data" type="application/json">__DATA__</script>
+<script>
+"use strict";
+const data=JSON.parse(document.getElementById("mixlab-event-data").textContent);
+const $=id=>document.getElementById(id),audio=$("audio");
+const secs=data.sections;
+let selected=-1;
+const clock=s=>{
+ const n=Math.max(0,Math.floor(s));
+ return String(Math.floor(n/3600)).padStart(2,"0")+":"+String(Math.floor(n%3600/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
+};
+const media="./"+encodeURIComponent(data.wav_name);
+audio.src=media;$("download").href=media;
+if(data.showbook){$("showbook").href="./"+encodeURIComponent(data.showbook);$("showbook").hidden=false;}
+if(data.join_studio){$("join-studio").href="./"+encodeURIComponent(data.join_studio);$("join-studio").hidden=false;}
+$("timeline").max=String(data.duration_seconds);
+const rendered=[];
+secs.forEach((section,i)=>{
+ const row=document.createElement("li");row.className="row";
+ const button=document.createElement("button");button.type="button";
+ button.textContent=String(i+1)+". "+section.label;
+ button.addEventListener("click",()=>{
+  audio.currentTime=section.start_seconds;
+  const p=audio.play();if(p)p.catch(()=>$("status").textContent="Browser blocked playback; open the WAV in a local audio player.");
+ });
+ const stamp=document.createElement("span");stamp.className="stamp";
+ stamp.textContent=clock(section.start_seconds);
+ row.append(button,stamp);$("sections").append(row);rendered.push(row);
+});
+function update(){
+ $("clock").textContent=clock(audio.currentTime)+" / "+clock(data.duration_seconds);
+ $("timeline").value=String(audio.currentTime);
+ const index=Math.max(0,secs.findLastIndex(x=>x.start_seconds<=audio.currentTime+0.05));
+ if(index!==selected){selected=index;rendered.forEach((row,i)=>row.setAttribute("aria-current",String(i===index)));}
+}
+audio.addEventListener("timeupdate",update);
+audio.addEventListener("error",()=>$("status").textContent="Local WAV unsupported by this browser. Open the original WAV file in a desktop audio player.");
+$("timeline").addEventListener("input",e=>{audio.currentTime=Number(e.target.value);update()});
+$("prev").addEventListener("click",()=>{const index=Math.max(0,selected-1);audio.currentTime=secs[index].start_seconds;update()});
+$("next").addEventListener("click",()=>{const index=Math.min(secs.length-1,selected+1);audio.currentTime=secs[index].start_seconds;update()});
+$("cue").addEventListener("click",()=>{
+ const lines=["REM GENRE \"Mixed event\"","FILE \""+data.wav_name+"\" WAVE"];
+ secs.forEach((section,i)=>{
+  const f=Math.floor(section.start_seconds*75);
+  const t=String(Math.floor(f/75/60)).padStart(2,"0")+":"+
+          String(Math.floor(f/75%60)).padStart(2,"0")+":"+
+          String(f%75).padStart(2,"0");
+  lines.push("  TRACK "+String(i+1).padStart(2,"0")+" AUDIO",
+    "    TITLE \"Event "+String(i+1)+"\"","    INDEX 01 "+t);
+ });
+ const url=URL.createObjectURL(new Blob([lines.join("\r\n")+"\r\n"],{type:"text/plain"}));
+ const a=document.createElement("a");a.href=url;a.download="mixlab-marathon.private.cue";
+ document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+$("hash").textContent="Exact continuous WAV SHA-256: "+data.wav_sha256;
+update();
+
+/* Live operator view is a read-only projection of the one existing player. */
+const cueNotes=[];
+let cueEditingIndex=-1;
+let cueDirty=false;
+const stageClock=seconds=>clock(Math.max(0,seconds));
+const cueMessage=text=>{$("stage-message").textContent=text;};
+let stageIndex=0;
+function stageUpdate(){
+ const pos=Math.max(0,Math.min(data.duration_seconds,Number(audio.currentTime)||0));
+ const ix=Math.max(0,Math.min(secs.length-1,secs.findLastIndex(s=>s.start_seconds<=pos+0.05)));
+ stageIndex=ix;
+ const next=secs[ix+1];
+ const begin=secs[ix].start_seconds;
+ const boundary=next?next.start_seconds:data.duration_seconds;
+ const span=Math.max(0.001,boundary-begin);
+ $("stage-current").textContent=(ix+1)+" / "+secs.length+" · "+secs[ix].label;
+ $("stage-next").textContent=next?next.label:"LAST EVENT / END OF MASTER";
+ $("stage-elapsed").textContent=stageClock(pos);
+ $("stage-countdown").textContent=stageClock(Math.max(0,boundary-pos));
+ const pct=Math.min(100,Math.max(0,100*(pos-begin)/span));
+ $("stage-progress").value=pct;
+ $("stage-progress-label").textContent=Math.floor(pct)+"% of this section · total "+stageClock(data.duration_seconds);
+ const fade=next&&Number(next.fade_in_seconds)>0?Number(next.fade_in_seconds):0;
+ $("stage-join").textContent=next?(fade?("Next handoff: "+fade+"s already-rendered audio crossfade. Listen before event use."):"Next handoff: hard boundary. No automatic DJ transition."):"Final section. Master ends when the actual WAV ends.";
+ $("stage-state").textContent=audio.ended?"MASTER ENDED":audio.paused?"PAUSED / READY":"WAV PLAYING";
+ $("stage-play").textContent=audio.paused?"Play WAV / Space":"Pause WAV / Space";
+ cueUpdateNext(pos);
+}
+function stagePlayback(){
+ if(!audio.paused){audio.pause();return;}
+ const result=audio.play();
+ if(result)result.catch(()=>cueMessage("Playback unavailable here. Open the verified WAV in an independent local player."));
+}
+
+function cueOrder(){
+ return cueNotes.map((cue,i)=>({cue,i})).sort((a,b)=>
+  a.cue.time_seconds-b.cue.time_seconds||a.i-b.i);
+}
+function cueUpdateNext(pos){
+ const item=cueOrder().find(x=>x.cue.time_seconds>=pos-0.5);
+ if(!item){
+  $("stage-next-cue").textContent=cueNotes.length?"All operator cues have passed":"No operator markers loaded";
+  $("stage-cue-countdown").textContent="--:--:--";
+  $("stage-cue-detail").textContent=cueNotes.length?
+   "No more markers ahead. Playback remains controlled by the master WAV.":
+   "Import an exact-master cue log or mark a cue at the current playhead.";
+  return;
+ }
+ const cue=item.cue,remaining=Math.max(0,cue.time_seconds-pos);
+ $("stage-next-cue").textContent=cue.note||"Unlabelled manual cue";
+ $("stage-cue-countdown").textContent=remaining<0.5?"CUE NOW":stageClock(remaining);
+ $("stage-cue-detail").textContent=cue.event_label+" · "+stageClock(cue.time_seconds)+
+  " in the original WAV"+(cueDirty?" · unpublished edits — export again":"");
+}
+function cueEdit(index){
+ const cue=cueNotes[index];if(!cue)return;
+ cueEditingIndex=index;
+ $("stage-note").value=cue.note;
+ $("stage-add").textContent="Save edited cue";
+ $("stage-cancel-edit").hidden=false;
+ $("stage-note").focus();
+ cueMessage("Editing cue "+(index+1)+". Its exact WAV time is preserved.");
+}
+function cueCancel(){
+ cueEditingIndex=-1;
+ $("stage-note").value="";
+ $("stage-add").textContent="Mark cue / M";
+ $("stage-cancel-edit").hidden=true;
+}
+function cueRemove(index){
+ if(!cueNotes[index]||!window.confirm("Remove this cue from the private browser log?"))return;
+ cueNotes.splice(index,1);cueCancel();cueDirty=true;cueShow();
+ cueMessage("Cue deleted locally; export again to preserve changes.");
+}
+
+function cueShow(){
+ const out=$("stage-notes");out.replaceChildren();
+ cueOrder().forEach(({cue,i})=>{
+  const row=document.createElement("li");
+  row.dataset.passed=String(cue.time_seconds<(Number(audio.currentTime)||0));
+  const label=document.createElement("span");
+  label.textContent=String(i+1)+". "+stageClock(cue.time_seconds)+" · "+cue.event_label+
+   (cue.note?" · "+cue.note:" · Manual marker");
+  const seek=document.createElement("button");seek.type="button";seek.textContent="Seek";
+  seek.title="Rehearsal only: seek to this cue while the master is paused";
+  seek.disabled=!audio.paused;
+  seek.addEventListener("click",()=>{
+   if(!audio.paused){cueMessage("Pause the master before seeking to an operator cue.");return;}
+   audio.currentTime=cue.time_seconds;stageUpdate();
+  });
+  const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";
+  edit.addEventListener("click",()=>cueEdit(i));
+  const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
+  remove.addEventListener("click",()=>cueRemove(i));
+  row.append(label,seek,edit,remove);out.append(row);
+ });
+ cueUpdateNext(Math.max(0,Number(audio.currentTime)||0));
+}
+function cueAdd(){
+ const note=$("stage-note").value.trim();
+ if(cueEditingIndex>=0){
+  cueNotes[cueEditingIndex].note=note;
+  cueCancel();cueDirty=true;cueShow();
+  cueMessage("Cue text changed locally. Export again to preserve edits.");
+  return;
+ }
+ if(cueNotes.length>=200){cueMessage("Maximum 200 local cue markers. Export the existing log.");return;}
+ const pos=Math.max(0,Math.min(data.duration_seconds,Number(audio.currentTime)||0));
+ cueNotes.push({time_seconds:Math.round(pos*100)/100,event_index:stageIndex,event_label:secs[stageIndex].label,note});
+ $("stage-note").value="";
+ cueDirty=true;cueShow();
+ cueMessage("Cue added to this browser session. Export to preserve it; no automatic storage.");
+}
+function cueSave(){
+ const payload={kind:"mixlab-private-marathon-cues-v1",schema_version:1,
+  source_wav_sha256:data.wav_sha256,source_duration_seconds:data.duration_seconds,
+  sections:secs.map(s=>({label:s.label,start_seconds:s.start_seconds})),cues:cueNotes};
+ const blob=new Blob([JSON.stringify(payload,null,2)+"\n"],{type:"application/json"});
+ const u=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=u;a.download="mixlab-marathon-cues.private.json";document.body.append(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(u),1000);
+ cueDirty=false;cueUpdateNext(Math.max(0,Number(audio.currentTime)||0));
+ cueMessage("Private cues exported. They are SHA-bound to this exact master; keep alongside your offline WAV.");
+}
+async function cueLoad(file){
+ if(!file||file.size>65536||file.size<2)throw Error("Cue log must be an ordinary JSON file smaller than 64 KiB.");
+ const obj=JSON.parse(await file.text());
+ if(!obj||obj.kind!=="mixlab-private-marathon-cues-v1"||obj.schema_version!==1||
+    obj.source_wav_sha256!==data.wav_sha256||
+    obj.source_duration_seconds!==data.duration_seconds||!Array.isArray(obj.sections)||
+    JSON.stringify(obj.sections)!==JSON.stringify(secs.map(s=>({label:s.label,start_seconds:s.start_seconds})))||
+    !Array.isArray(obj.cues)||obj.cues.length>200)throw Error("Cue log is not bound to this exact verified Marathon.");
+ const valid=obj.cues.every(c=>c&&typeof c==="object"&&Number.isFinite(c.time_seconds)&&
+    c.time_seconds>=0&&c.time_seconds<=data.duration_seconds&&Number.isInteger(c.event_index)&&
+    c.event_index>=0&&c.event_index<secs.length&&c.event_label===secs[c.event_index].label&&
+    typeof c.note==="string"&&c.note.length<=300&&
+    (c.time_seconds+0.05>=secs[c.event_index].start_seconds)&&(c.event_index===secs.length-1||c.time_seconds<secs[c.event_index+1].start_seconds+0.05));
+ if(!valid)throw Error("Cue log contains invalid markers.");
+ cueNotes.splice(0,cueNotes.length,...obj.cues.map(c=>({time_seconds:c.time_seconds,event_index:c.event_index,event_label:c.event_label,note:c.note})));
+ cueCancel();cueDirty=false;cueShow();cueMessage("Exact-master cue log restored locally. No uploads performed.");
+}
+$("stage-play").addEventListener("click",stagePlayback);
+$("stage-fullscreen").addEventListener("click",async()=>{
+ try{if(document.fullscreenElement)await document.exitFullscreen();else await $("stage").requestFullscreen();}
+ catch(_){cueMessage("Full-screen display is unavailable in this browser.");}
+});
+$("stage-add").addEventListener("click",cueAdd);
+$("stage-cancel-edit").addEventListener("click",cueCancel);
+audio.addEventListener("play",cueShow);
+audio.addEventListener("pause",cueShow);
+$("stage-export").addEventListener("click",cueSave);
+$("stage-import").addEventListener("change",async e=>{
+ try{await cueLoad(e.target.files&&e.target.files[0]);}
+ catch(_){cueMessage("Cue import rejected: wrong source, malformed data or file too large.");}
+ finally{e.target.value="";}
+});
+document.addEventListener("keydown",e=>{
+ const field=e.target&&["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target.tagName);
+ if(field||e.altKey||e.ctrlKey||e.metaKey||e.repeat)return;
+ if(e.code==="Space"){e.preventDefault();stagePlayback();}
+ else if(e.key.toLowerCase()==="f"&&!e.shiftKey){e.preventDefault();$("stage-fullscreen").click();}
+ else if(e.key.toLowerCase()==="m"&&!e.shiftKey){e.preventDefault();cueAdd();}
+});
+audio.addEventListener("timeupdate",stageUpdate);
+audio.addEventListener("seeked",stageUpdate);
+audio.addEventListener("play",stageUpdate);
+audio.addEventListener("pause",stageUpdate);
+audio.addEventListener("ended",stageUpdate);
+audio.addEventListener("loadedmetadata",stageUpdate);
+stageUpdate();
+</script></body></html>"""
+
+
+def _meta_key(st):
+    return tuple(getattr(st, name) for name in SOURCE_FINGERPRINT)
+
+
+def _new_folder(path, source_dirs):
+    dest = Path(path).absolute()
+    if (dest.name in ("", ".", "..") or not NAME.fullmatch(dest.name) or
+            dest.exists() or dest.is_symlink() or not dest.parent.is_dir()):
+        raise ValueError("Choose a NEW private event folder with a simple name")
+    for a in (dest, *dest.parents):
+        if a.is_symlink() or (a / ".git").exists():
+            raise ValueError("Cannot publish a private music master under Git or a symlink")
+    if any(dest.is_relative_to(folder) or folder.is_relative_to(dest) for folder in source_dirs):
+        raise ValueError("Output folder must be separate from every private source event")
+    return dest
+
+
+def _admit(session, source):
+    session = Path(session).absolute()
+    wav = Path(source).absolute()
+    if (not session.is_dir() or session.is_symlink() or wav.is_symlink() or
+            not wav.is_file()):
+        raise ValueError("Source set and private Studio session must be ordinary local files")
+    for part in (wav, *wav.parents, session, *session.parents):
+        if part.is_symlink():
+            raise ValueError("No symlinked private event source or Studio directories allowed")
+    meta = build_chapters(session, wav)
+    fd = os.open(wav, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
+                 getattr(os, "O_NONBLOCK", 0))
+    with os.fdopen(fd, "rb") as src:
+        before = os.fstat(src.fileno())
+        if not stat.S_ISREG(before.st_mode) or not 44 <= before.st_size <= MAX_BYTES:
+            raise ValueError("A source completed WAV is too large or not regular")
+        with wave.open(src, "rb") as reader:
+            if (reader.getnchannels() != 2 or reader.getsampwidth() != 2 or
+                    reader.getcomptype() != "NONE"):
+                raise ValueError("Only completed stereo PCM16 MixLab masters can be concatenated")
+            frame_rate=reader.getframerate()
+            count=reader.getnframes()
+            if not 8000 <= frame_rate <= 96000 or count <= 0:
+                raise ValueError("Invalid completed source PCM16 header")
+        if _meta_key(before) != _meta_key(os.fstat(src.fileno())):
+            raise ValueError("Source WAV changed during metadata inspection")
+    return {"session":session,"wav":wav,"wav_sha256":meta["wav_sha256"],
+            "duration":meta["duration_seconds"],"frames":count,
+            "rate":frame_rate,"stamp":_meta_key(before),
+            "chapters":meta["chapters"]}
+
+
+def _digest_file(path):
+    flags=os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)|getattr(os,"O_NONBLOCK",0)
+    fd=os.open(path,flags)
+    with os.fdopen(fd,"rb") as src:
+        h=hashlib.sha256()
+        while True:
+            data=src.read(65536)
+            if not data:break
+            h.update(data)
+    return h.hexdigest()
+
+
+def create_marathon(new_private_folder, *set_pairs, read=input, write=print, bundle=False,
+                    start=None, delivery=None, bitrate_kbps=192):
+    if delivery not in (None, "mp3", "flac") or type(bitrate_kbps) is not int or bitrate_kbps not in (128, 192, 256, 320):
+        raise ValueError("Choose local MP3/FLAC and an allowed bitrate")
+    if not 2 <= len(set_pairs) <= MAX_EVENTS:
+        raise ValueError("Choose 2 to 8 completed private events")
+    items=[_admit(session,wav) for session,wav in set_pairs]
+    if len({item["wav"] for item in items}) != len(items):
+        raise ValueError("One private completed event cannot be repeated as two sources")
+    rates={item["rate"] for item in items}
+    if len(rates)!=1:
+        raise ValueError("Completed events use different PCM sample rates; no silent resampling")
+    rate=items[0]["rate"]
+    total_frames=sum(item["frames"] for item in items)
+    if total_frames*4>MAX_BYTES:
+        raise ValueError("Combined event would exceed the 768 MiB private WAV budget")
+    destination=_new_folder(new_private_folder,[item["wav"].parent for item in items])
+    write("MixLab private continuous event: original approved masters only.")
+    for i,item in enumerate(items,1):
+        write(f"  {i}. {item['wav'].parent.name}: {item['duration']:.1f} seconds, {len(item['chapters'])} chapters")
+    write("All sets are appended without crossfade, tempo alignment or any quality claim.")
+    write("You must independently confirm permission to play or distribute this combined result.")
+    if read("Type yes to create this exact private continuous event: ").strip()!="yes":
+        raise ValueError("Explicit private-event compilation approval not given")
+
+    if start is not None:
+        from .marathon_showbook import CLOCK
+        if not isinstance(start, str) or not CLOCK.fullmatch(start):
+            raise ValueError("Planned local Marathon start must be HH:MM")
+    destination.mkdir(mode=0o700)
+    wav=destination/"marathon.wav"
+    receipt=destination/"marathon.receipt.private.json"
+    player=destination/"index.html"
+    created=[]
+    try:
+        with wav.open("xb") as outfile:
+            created.append(wav)
+            os.fchmod(outfile.fileno(),0o600)
+            with wave.open(outfile,"wb") as dest:
+                dest.setnchannels(2);dest.setsampwidth(2);dest.setframerate(rate)
+                dest.setnframes(total_frames)
+                sections=[]
+                offset=0
+                for idx,item in enumerate(items,1):
+                    sections.append({"index":idx,"label":item["wav"].parent.name,
+                                     "source_sha256":item["wav_sha256"],
+                                     "start_frame":offset,"frames":item["frames"],
+                                     "start_seconds":round(offset/rate,5)})
+                    fd=os.open(item["wav"],os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)|
+                               getattr(os,"O_NONBLOCK",0))
+                    with os.fdopen(fd,"rb") as stream:
+                        if _meta_key(os.fstat(stream.fileno()))!=item["stamp"]:
+                            raise ValueError("An approved original WAV changed before joining")
+                        with wave.open(stream,"rb") as src:
+                            if (src.getnframes()!=item["frames"] or
+                                    src.getframerate()!=rate or
+                                    src.getnchannels()!=2 or src.getsampwidth()!=2):
+                                raise ValueError("A private source's PCM format changed")
+                            remaining=item["frames"]
+                            while remaining:
+                                want=min(remaining,BLOCK_FRAMES)
+                                pcm=src.readframes(want)
+                                if len(pcm)!=want*4:
+                                    raise ValueError("Original completed WAV was truncated")
+                                dest.writeframesraw(pcm)
+                                remaining-=want
+                        if _meta_key(os.fstat(stream.fileno()))!=item["stamp"]:
+                            raise ValueError("Source changed during private event compilation")
+                    offset+=item["frames"]
+                if offset!=total_frames:
+                    raise ValueError("Sample count of private joined event did not match preflight")
+        observed=_digest_file(wav)
+        payload={"schema_version":1,"kind":"mixlab-private-continuous-event-v1",
+                 "wav_name":wav.name,"wav_sha256":observed,
+                 "rate":rate,"channels":2,"sample_width_bytes":2,
+                 "frames":total_frames,"duration_seconds":total_frames/rate,
+                 "sections":sections,"no_automatic_tempo_matching":True,
+                 "sample_preserving_joins":True,"private_local_use_only":True,
+                 "automatic_licensing":False,"musical_preference_proven":False}
+        with receipt.open("xb") as output:
+            created.append(receipt);os.fchmod(output.fileno(),0o600)
+            output.write((json.dumps(payload,sort_keys=True,indent=2,allow_nan=False)+"\n").encode("utf-8"))
+        join_studio = None
+        join_studio_warning = None
+        try:
+            from .marathon_join_studio import create_join_studio
+            join_studio = create_join_studio(wav, destination / "marathon.join-studio.private.html")
+            created.append(join_studio)
+        except (ValueError, TypeError, KeyError, OSError, wave.Error):
+            join_studio_warning = "Completed WAV exists; optional Join Studio could not be generated"
+        showbook = None
+        showbook_warning = None
+        try:
+            from .marathon_showbook import create_runbook
+            showbook = create_runbook(wav, destination / "marathon.runbook.private.html", start=start)
+            created.append(showbook)
+        except (ValueError, TypeError, KeyError, OSError):
+            showbook_warning = "Completed WAV exists; optional private Marathon runbook unavailable"
+        viewer={"wav_name":wav.name,"wav_sha256":observed,
+                "showbook":showbook.name if showbook else None,
+                "join_studio":join_studio.name if join_studio else None,
+                "duration_seconds":payload["duration_seconds"],
+                "sections":[{"label":row["label"],"start_seconds":row["start_seconds"]}
+                            for row in sections]}
+        blob=json.dumps(viewer,ensure_ascii=True,separators=(",",":"),allow_nan=False)
+        blob=blob.replace("<","\\u003c").replace(">","\\u003e").replace("&","\\u0026")
+        html=_PAGE.replace("__DATA__",blob).encode("utf-8")
+        if len(html)>MAX_HTML:
+            raise ValueError("Private event HTML exceeded its local budget")
+        with player.open("xb") as output:
+            created.append(player);os.fchmod(output.fileno(),0o600);output.write(html)
+    except Exception:
+        for artifact in reversed(created):
+            artifact.unlink(missing_ok=True)
+        destination.rmdir()
+        raise
+    result = {"continuous_wav":str(wav),"private_receipt":str(receipt),
+              "private_player":str(player),"events_joined":len(items),
+              "duration_seconds":payload["duration_seconds"],"wav_sha256":observed,
+              "automatic_tempo_matching":False,"private":True,"rights_proven":False,
+              "private_show_runbook":str(showbook) if showbook else None,
+              "private_join_studio":str(join_studio) if join_studio else None}
+    if showbook_warning:
+        result["showbook_warning"] = showbook_warning
+    if join_studio_warning:
+        result["join_studio_warning"] = join_studio_warning
+    if delivery:
+        try:
+            from .marathon_delivery import export_mobile_marathon
+            result["mobile_delivery"] = export_mobile_marathon(
+                wav, destination / ("marathon." + delivery), bitrate_kbps=bitrate_kbps)
+        except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
+            result["mobile_warning"] = "Real Marathon WAV exists; optional mobile encoding was unavailable"
+    if bundle:
+        # Packaging is optional; never remove the already completed WAV if
+        # the USB archive exceeds disk or file limits.
+        try:
+            from .marathon_bundle import export_marathon_bundle
+            result["portable_bundle"] = export_marathon_bundle(
+                wav, destination / "marathon.private.zip")
+        except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
+            result["portable_bundle"] = None
+            result["bundle_warning"] = "Real continuous WAV exists; optional USB ZIP was not published"
+    return result
+
+
+def main():
+    parser=argparse.ArgumentParser(
+        description="Join 2–8 original receipt-verified private MixLab event WAVs, sample-exact and offline")
+    parser.add_argument("new_private_folder")
+    parser.add_argument("session_wav_pairs",nargs="+",help="Alternating Studio SESSION and original completed WAV")
+    parser.add_argument("--bundle",action="store_true",help="Also create an optional trusted private USB ZIP")
+    parser.add_argument("--start",help="Optional planned local show start HH:MM")
+    parser.add_argument("--delivery",choices=("mp3","flac"),help="Also make a private portable mobile encoding")
+    parser.add_argument("--bitrate-kbps",type=int,choices=(128,192,256,320),default=192)
+    args=parser.parse_args()
+    if not 4<=len(args.session_wav_pairs)<=MAX_EVENTS*2 or len(args.session_wav_pairs)%2:
+        parser.exit(2,"Provide 2–8 SESSION WAV pairs after the new output folder\n")
+    pairs=list(zip(args.session_wav_pairs[0::2],args.session_wav_pairs[1::2]))
+    try:
+        out=create_marathon(args.new_private_folder,*pairs,bundle=args.bundle,start=args.start,
+                            delivery=args.delivery,bitrate_kbps=args.bitrate_kbps)
+    except (ValueError,TypeError,KeyError,OSError,EOFError,KeyboardInterrupt,wave.Error):
+        parser.exit(2,"MixLab event marathon: source admission, approval or private export failed; "
+                       "no completed new event was published.\n")
+    print(json.dumps(out,ensure_ascii=False,allow_nan=False))
+
+
+if __name__=="__main__":
+    main()

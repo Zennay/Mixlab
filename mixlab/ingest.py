@@ -377,7 +377,11 @@ def validate_library(manifest_path):
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("Source path must remain within the library directory; traversal rejected")
         try:
-            path = (source.parent / relative).resolve()
+            # Non-strict resolve() can return an unresolved path for a
+            # self-referential symlink on newer Python releases (3.14),
+            # deferring the failure until private PCM I/O. Require a valid
+            # target during cheap manifest preflight instead.
+            path = (source.parent / relative).resolve(strict=True)
         except (OSError, RuntimeError):
             # Python releases differ in whether cyclic symlinks raise
             # RuntimeError or OSError. Neither may leak a private path or

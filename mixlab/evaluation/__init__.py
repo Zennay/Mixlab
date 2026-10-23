@@ -3,23 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from ..ingest import digest
+from ..ingest import inspect_wav_and_digest
+from ..engine import FAMILY_NAMES
+from .json_admission import load_bounded_json as _load
 
 CHOICES = {"A", "B", "Tie", "Both unusable"}
 
 
-def _load(path):
-    path = Path(path)
-    if path.stat().st_size > 4 * 1024 * 1024:
-        raise ValueError("Evaluation JSON exceeds 4 MiB")
-    def unique(items):
-        out = {}
-        for key, value in items:
-            if key in out: raise ValueError("Duplicate JSON field")
-            out[key] = value
-        return out
-    return json.loads(path.read_text(), object_pairs_hook=unique,
-                      parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Nonfinite JSON")))
+# Reuse the independently validated, single-FD, regular-file-only admission
+# primitive.  stat(path) followed by Path.read_text() could block forever on
+# FIFOs, race with a replacement file and read beyond the original size check.
 
 
 def verify_pack(root):
@@ -29,35 +22,92 @@ def verify_pack(root):
     key = _load(root / "private/answer-key.json")
     if not isinstance(receipt, dict) or not isinstance(evidence, dict) or not isinstance(key, list):
         raise ValueError("Invalid pack structure")
+    # The public receipt must describe the same manifest and schema as the
+    # private listening evidence. Without this, public provenance can be
+    # silently relabelled while the pack-id still verifies private data.
+    if (type(receipt.get("schema_version")) is not int
+            or receipt["schema_version"] != 1
+            or type(evidence.get("schema_version")) is not int
+            or evidence["schema_version"] != 1):
+        raise ValueError("Invalid frozen pack schema")
+    manifest_sha = evidence.get("manifest_sha256")
+    if (not isinstance(manifest_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or receipt.get("manifest_sha256") != manifest_sha):
+        raise ValueError("Frozen pack manifest identity mismatch")
+    # The producer emits an *unvalidated* frozen listening pack. Human
+    # listening approvals belong to separate reviewed rating evidence,
+    # never to an editable public receipt status outside pack_id hashing.
+    if receipt.get("status") != "rendered-not-listener-validated":
+        raise ValueError("Invalid frozen pack status")
     renders = evidence.get("renders")
     if not isinstance(renders, list) or not renders:
         raise ValueError("Missing render evidence")
+    # A validated library contains no more than ten registered pairs.
+    # Current renderer produces one baseline and three variants (at most
+    # forty source renders and thirty blind trials). Bound both JSON arrays
+    # *before* hashing or opening any private listening audio.
+    if not 1 <= len(key) <= 30 or len(renders) > 40:
+        raise ValueError("Frozen pack trial/render budget exceeded")
     identity = {"manifest": evidence.get("manifest_sha256"), "answers": key,
                 "outputs": [r["output_sha256"] for r in renders]}
     pack_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     if evidence.get("pack_id") != pack_id or receipt.get("pack_id") != pack_id:
         raise ValueError("Pack identity mismatch")
-    if receipt.get("trial_count") != len(key) or receipt.get("render_count") != len(renders):
+    # JSON floats with integral values compare equal to ints (3.0 == 3),
+    # and bool is a subclass of int. Neither is valid provenance for frozen
+    # experiment counts: insist on the actual JSON integer representation.
+    if (type(receipt.get("trial_count")) is not int
+            or type(receipt.get("render_count")) is not int
+            or receipt["trial_count"] != len(key)
+            or receipt["render_count"] != len(renders)):
         raise ValueError("Pack count mismatch")
     render_by_pair = {}
     for row in renders:
         pair, family = row["pair"], row["family"]
+        # Families are not bound by pack_id (which hashes only the WAV
+        # digests and answer key). Prevent renamed synthetic audio from
+        # being represented as an algorithm the renderer does not support.
+        if not isinstance(pair, str) or not isinstance(family, str) or family not in FAMILY_NAMES:
+            raise ValueError("Unknown frozen render family or pair")
         if (pair,family) in render_by_pair:
             raise ValueError("Duplicate render identity")
         render_by_pair[pair,family] = row
     trials = {}
-    for row in key:
-        tid = row.get("trial")
-        if not isinstance(tid, str) or not re.fullmatch(r"trial-[0-9]{3}", tid) or tid in trials:
+    candidate_trials = set()
+    for ordinal, row in enumerate(key, 1):
+        # The current renderer emits exactly sequential trial IDs in the
+        # same order as the public review form. A rehashed 'trial-999'
+        # or reordered answer key could create a pseudo-listening trial
+        # that was never actually shown in the browser review interface.
+        if not isinstance(row, dict) or row.get("trial") != f"trial-{ordinal:03d}":
+            raise ValueError("Noncanonical frozen trial identity")
+        tid = row["trial"]
+        if tid in trials:
             raise ValueError("Invalid or duplicate trial")
         if row.get("A") == row.get("B") or sum(row.get(label) == "baseline" for label in ("A","B")) != 1:
             raise ValueError("Trial must compare baseline with one candidate")
+        # Different trial IDs must not disguise a repeated selection of the
+        # same candidate for the same pair: otherwise one render can receive
+        # multiple independent-looking preference votes in the pilot.
+        candidate = row["B"] if row["A"] == "baseline" else row["A"]
+        pair = row.get("pair")
+        if not isinstance(pair, str) or not isinstance(candidate, str):
+            raise ValueError("Invalid pair or candidate")
+        selection = (pair, candidate)
+        if selection in candidate_trials:
+            raise ValueError("Duplicate candidate trial identity")
+        candidate_trials.add(selection)
         for label in ("A","B"):
             reference = render_by_pair.get((row.get("pair"),row[label]))
             if reference is None:
                 raise ValueError("Trial references missing render")
             wav = root / "review" / f"{tid}-{label}.wav"
-            if digest(wav) != reference["output_sha256"]:
+            # Render integrity must be checked on a bounded regular PCM16
+            # descriptor, not with the unbounded digest(path) iterator:
+            # a replaced review WAV could otherwise block on a FIFO or
+            # consume unbounded bytes before rejecting the frozen pack.
+            if inspect_wav_and_digest(wav)[1] != reference["output_sha256"]:
                 raise ValueError("Listening audio changed after pack freeze")
         trials[tid] = row
     return receipt, evidence, trials
@@ -114,12 +164,28 @@ def aggregate(root, rating_paths):
                               [root/"review"/f"{tid}-{other_label}.wav"])["candidates"][0]
         if not result["level_comparable_for_blind_ab"] or result["warnings"]:
             confounds.append({"trial":tid,"warnings":result["warnings"]})
-    kinds = {evidence.get("kind")}
+    # The quality comparator re-opens the reviewed files after the original
+    # freeze verification. A file changed during that second read must not
+    # contribute to a seemingly valid private aggregate. Revalidate the
+    # bounded frozen pack before publishing an outcome. This catches
+    # persistent mid-analysis edits; it is not a guarantee against an
+    # attacker swapping bytes and restoring them between observations.
+    verify_pack(root)
+    # Neither evidence.kind nor per-render source declarations are authenticated
+    # by pack_id: it hashes output WAV digests and answer assignments, not
+    # editable descriptive metadata. An attacker can relabel a synthetic pack
+    # and erase or forge even *all* source declarations without changing audio.
+    # A blanket conditional caution is therefore the only honest inference;
+    # do not promote any report based solely on editable provenance labels.
     multiple_candidates = any(sum(p == row["pair"] for p,f in rows) > 1 for row in summaries)
     limitations = ["RMS comparison is not perceptual loudness matching",
-                   "listener identities are pseudonyms, not independently verified"]
+                   "listener identities are pseudonyms, not independently verified",
+                   "source permission declarations are not independently authenticated",
+                   # This is a universal conditional caveat, not a claim that
+                   # every pack contains synthetic music. Never hide it based
+                   # on metadata that is not authenticated by the pack ID.
+                   "synthetic input cannot establish musical preference"]
     if multiple_candidates: limitations.append("exploratory multi-candidate pack; not a preselected single-candidate pilot")
-    if "synthetic-smoke-only" in kinds: limitations.append("synthetic input cannot establish musical preference")
     return {"schema_version":1,"pack_id":receipt["pack_id"],"reviewers":len(reviewers),
             "trials":len(trials),"counts":total,"non_tied_preferences":decisive,
             "candidate_preference_fraction":total["candidate"]/decisive if decisive else None,
@@ -136,6 +202,8 @@ def main():
     args=parser.parse_args()
     try:
         result=aggregate(args.pack,args.ratings)
-    except (OSError,ValueError,KeyError,TypeError) as exc:
-        parser.exit(2,f"MixLab evaluation: {exc}\n")
+    except (OSError,ValueError,KeyError,TypeError):
+        # OSError/KeyError may carry private source paths or reviewer data.
+        # Do not pass untrusted exception text to stderr.
+        parser.exit(2,"MixLab evaluation: invalid or unavailable private input\n")
     print(json.dumps(result,sort_keys=True,allow_nan=False,indent=2))

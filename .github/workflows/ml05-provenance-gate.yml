@@ -1,0 +1,56 @@
+name: MixLab ML-05 provenance caveat gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/evaluation/__init__.py"
+      - "tests/test_evaluation_provenance_downgrade_20261017.py"
+      - ".github/workflows/ml05-provenance-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml05-provenance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-provenance-regression:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+      && ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
+    name: frozen synthetic metadata (${{ matrix.python-version }})
+    runs-on: [self-hosted, portfolio-pool, vps]
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout exact triggering source, no persisted token
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify checkout identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Set up stdlib Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile and run targeted no-music admission tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m compileall -q mixlab/evaluation tests/test_evaluation_provenance_downgrade_20261017.py
+          /usr/bin/time -v python -m unittest discover -s tests -p test_evaluation_provenance_downgrade_20261017.py -v
