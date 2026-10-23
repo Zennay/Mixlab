@@ -319,3 +319,7 @@ literal differences in a source-by-source dashboard, with manual and
 automatic origin visible. There is no automatic correction of the
 self-declared receipt, cache, recipe, saved session or the underlying
 media. Human musical assessment and actual rights remain separate.
+
+### 23 October · Preserve sparse feature alignment in meter fusion
+
+The meter provider normalizes each feature over its observed values while retaining each score's original beat/bar index. Missing observations stay missing and are excluded only when features are fused; later scores must never slide into an earlier gap. Harmonic-change and checkerboard-novelty features legitimately abstain at sparse or edge positions, so shifting their values would combine evidence from different beats/bars and distort downbeat/phrase proposals. Unequal feature-vector lengths are rejected instead of being silently truncated or misindexed.
