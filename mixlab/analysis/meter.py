@@ -99,11 +99,27 @@ def _consistency(values, period, phase, first):
 
 
 def _combine(*features):
+    """Fuse sparse feature vectors without shifting values across time indices."""
+    if not features:
+        return []
+    length = len(features[0])
+    if any(len(feature) != length for feature in features):
+        raise ValueError("Feature vectors must have equal lengths")
+
+    # Normalize observed values per feature, then put each score back at its
+    # original index. Filtering None values without restoring their positions
+    # shifts every later score after a gap and combines unrelated beats/bars.
+    columns = []
+    for feature in features:
+        normalized = iter(zscores([value for value in feature if value is not None]))
+        columns.append([
+            next(normalized) if value is not None else None
+            for value in feature
+        ])
+
     combined = []
-    columns = [zscores([v for v in feature if v is not None]) for feature in features]
-    iterators = [iter(column) for column in columns]
-    for i in range(len(features[0])):
-        parts = [next(it) for feature, it in zip(features, iterators) if feature[i] is not None]
+    for index in range(length):
+        parts = [column[index] for column in columns if column[index] is not None]
         combined.append(statistics.mean(parts) if parts else None)
     return combined
 
