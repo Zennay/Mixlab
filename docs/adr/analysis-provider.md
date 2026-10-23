@@ -323,3 +323,7 @@ media. Human musical assessment and actual rights remain separate.
 ### 23 October · Preserve sparse feature alignment in meter fusion
 
 The meter provider normalizes each feature over its observed values while retaining each score's original beat/bar index. Missing observations stay missing and are excluded only when features are fused; later scores must never slide into an earlier gap. Harmonic-change and checkerboard-novelty features legitimately abstain at sparse or edge positions, so shifting their values would combine evidence from different beats/bars and distort downbeat/phrase proposals. Unequal feature-vector lengths are rejected instead of being silently truncated or misindexed.
+
+### 23 October · Confine benchmark reference paths
+
+The manual-reference benchmark rejects symlinked reference files and symlinked intermediate directories beneath the annotation directory. Each child path component must be a real directory and the final PCM source must be a regular file before any provider reads it. This enforces the documented “beside the annotation file” boundary for ordinary path traversal; it does not replace source-hash/identity checks or turn the benchmark into rights evidence.
