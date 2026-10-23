@@ -327,3 +327,7 @@ The meter provider normalizes each feature over its observed values while retain
 ### 23 October · Confine benchmark reference paths
 
 The manual-reference benchmark rejects symlinked reference files and symlinked intermediate directories beneath the annotation directory. Each child path component must be a real directory and the final PCM source must be a regular file before any provider reads it. This enforces the documented “beside the annotation file” boundary for ordinary path traversal; it does not replace source-hash/identity checks or turn the benchmark into rights evidence.
+
+### 23 October · Prevent duplicate-source benchmark weighting
+
+The manual-reference benchmark admits one item per unique content checksum. Reusing identical PCM bytes under different annotation IDs would otherwise count the same recording more than once and distort aggregate beat/downbeat/key scores. Duplicate IDs and duplicate source checksums are rejected before analysis; synthetic or duplicate rows are not evidence of independent permitted tracks.
