@@ -84,6 +84,8 @@ def load_references(path):
     items = [_item(raw, root) for raw in document["items"]]
     if len({item["id"] for item in items}) != len(items):
         raise ValueError("Duplicate reference id")
+    if len({item["sha256"] for item in items}) != len(items):
+        raise ValueError("Duplicate reference source checksum")
     return items
 
 
