@@ -1,0 +1,59 @@
+name: MixLab ML-03 key and bar/phrase proposals
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/analysis/_signal.py"
+      - "mixlab/analysis/tonal.py"
+      - "mixlab/analysis/meter.py"
+      - "mixlab/analysis/benchmark.py"
+      - "mixlab/analysis/source_receipt.py"
+      - "mixlab/analysis/preview.py"
+      - "mixlab/analysis/playlist_preview.py"
+      - "mixlab/analysis/cue_timeline.py"
+      - "mixlab/analysis/manual_review.py"
+      - "mixlab/analysis/receipt_reopen.py"
+      - "mixlab/analysis/receipt_compare.py"
+      - "mixlab/analysis/receipt_batch.py"
+      - "mixlab/analysis/receipt_session.py"
+      - "tests/test_analysis_benchmark.py"
+      - "tests/test_analysis_tonal_meter.py"
+      - ".github/workflows/ml03-key-meter-proposals.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml03-key-meter-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  key-meter-proposals:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out immutable candidate without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Compile analysis modules
+        run: python3 -m compileall -q mixlab/analysis tests/test_analysis_tonal_meter.py tests/test_analysis_benchmark.py
+      - name: Synthetic key, downbeat and phrase regressions with time and RSS
+        run: /usr/bin/time -v python3 -m unittest -v tests.test_analysis_tonal_meter tests.test_analysis_benchmark
+      - name: Recheck complete offline synthetic suite
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
