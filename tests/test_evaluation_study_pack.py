@@ -14,6 +14,7 @@ from mixlab.evaluation import aggregate, verify_pack
 from mixlab.evaluation.study import freeze, write_exclusive
 from mixlab.evaluation.study_pack import build, main, side_schedule, verify_study_pack
 from mixlab.quality.pack import inspect_review_pack
+from mixlab.quality.study_binding import verify_study_pack_binding
 
 KEYS = ["C major", "G major", "A minor", "F# major", "D minor", "E minor"]
 
@@ -69,6 +70,13 @@ class StudyPackTests(unittest.TestCase):
         report = inspect_review_pack(self.pack / "review", require_generated_html=True,
                                      require_receipt=True)
         self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_ml07_pinned_study_binding_gate_accepts_the_pack(self):
+        # The merged ML-07 gate (#79) must accept what this producer emits.
+        report = verify_study_pack_binding(self.study, self.pack, self.study_doc["study_id"])
+        self.assertTrue(report["study_pack_metadata_consistent_with_pinned_id"])
+        self.assertEqual(report["trial_count"], 5)
+        self.assertFalse(report["milestone_pass"])
 
     def test_pinned_study_binds_pack_content(self):
         self.assertEqual(verify_study_pack(self.pack, self.study), self.study_doc["study_id"])
