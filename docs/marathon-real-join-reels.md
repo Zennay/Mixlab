@@ -1,0 +1,57 @@
+# Real Marathon Join Reels — listen to actual approved crossfades offline
+
+MixLab can turn two **already completed, receipt-verified** private Marathon masters (one sample-exact original and its separate, human-approved real PCM16 crossfade derivative) into a standalone local listening folder. This is not a blind research benchmark: the operator knows which is which.
+
+## Make a compact set of real audio snippets
+
+```bash
+python3 -m mixlab.marathon_join_reels \
+  /private/marathon-original/marathon.wav \
+  /private/marathon-blend/marathon.wav \
+  /private/handoff-listening
+```
+
+The output destination is a **new** directory in an existing non-Git, non-symlink private location. The CLI first checks both actual source WAV hashes/receipts, the blend's exact original SHA provenance and same source-event identities. It prints the source fingerprints, privacy warning and asks for **typed `yes`** before copying audio.
+
+Inside `/private/handoff-listening/`:
+- `join-01-original.wav` and `join-01-blend.wav` (then join 02, etc.) are **genuine excerpts** from the already rendered stereo PCM16 WAVs. No synthesis, in-browser fade, resampling, tempo warping or additional mixing is done.
+- The copy includes up to **8 seconds before the actual original/blended entry boundary** and **the selected real fade length plus 8 seconds after**; very short sections and playlist edges are clamped to source-frame bounds. Each version is sliced from its own receipt-derived true timeline.
+- The folder includes its own `index.html` offline player: direct A/B buttons per original/blended handoff, keyboard **1/2** to switch between real audio clips, left/right to navigate, space to pause, and an optional private personal DJ note export. Rehearsal notes are saved only when explicitly downloaded; not uploaded or stored persistently.
+- `join-reels.receipt.private.json` records exact source SHA-256s, each excerpt's actual frame start/count, playable WAV SHA-256, original/blended boundary time and manual fade duration. Clip count is 2 per boundary (maximum 14).
+- Excerpts are size-bounded to **192 MiB total uncompressed PCM**, generated in small frame buffers, and files are private (mode 0600). If production fails, the new unfinished folder is removed; original masters are preserved.
+
+Open the generated `index.html` locally while keeping all `join-XX-*.wav` files beside it. If your browser cannot play local WAV because of its security settings or codec support, use a local music app instead.
+
+## Carry only the real handoff clips to a second offline computer
+
+The short PCM16 listening room can be moved **without** the huge full original and blended Marathon masters. After creating it, run:
+
+```bash
+python3 -m mixlab.marathon_reels_transfer pack \
+  /private/handoff-listening \
+  /private/handoff-listening/join-reels.private.zip
+```
+
+The ZIP includes only the source-verified *short* WAV clips, their complete original/derivative provenance receipt, and their exact local browser player. It excludes the full show WAVs, original individual songs, external access tokens and permissions evidence. The packer rereads the source folder and verifies actual PCM16 file frame counts, hashes, bounded total size and exact offline HTML before producing a new SHA-manifest **uncompressed** ZIP (private mode 0600).
+
+On another authorized local device, with a **new** destination directory:
+
+```bash
+python3 -m mixlab.marathon_reels_transfer restore \
+  /private/handoff-listening/join-reels.private.zip \
+  /private/second-computer-reels
+```
+
+Restore admits only bounded, flat, named short WAV/HTML/JSON members, refuses symlinks/path traversal/duplicate names, checks each ZIP entry size/hash while streaming to a private fresh folder, then recomputes the original reel receipt consistency, every real PCM16 clip header/SHA and the exact offline player HTML. Incomplete restoration cleans the **new** destination and leaves the original archive untouched. Open `/private/second-computer-reels/index.html` offline to listen.
+
+The ZIP manifest is **unsigned**, so it proves internal consistency but not authenticity of an external sender or licensed rights. Share only where the underlying music recording usage is permitted. This is not independent blind rating evidence.
+
+### What this means for mastering
+
+Unlike the existing Sequence Studio two-deck approximation, Join Reels play the **actual final PCM16** chosen by the MixLab renderer. This allows rapid operator audition of the audible transition moments without reloading entire 768 MiB masters.
+
+The clips are **not** a substitute for hearing the full chosen WAV. Their receipt demonstrates only internal consistency, not external media authenticity, permission to share the recordings or musical superiority. M1's independently frozen, rights-safe blind preference study remains open; user-entered operator notes here must not be treated as that experiment's ratings.
+
+For a whole-master choice after listening, use [Marathon Master Review](marathon-master-review.md) to bind original/blended SHA fingerprints and publish only the selected private master.
+
+For a **different real choice at every join**, the offline Reel page now also records an explicit original-versus-approved-crossfade decision beside each pair. Download the SHA-locked `mixlab-marathon-join-master-picks.private.json` only after every join has a choice. Run `python3 -m mixlab.marathon_reel_decisions PICKS.json ORIGINAL/marathon.wav BLEND/marathon.wav NEW_PRIVATE_FOLDER` to verify both original full-source receipts and render a new, real hybrid master after separate typed approval. The new folder includes actual WAV, provenance receipt and printable operator cue sheet; no private notes enter portable ZIPs automatically. See [Human-selected Hybrid Master](marathon-human-hybrid-master.md).
