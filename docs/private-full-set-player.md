@@ -110,6 +110,21 @@ betreft de SHA-binding die de speler bij het oorspronkelijke renderen
 heeft vastgelegd, geen latere onafhankelijke audio-audit. Ook import is
 onmogelijk in Eventmodus. Een bestand kiezen is géén upload.
 
+**Voorkom verlies van nieuwe aantekeningen:** de speler toont nu duidelijk
+wanneer een keuze of toelichting is gewijzigd maar nog niet veilig is
+bewaard. Klik **Download privé-overgangsnotities JSON**, controleer dat de
+browser het bestand daadwerkelijk heeft opgeslagen, en klik pas dan
+**Ik heb mijn JSON opgeslagen**. Alleen een download starten geldt niet als
+bewijs dat het bestand is bewaard. Een latere wijziging activeert de
+waarschuwing opnieuw; een eerdere download is dan verouderd. Een geldig,
+eerder opgeslagen privé-JSON dat je zelf opnieuw inlaadt, geldt als al
+bewaard. Als je alle tijdelijke beoordelingen bewust wist, is er geen
+nieuw notitiewerk om te verliezen. Tijdens Eventmodus is bevestigen
+uitgeschakeld. Bij het sluiten of vernieuwen van de pagina vraagt MixLab
+om bevestiging zolang nieuwe beoordelingen nog niet als opgeslagen zijn
+bevestigd, **voor zover de browser dit toestaat**. Sommige browsers
+onderdrukken zulke waarschuwingen, dus vertrouw hier niet uitsluitend op.
+
 **Bewaar je JSON voordat je dit browservenster sluit of vernieuwt.**
 MixLab slaat deze aantekeningen niet automatisch op: geen browseropslag,
 geen achtergrondservice, geen netwerk, geen aanpassing van de SHA-gebonden

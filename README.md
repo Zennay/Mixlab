@@ -105,6 +105,13 @@ echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
 afgaan. De lijst herstelt uit je eigen privé-JSON, niet uit een server;
 het is geen automatische DJ-mixbewerking of onafhankelijke luisteraudit.
 
+De offline speler waarschuwt bij nieuw ingevoerde persoonlijke
+DJ-notities die nog niet veilig zijn bewaard. **Download de privé-JSON,
+controleer het bestand en bevestig pas daarna 'Ik heb mijn JSON opgeslagen'.**
+Alleen klikken op Download schakelt de waarschuwing niet uit; nieuwe
+wijzigingen zetten hem opnieuw aan. De browser kan de waarschuwing bij
+sluiten onderdrukken. Er blijft geen automatische opslag of upload bestaan.
+
 Na het handmatig herhaald beluisteren van een overgang kun je nu in de
 volledig offline Full Set Player ook **‘Klinkt goed’ of ‘Wil aanpassen’**
 markeren en een korte creatieve notitie toevoegen. Download je persoonlijke
