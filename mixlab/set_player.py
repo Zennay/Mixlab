@@ -125,8 +125,10 @@ aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
 <p class="muted" id="meta"></p>
 </section>
 <section class="section"><h2>Interactieve tijdlijn</h2>
-<p class="muted">Luister naar een overgang of herhaal precies dat fragment.
-Herhalen stopt zodra je naar een ander hoofdstuk springt of de eventmodus opent.</p>
+<p class="muted">Herhaal de overgang zelf, of kies <strong>Luister met context</strong>
+om twee seconden vóór en ná de overgang mee te horen. De contextluistering
+stopt automatisch na dat fragment, zonder de originele WAV te veranderen.
+Eventmodus schakelt deze auditieknoppen uit.</p>
 <p id="transition-audition-status" role="status" aria-live="polite">Geen overgang in herhaling.</p>
 <ol id="chapters"></ol></section>
 <section class="section"><h2>Je eigen overgangsnotities</h2>
@@ -175,6 +177,8 @@ let eventMode=false;
 const chapterButtons=[];
 const reviewRows=[];
 const loopButtons=[];
+const contextButtons=[];
+let contextAudition=null;
 let loopIndex=null;
 const auditionStatus=document.getElementById("transition-audition-status");
 audio.src="./"+encodeURIComponent(data.wav_name);
@@ -202,7 +206,7 @@ function drawWaveform(){
 waveform.addEventListener("click",e=>{
   if(eventMode)return;
   const box=waveform.getBoundingClientRect();
-  if(box.width>0){clearTransitionLoop();
+  if(box.width>0){clearContextAudition();clearTransitionLoop();
     audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
       (e.clientX-box.left)/box.width*data.duration_seconds));}
 });
@@ -210,7 +214,7 @@ waveform.addEventListener("keydown",e=>{
   if(eventMode)return;
   if(e.key!=="ArrowLeft" && e.key!=="ArrowRight")return;
   e.preventDefault();
-  clearTransitionLoop();
+  clearContextAudition();clearTransitionLoop();
   audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
     (audio.currentTime||0)+(e.key==="ArrowRight"?5:-5)));
 });
@@ -235,8 +239,50 @@ function clearTransitionLoop(){
   });
   auditionStatus.textContent="Geen overgang in herhaling.";
 }
+function clearContextAudition(){
+  contextAudition=null;
+  contextButtons.forEach(({button,label})=>{
+    button.setAttribute("aria-pressed","false");
+    button.setAttribute("aria-label","Luister met context: "+label);
+    button.textContent="Luister met context";
+  });
+  if(loopIndex===null)
+    auditionStatus.textContent="Geen overgang in herhaling.";
+}
+function listenWithContext(i){
+  if(eventMode)return;
+  if(contextAudition && contextAudition.index===i){
+    audio.pause();clearContextAudition();return;
+  }
+  const chapter=data.chapters[i];
+  if(chapter.kind!=="transition" || !Number.isFinite(chapter.start_seconds) ||
+     !Number.isFinite(chapter.duration_seconds) || chapter.duration_seconds<=0)return;
+  clearTransitionLoop();
+  clearContextAudition();
+  // The same completed PCM WAV; no new audio file, rendering or source paths.
+  const start=Math.max(0,chapter.start_seconds-2);
+  const end=Math.min(data.duration_seconds,
+    chapter.start_seconds+chapter.duration_seconds+2);
+  contextAudition={index:i,start,end};
+  const label=chapter.display_name||chapter.label;
+  contextButtons.forEach(({button,index})=>{
+    if(index===i){button.setAttribute("aria-pressed","true");
+      button.setAttribute("aria-label","Stop contextluisteren: "+label);
+      button.textContent="Stop contextluisteren";}
+  });
+  auditionStatus.textContent="Luistert met context: "+label+
+    " ("+format(start)+"–"+format(end)+")";
+  audio.currentTime=start;
+  audio.play().catch(()=>{
+    if(contextAudition && contextAudition.index===i){
+      clearContextAudition();
+      auditionStatus.textContent="Lokaal WAV-bestand kan niet worden afgespeeld.";
+    }
+  });
+}
 function toggleTransitionLoop(i){
-  if(eventMode)return; // a live set must never accidentally replay a section
+  if(eventMode)return;
+  clearContextAudition(); // a live set must never accidentally replay a section
   if(loopIndex===i){clearTransitionLoop();return;}
   const ch=data.chapters[i];
   if(ch.kind!=="transition" || !Number.isFinite(ch.start_seconds) ||
@@ -260,6 +306,7 @@ function toggleTransitionLoop(i){
 }
 function jump(n){
   if(eventMode)return; // no accidental live-set seeks from chapter controls
+  clearContextAudition();
   clearTransitionLoop();
   audio.currentTime=data.chapters[n].start_seconds;
   audio.play().catch(()=>{now.textContent="Lokaal WAV-bestand kan niet worden afgespeeld.";});
@@ -283,6 +330,15 @@ data.chapters.forEach((ch,i)=>{
     loopButton.setAttribute("aria-label","Herhaal overgang: "+(ch.display_name||ch.label));
     loopButton.addEventListener("click",()=>toggleTransitionLoop(i));
     actions.append(loopButton);loopButtons.push({button:loopButton,index:i,
+      label:ch.display_name||ch.label});
+    const contextButton=document.createElement("button");
+    contextButton.textContent="Luister met context";
+    contextButton.setAttribute("aria-pressed","false");
+    contextButton.setAttribute("aria-label","Luister met context: "+
+      (ch.display_name||ch.label));
+    contextButton.addEventListener("click",()=>listenWithContext(i));
+    actions.append(contextButton);
+    contextButtons.push({button:contextButton,index:i,
       label:ch.display_name||ch.label});
   }
   li.append(time,title,actions);list.append(li);rows.push(li);
@@ -324,6 +380,7 @@ for(const [chapterIndex,ch] of data.chapters.entries()){
 }
 function playRevisionChapter(index){
   if(eventMode)return;
+  clearContextAudition();
   if(loopIndex===index){
     audio.currentTime=data.chapters[index].start_seconds;
     audio.play().catch(()=>{clearTransitionLoop();});
@@ -351,7 +408,15 @@ function refreshRevisionQueue(){
       (row.ch.display_name||row.ch.label));
     button.disabled=eventMode;
     button.addEventListener("click",()=>playRevisionChapter(row.chapterIndex));
-    details.append(title,note);li.append(details,button);
+    const context=document.createElement("button");
+    context.type="button";context.textContent="Met context";
+    context.setAttribute("aria-label","Luister met context: "+
+      (row.ch.display_name||row.ch.label));
+    context.disabled=eventMode;
+    context.addEventListener("click",()=>listenWithContext(row.chapterIndex));
+    const actions=document.createElement("div");actions.className="chapter-actions";
+    actions.append(button,context);
+    details.append(title,note);li.append(details,actions);
     revisionQueue.append(li);
   }
 }
@@ -470,8 +535,20 @@ function enforceTransitionLoop(){
     if(audio.paused)audio.play().catch(()=>{clearTransitionLoop();});
   }
 }
-audio.addEventListener("timeupdate",()=>{enforceTransitionLoop();highlight();});
+function enforceContextAudition(){
+  if(!contextAudition || eventMode)return;
+  if(audio.currentTime>=contextAudition.end-.012 && !audio.seeking){
+    const end=contextAudition.end;
+    audio.pause();clearContextAudition();
+    audio.currentTime=end;
+  }
+}
+audio.addEventListener("timeupdate",()=>{
+  enforceTransitionLoop();enforceContextAudition();highlight();
+});
 audio.addEventListener("seeked",()=>{
+  if(contextAudition && (audio.currentTime<contextAudition.start-.03 ||
+      audio.currentTime>contextAudition.end+.03))clearContextAudition();
   if(loopIndex!==null){
     const part=data.chapters[loopIndex];
     if(audio.currentTime<part.start_seconds-.03 ||
@@ -481,6 +558,7 @@ audio.addEventListener("seeked",()=>{
   highlight();
 });
 audio.addEventListener("ended",()=>{
+  if(contextAudition)clearContextAudition();
   if(loopIndex!==null && !eventMode){
     const part=data.chapters[loopIndex];
     audio.currentTime=part.start_seconds;
@@ -502,7 +580,7 @@ function updateEventClock(t){
     "Geen verdere overgang · resterend tot einde "+format(seconds);
 }
 function enterEventMode(active){
-  if(active)clearTransitionLoop(); // entering live mode always cancels audition
+  if(active){clearContextAudition();clearTransitionLoop();} // live mode cancels both auditions
   eventMode=active;
   document.body.classList.toggle("event-mode",active);
   audio.controls=!active;
@@ -513,6 +591,7 @@ function enterEventMode(active){
   document.getElementById("next").disabled=disabled;
   chapterButtons.forEach(button=>{button.disabled=disabled;});
   loopButtons.forEach(({button})=>{button.disabled=disabled;});
+  contextButtons.forEach(({button})=>{button.disabled=disabled;});
   reviewRows.forEach(({status,note})=>{
     status.disabled=disabled;note.disabled=disabled;
   });

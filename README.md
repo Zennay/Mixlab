@@ -79,6 +79,12 @@ broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
 opgegeven nummers moeten exact eenmaal in de route staan voordat er
 überhaupt een complete WAV wordt gepubliceerd.
 
+In de offline speler kun je een bestaande overgang nu ook
+**in context beluisteren**: twee seconden muziek vóór en ná de echte
+SHA-gebonden overgang, zonder nieuwe rendering. De begrensde
+contextluistering stopt na het fragment, is beschikbaar bij hoofdstukken
+en de persoonlijke aanpassingslijst en wordt tijdens eventmodus geblokkeerd.
+
 De privé Full Set Player heeft ook een **automatische lijst van overgangen
 met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
 echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
