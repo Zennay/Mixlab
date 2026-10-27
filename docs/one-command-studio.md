@@ -189,6 +189,8 @@ exacte hoofdstuktijd, zonder JavaScript of audiobestanden. De verhoudingen
 komen uit echte PCM-frametellingen, niet uit gegokte duur. Als bronhashes,
 header of cues niet zijn geverifieerd, toont de pagina eerlijk dat de
 tijdlijn nog onbekend is.
+A4-draaiboek: open de prive `*.preview.html` in de browser en kies Afdrukken (Ctrl+P of Cmd+P). De papierweergave gebruikt zwarte letters op wit, toont de bestaande handmatige cues, overgangsstijlen en alleen bij geverifieerde bron-WAVs exacte mixtijden. Sla desgewenst lokaal op als PDF via de browser. De afdruk is geen rechten- of kwaliteitsbewijs.
+
 De pagina gebruikt de **herkenbare lokale bestandsnamen zonder extensie** als songtitels en
 toont de technische track-ID er kleiner onder. Dit zijn geen geverifieerde
 muziekmetadata. De pagina bevat **geen muziek, volledige bronpaden, scripts,
