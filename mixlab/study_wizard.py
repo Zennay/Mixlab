@@ -125,7 +125,10 @@ def run(manifest_path, split_path, private_destination, *, pairs=5, seed=0,
     new_manifest = source.with_name(source.stem + '.m1-' + study['study_id'][:12]
                                     + '-' + session_id + '.json')
     approve_cues(source, frozen, cue_reviewed, new_manifest)
-    build_pack(new_manifest, frozen, pack, seed=seed)
+    # Freeze the candidate STUDY with the preregistered seed, but randomize
+    # baseline-as-A independently for each listener pack using system entropy.
+    # Otherwise a published study seed predicts the supposedly blind A/B key.
+    build_pack(new_manifest, frozen, pack, seed=None)
     receipt, evidence, trials = verify_pack(pack)
     if verify_study_pack(pack, frozen) != study['study_id']:
         raise ValueError('Private render does not match the frozen study')
