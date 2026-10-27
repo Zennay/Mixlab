@@ -79,6 +79,13 @@ broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
 opgegeven nummers moeten exact eenmaal in de route staan voordat er
 überhaupt een complete WAV wordt gepubliceerd.
 
+De privé Full Set Player heeft ook een **automatische lijst van overgangen
+met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
+echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
+**Beluister volgende aanpassing** de nog open fragmenten een voor een
+afgaan. De lijst herstelt uit je eigen privé-JSON, niet uit een server;
+het is geen automatische DJ-mixbewerking of onafhankelijke luisteraudit.
+
 Na het handmatig herhaald beluisteren van een overgang kun je nu in de
 volledig offline Full Set Player ook **‘Klinkt goed’ of ‘Wil aanpassen’**
 markeren en een korte creatieve notitie toevoegen. Download je persoonlijke

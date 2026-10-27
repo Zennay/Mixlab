@@ -58,6 +58,15 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 .review-import input{max-width:100%;font:inherit}
 .review-import button{justify-self:start}
 #review-import-status{min-height:1.5em;color:#bfe6d9}
+.revision-panel{margin:16px 0;padding:16px;border:1px solid #636b92;
+  border-radius:14px;background:#152033}
+#revision-queue{display:grid;gap:10px;padding:0;margin:15px 0;list-style:none}
+#revision-queue li{display:grid;grid-template-columns:minmax(0,1fr) auto;
+  gap:12px;align-items:center;padding:12px;background:#243149;
+  border:1px solid #435779;border-radius:10px}
+#revision-queue strong{display:block;overflow-wrap:anywhere}
+#revision-queue small{display:block;margin-top:4px;overflow-wrap:anywhere}
+@media(max-width:650px){#revision-queue li{grid-template-columns:1fr}}
 .review-row :is(select,textarea):focus-visible{outline:3px solid #cdbbff;outline-offset:2px}
 .review-name{overflow-wrap:anywhere;font-weight:750}
 .review-fields{display:grid;grid-template-columns:1fr 2fr;gap:12px}
@@ -135,6 +144,15 @@ Laad privé-overgangsnotities</button></div>
 <p id="review-import-status" role="status" aria-live="polite">Nog geen bestand geladen.</p>
 <div id="creative-reviews"></div>
 <p id="review-progress" role="status" aria-live="polite">Nog geen overgangsnotities.</p>
+<div class="revision-panel" aria-labelledby="revision-heading">
+<h3 id="revision-heading">Nog aan te passen overgangen</h3>
+<p class="muted">Alleen jouw keuze <strong>Wil aanpassen</strong> komt hier.
+Spring rechtstreeks naar het echte overgangsfragment om je notitie opnieuw te
+beluisteren. Dit wijzigt de WAV of handmatig goedgekeurde cues niet.</p>
+<p id="revision-summary" role="status" aria-live="polite">Geen overgangen gemarkeerd.</p>
+<ol id="revision-queue"></ol>
+<button id="revision-next" type="button" disabled>Beluister volgende aanpassing</button>
+</div>
 <button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
 </section>
 <section class="section"><h2>Neem je cuepunten mee</h2>
@@ -274,6 +292,9 @@ data.chapters.forEach((ch,i)=>{
 const reviewList=document.getElementById("creative-reviews");
 const reviewProgress=document.getElementById("review-progress");
 const exportReview=document.getElementById("download-review");
+const revisionQueue=document.getElementById("revision-queue");
+const revisionSummary=document.getElementById("revision-summary");
+const nextRevision=document.getElementById("revision-next");
 const importFile=document.getElementById("review-import-file");
 const importButton=document.getElementById("review-import-button");
 const importStatus=document.getElementById("review-import-status");
@@ -301,6 +322,50 @@ for(const [chapterIndex,ch] of data.chapters.entries()){
   reviewList.append(row);
   reviewRows.push({chapterIndex,ch,status,note});
 }
+function playRevisionChapter(index){
+  if(eventMode)return;
+  if(loopIndex===index){
+    audio.currentTime=data.chapters[index].start_seconds;
+    audio.play().catch(()=>{clearTransitionLoop();});
+  }else toggleTransitionLoop(index);
+}
+function refreshRevisionQueue(){
+  const needs=reviewRows.filter(({status})=>status.value==="adjust");
+  const kept=reviewRows.filter(({status})=>status.value==="keep").length;
+  revisionSummary.textContent=needs.length+" nog aan te passen · "+kept+
+    " klinkt goed · "+(reviewRows.length-needs.length-kept)+" niet beoordeeld.";
+  nextRevision.disabled=eventMode || needs.length===0;
+  revisionQueue.replaceChildren();
+  for(const row of needs){
+    const li=document.createElement("li");
+    const details=document.createElement("div");
+    const title=document.createElement("strong");
+    title.textContent=(row.ch.display_name||row.ch.label)+
+      " · "+format(row.ch.start_seconds);
+    const note=document.createElement("small");
+    note.textContent=row.note.value.trim() || "Nog geen toelichting ingevuld";
+    const button=document.createElement("button");
+    button.type="button";
+    button.textContent="Herhaal deze overgang";
+    button.setAttribute("aria-label","Herhaal aan te passen overgang: "+
+      (row.ch.display_name||row.ch.label));
+    button.disabled=eventMode;
+    button.addEventListener("click",()=>playRevisionChapter(row.chapterIndex));
+    details.append(title,note);li.append(details,button);
+    revisionQueue.append(li);
+  }
+}
+nextRevision.addEventListener("click",()=>{
+  if(eventMode)return;
+  const needs=reviewRows.filter(({status})=>status.value==="adjust");
+  if(!needs.length)return;
+  // Continue after the current audition chapter, otherwise after the
+  // current playback position; wrap at the end of this actual WAV.
+  const from=loopIndex===null ?
+    audio.currentTime : data.chapters[loopIndex].start_seconds;
+  const next=needs.find(row=>row.ch.start_seconds>from+.01) || needs[0];
+  playRevisionChapter(next.chapterIndex);
+});
 function refreshReviewProgress(){
   const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
     note.value.trim()!=="").length;
@@ -309,6 +374,7 @@ function refreshReviewProgress(){
   importFile.disabled=eventMode || importBusy;
   reviewProgress.textContent=marked+" van "+reviewRows.length+
     " overgangen hebben een keuze of notitie. Download vóór je deze pagina sluit.";
+  refreshRevisionQueue();
 }
 function validateSavedNotes(saved){
   if(!saved || saved.schema_version!==1 ||

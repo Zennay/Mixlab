@@ -50,6 +50,22 @@ van de speler vastgelegde **WAV SHA-256**. Daardoor weet je bij welk
 compleet mixresultaat de opmerkingen horen. Het is geen hercontrole van
 een later gewijzigd WAV-bestand en geen onafhankelijke blinde beoordeling.
 
+**Aanpassingen direct opnieuw beluisteren:** zodra je een overgang als
+**Wil aanpassen** markeert, verschijnt die automatisch in de sectie
+**Nog aan te passen overgangen** met de originele lokaal zichtbare songnamen,
+WAV-hoofdstukstart en je persoonlijke notitie. Gebruik **Herhaal deze
+overgang** om precies het al gerenderde fragment te horen of
+**Beluister volgende aanpassing** om automatisch naar de volgende nog aan
+te passen overgang in afspeelvolgorde te springen (met rondgang aan het
+einde). Een overgang die je verandert in **Klinkt goed** verdwijnt direct uit
+de lijst. Na het terugladen van je bestaande SHA-gebonden privénotities
+wordt de lijst opnieuw opgebouwd. Er vindt geen aanpassing van de audio,
+handmatige cues, originele rechtenverklaring of bronmanifest plaats; dit
+is uitsluitend een eigen creatieve werk-/luisterlijst. In Eventmodus
+zijn deze herhaal- en navigatieknoppen uitgeschakeld. Je aantekeningen
+blijven alleen in het geopende browservenster totdat je zelf het
+privé-JSON-bestand downloadt.
+
 **Eerder opgeslagen notities weer openen:** kies onder *Je eigen overgangsnotities*
 het lokaal bewaarde `mixlab-transition-notes.private.json` en klik
 **Laad privé-overgangsnotities**. De pagina herstelt je keuzes en tekst
