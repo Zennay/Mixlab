@@ -64,6 +64,8 @@ border:1px solid #9f91d5;border-radius:9px;padding:10px 12px}
 .review-import input{max-width:100%;font:inherit}
 .review-import button{justify-self:start}
 #review-import-status{min-height:1.5em;color:#bfe6d9}
+#notes-save-status{font-weight:700;color:#f1d29d;min-height:1.5em}
+#confirm-notes-saved:disabled{opacity:.45}
 .revision-panel{margin:16px 0;padding:16px;border:1px solid #636b92;
   border-radius:14px;background:#152033}
 #revision-queue{display:grid;gap:10px;padding:0;margin:15px 0;list-style:none}
@@ -164,6 +166,7 @@ Laad privé-overgangsnotities</button></div>
 <p id="review-import-status" role="status" aria-live="polite">Nog geen bestand geladen.</p>
 <div id="creative-reviews"></div>
 <p id="review-progress" role="status" aria-live="polite">Nog geen overgangsnotities.</p>
+<p id="notes-save-status" role="status" aria-live="polite">Nog geen onopgeslagen wijzigingen.</p>
 <div class="revision-panel" aria-labelledby="revision-heading">
 <h3 id="revision-heading">Nog aan te passen overgangen</h3>
 <p class="muted">Alleen jouw keuze <strong>Wil aanpassen</strong> komt hier.
@@ -174,6 +177,10 @@ beluisteren. Dit wijzigt de WAV of handmatig goedgekeurde cues niet.</p>
 <button id="revision-next" type="button" disabled>Beluister volgende aanpassing</button>
 </div>
 <button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
+<button id="confirm-notes-saved" type="button" disabled>Ik heb mijn JSON opgeslagen</button>
+<p class="muted">Bevestig pas nadat je hebt gecontroleerd dat de download echt
+is opgeslagen. Zonder die bevestiging waarschuwt MixLab bij het sluiten
+voor nog niet veilig bewaarde wijzigingen (voor zover je browser dat toestaat).</p>
 </section>
 <section class="section"><h2>Neem je cuepunten mee</h2>
 <p class="muted">Bewaar de hoofdstukken als JSON (inclusief SHA-binding) of als
@@ -404,6 +411,8 @@ data.chapters.forEach((ch,i)=>{
 const reviewList=document.getElementById("creative-reviews");
 const reviewProgress=document.getElementById("review-progress");
 const exportReview=document.getElementById("download-review");
+const confirmSaved=document.getElementById("confirm-notes-saved");
+const notesSaveStatus=document.getElementById("notes-save-status");
 const revisionQueue=document.getElementById("revision-queue");
 const revisionSummary=document.getElementById("revision-summary");
 const nextRevision=document.getElementById("revision-next");
@@ -487,12 +496,40 @@ nextRevision.addEventListener("click",()=>{
   const next=needs.find(row=>row.ch.start_seconds>from+.01) || needs[0];
   playRevisionChapter(next.chapterIndex);
 });
+// Track explicitly confirmed local exports, never assume that clicking a
+// download guarantees the browser actually saved the file to disk.
+const notesSnapshot=()=>JSON.stringify(reviewRows.map(({status,note})=>
+  [status.value,note.value]));
+let confirmedNotesSnapshot=notesSnapshot();
+let offeredDownloadSnapshot=null;
+const notesNeedSaving=()=>reviewRows.some(({status,note})=>
+  status.value!=="unreviewed" || note.value.trim()!=="") &&
+  notesSnapshot()!==confirmedNotesSnapshot;
+window.addEventListener("beforeunload",e=>{
+  if(!notesNeedSaving())return;
+  e.preventDefault();e.returnValue=""; // Browser may suppress this prompt.
+});
+confirmSaved.addEventListener("click",()=>{
+  if(eventMode || offeredDownloadSnapshot===null ||
+      offeredDownloadSnapshot!==notesSnapshot())return;
+  confirmedNotesSnapshot=notesSnapshot();
+  offeredDownloadSnapshot=null;
+  refreshReviewProgress();
+});
 function refreshReviewProgress(){
   const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
     note.value.trim()!=="").length;
   exportReview.disabled=marked===0 || eventMode;
   importButton.disabled=eventMode || importBusy;
   importFile.disabled=eventMode || importBusy;
+  const current=notesSnapshot();
+  confirmSaved.disabled=eventMode || offeredDownloadSnapshot===null ||
+    offeredDownloadSnapshot!==current;
+  notesSaveStatus.textContent=!notesNeedSaving()?
+    "Geen niet-gedownloade wijzigingen. Je notities blijven privé.":
+    offeredDownloadSnapshot===current?
+      "Download gestart. Controleer je bestand en bevestig het opslaan hieronder.":
+      "Let op: wijzigingen zijn nog niet veilig bewaard. Download je privé-JSON.";
   reviewProgress.textContent=marked+" van "+reviewRows.length+
     " overgangen hebben een keuze of notitie. Download vóór je deze pagina sluit.";
   refreshRevisionQueue();
@@ -554,6 +591,9 @@ importButton.addEventListener("click",async()=>{
     prepared.forEach(({row,item})=>{
       row.status.value=item.decision;row.note.value=item.note;
     });
+    // This exact content was reloaded from a file the operator already saved.
+    confirmedNotesSnapshot=notesSnapshot();
+    offeredDownloadSnapshot=null;
     importStatus.textContent=prepared.length+
       " privé-overgangsnotities geladen voor deze exacte WAV.";
   }catch(error){
@@ -703,6 +743,9 @@ exportReview.addEventListener("click",()=>{
   if(eventMode || exportReview.disabled)return;
   save("mixlab-transition-notes.private.json",
     JSON.stringify(makePrivateCreativeNotes(),null,2)+"\\n","application/json");
+  // A download click merely begins saving; the browser cannot confirm it.
+  offeredDownloadSnapshot=notesSnapshot();
+  refreshReviewProgress();
 });
 function save(filename,contents,mime){
   const url=URL.createObjectURL(new Blob([contents],{type:mime}));
