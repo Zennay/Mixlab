@@ -354,7 +354,13 @@ python3 -m mixlab.playlist_studio /private/music \
 
 Het resultaat bevat `private_plan_html` **en** `private_cue_editor_html`.
 De editor leest de originele SHA-gecontroleerde **PCM16 WAVs** lokaal om
-waveforms te tonen. In de Nederlandse cue-editor herken je bij het
+waveforms te tonen. De editor weigert **ontbrekende of tegenstrijdige
+handmatig vastgelegde overgangs-BPM** al bij openen: ieder overgangspaar
+moet overeenkomen met de door jou opgegeven BPM van beide originele tracks.
+De huidige Studio-renderer vereist die gelijkheid. Daardoor voorspelt de
+editor geen overgangsduren die de echte WAV-renderer later weigert.
+Corrigeer eerst je oorspronkelijke handmatige BPM-declaratie in een
+nieuw privébronmanifest; dit is geen automatische tempo- of beatmatching. In de Nederlandse cue-editor herken je bij het
 kiezen van een overgang en op beide decks voortaan de **lokale
 bestandsnaam zonder extensie**, naast de originele technische bron-ID.
 De zichtbare naam is geen onafhankelijk herkende artiest of echte tracktitel.

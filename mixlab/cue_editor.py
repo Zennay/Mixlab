@@ -96,7 +96,12 @@ def _admit_library(path, *, calculate_waveforms):
         beats = p.get("beats", 8)
         if type(beats) is not int or not 1 <= beats <= 64:
             raise ValueError("Pair beat count must be 1..64")
-        duration = beats * 60 / left["bpm"]
+        # Both Studio's render duration and the final WAV exporter require
+        # this original manually approved per-pair BPM, not an inferred tempo.
+        pair_bpm = _require_number(p.get("bpm"), "manually approved transition BPM", 30, 300)
+        if pair_bpm != left["bpm"]:
+            raise ValueError("Transition BPM must match the manually approved source BPM for the current Studio renderer")
+        duration = beats * 60 / pair_bpm
         frames = round(duration * left["sample_rate"])
         if not 2 <= frames <= MAX_FRAMES or 44 + frames * left["channels"] * 2 > MAX_BYTES:
             raise ValueError("Pair cue duration exceeds renderer audio budget")
@@ -108,7 +113,7 @@ def _admit_library(path, *, calculate_waveforms):
                 raise ValueError("Cue does not fit source track")
             cue[side + "_start_seconds"] = start
         selected.append({"id": pid, "a": a, "b": b, "beats": beats,
-                         "seconds": round(duration, 6), **cue})
+                         "bpm": pair_bpm, "seconds": round(duration, 6), **cue})
     return spec, bank, selected
 
 
@@ -240,7 +245,7 @@ function cueProblemDetail(){
        'De bronvolgorde moet in een nieuw manifest worden gecorrigeerd.'};
    const rate=bank[current.a].sample_rate;
    const priorEnd=Math.round(previous.b_start_seconds*rate)+
-     Math.round(previous.beats*60/bank[previous.a].bpm*rate);
+     Math.round(previous.beats*60/previous.bpm*rate);
    if(Math.round(current.a_start_seconds*rate)<priorEnd){
      let earliest=Math.ceil(priorEnd/rate*100-1e-8)/100;
      // The displayed hundredth must itself round to a valid PCM frame;
@@ -279,7 +284,7 @@ function plannedSetTimeline(){
    total+=frames;
  }
  for(const pair of pairs){
-   const length=Math.round(pair.beats*60/bank[pair.a].bpm*rate);
+   const length=Math.round(pair.beats*60/pair.bpm*rate);
    const outgoing=Math.round(pair.a_start_seconds*rate);
    const incoming=Math.round(pair.b_start_seconds*rate);
    if(length<2 || outgoing<previousEnd ||
@@ -537,7 +542,7 @@ function refreshSide(side){
 }
 function refresh(){
  stopPlayback();
- $('pair-info').textContent=chosen.beats+' beats · '+chosen.seconds.toFixed(2)+' s';
+ $('pair-info').textContent=chosen.beats+' beats · '+chosen.bpm+' BPM (overgang) · '+chosen.seconds.toFixed(2)+' s';
  for(const side of ['a','b']){
   const t=deck(side);
   $('name-'+side).textContent=t.display_name;
