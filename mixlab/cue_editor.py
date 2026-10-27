@@ -18,6 +18,7 @@ import stat
 from .cue_suggest import _rms_envelope
 from .cueprep import ID, _inspect_source, _read_spec, _source_path
 from .ingest import MAX_BYTES, MAX_FRAMES, RIGHTS, digest
+from .playlist_preview_page import local_song_title
 
 MAX_TRACKS = 20
 MAX_PAIRS = 10
@@ -59,7 +60,8 @@ def _admit_library(path, *, calculate_waveforms):
         info = _inspect_source(wav, record.get("sha256"))
         if "first_downbeat_seconds" in record and record["first_downbeat_seconds"] >= info["frames"] / info["rate"]:
             raise ValueError("Declared first downbeat is outside its WAV")
-        entry = {"id": tid, "path": record["path"], "bpm": bpm,
+        entry = {"id": tid, "path": record["path"],
+                 "display_name": local_song_title(record["path"]), "bpm": bpm,
                  "duration": round(info["frames"] / info["rate"], 6),
                  "sample_rate": info["rate"], "channels": info["channels"],
                  "frame_count": info["frames"],
@@ -111,8 +113,8 @@ def _admit_library(path, *, calculate_waveforms):
 
 
 _HTML = r'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MixLab | Cue Editor</title>
+<html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MixLab | Handmatige overgangs-editor</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' file:; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
 <style>
 :root{font:16px system-ui,sans-serif;background:#0b0c12;color:#f4f4f9;color-scheme:dark}
@@ -138,29 +140,29 @@ audio{width:100%;margin-top:10px} .footer{margin-top:28px;padding:20px;backgroun
 code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.pair-info{width:100%;margin-left:0}}
 </style></head><body>
-<main><small>MIXLAB / PRIVATE OFFLINE EDITOR</small><h1>Find your<br>transition.</h1>
-<p class="lede">See the volume contour, seek to a musical moment, listen to the exact transition-length excerpt, and choose where each record should enter or leave. Your choices are manual — the waveform is not a beat detector.</p>
-<div class="toolbar"><label>Transition pair<select id="pair"></select></label><label style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-<input type="checkbox" id="snap">Snap to declared beatgrid (if known)</label>
+<main><small>MIXLAB / PRIVÉ CUE-EDITOR</small><h1>Kies je<br>overgang.</h1>
+<p class="lede">Herken je nummers, bekijk hun geluidsgolf en beluister de handmatig gekozen fragmenten. Verplaats zelf de cue waar het ene nummer uitgaat en het andere begint. De golfvorm is geen automatische beat- of muziekkwaliteitsanalyse.</p>
+<div class="toolbar"><label>Overgang tussen nummers<select id="pair"></select></label><label style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+<input type="checkbox" id="snap">Afronden op de opgegeven beatgrid (indien bekend)</label>
 <div class="pair-info" id="pair-info"></div></div>
 <div class="grid">
-<section class="lane"><small>OUTGOING / DECK A</small><h2 id="name-a"></h2>
-<p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Choose outgoing cue by position"></canvas>
-<div class="row"><span>Start</span><span class="time" id="time-a"></span>
-<input class="range" type="range" min="0" step="0.01" id="range-a" aria-label="Outgoing cue time"></div>
-<div class="buttons"><button id="prev-a">− Beat</button><button id="next-a">+ Beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="play-a">▶ Preview A</button></div>
+<section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
+<p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
+<div class="row"><span>Startcue</span><span class="time" id="time-a"></span>
+<input class="range" type="range" min="0" step="0.01" id="range-a" aria-label="Tijdstip uitgaande cue"></div>
+<div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="play-a">▶ Beluister A</button></div>
 <audio id="audio-a" controls preload="metadata"></audio></section>
-<section class="lane"><small>INCOMING / DECK B</small><h2 id="name-b"></h2>
-<p class="summary" id="info-b"></p><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Choose incoming cue by position"></canvas>
-<div class="row"><span>Start</span><span class="time" id="time-b"></span>
-<input class="range" type="range" min="0" step="0.01" id="range-b" aria-label="Incoming cue time"></div>
-<div class="buttons"><button id="prev-b">− Beat</button><button id="next-b">+ Beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="play-b">▶ Preview B</button></div>
+<section class="lane"><small>INKOMEND / DECK B</small><h2 id="name-b"></h2>
+<p class="summary" id="info-b"></p><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Kies inkomende cuepositie op de golfvorm"></canvas>
+<div class="row"><span>Startcue</span><span class="time" id="time-b"></span>
+<input class="range" type="range" min="0" step="0.01" id="range-b" aria-label="Tijdstip inkomende cue"></div>
+<div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="play-b">▶ Beluister B</button></div>
 <audio id="audio-b" controls preload="metadata"></audio></section>
 </div>
 <div class="footer">
-<button class="primary" id="save">Save all cue choices (.json)</button>
-<p id="message" role="status" aria-live="polite">No source music or information leaves your computer.</p>
-<p class="warning">This editor downloads a cue-selection JSON. Move it to your private music folder and run <code>python3 -m mixlab.cue_editor apply ORIGINAL_MANIFEST.json CUE_SELECTION.json NEW_MANIFEST.json</code>. Afterwards run <code>python3 -m mixlab.cueprep NEW_MANIFEST.json NEW_EXCERPTS</code> and <code>python3 -m mixlab.studio render NEW_EXCERPTS/library.json NEW_STUDIO</code>.</p>
+<button class="primary" id="save">Download cuekeuzes (.json)</button>
+<p id="message" role="status" aria-live="polite">Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.</p>
+<p class="warning">Download eerst je cuekeuzes als privé-JSON. Zet dat bestand in je privé muziekmap en gebruik <code>python3 -m mixlab.cue_editor apply OUD_MANIFEST.json CUEKEUZES.json NIEUW_MANIFEST.json</code> om een <strong>nieuw</strong> bronmanifest met die cues te maken. Het oude manifest, de bron-WAVs en rechtenverklaringen blijven ongewijzigd. Open het nieuwe plan via <code>python3 -m mixlab.playlist_studio MUZIEKMAP NIEUW_MANIFEST.json NIEUWE_SESSIE --resume --plan-html --plan-verify-wavs</code> voordat je met <code>--resume --full-set-wav</code> de echte WAV rendert.</p>
 </div></main>
 <script type="application/json" id="local-data">__DATA__</script>
 <script>
@@ -170,7 +172,7 @@ const bank=Object.fromEntries(data.tracks.map(x=>[x.id,x]));
 const pairs=data.pairs;
 const $=id=>document.getElementById(id);
 const pairSelect=$('pair');
-for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=p.id+' : '+p.a+' → '+p.b;pairSelect.append(option);}
+for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
 let chosen=pairs[0],playing=null,stopAt=0;
 function format(seconds){const m=Math.floor(seconds/60);const s=(seconds%60).toFixed(2).padStart(5,'0');return String(m)+':'+s;}
 function deck(side){return bank[chosen[side]];}
@@ -182,7 +184,14 @@ function snapTime(value,side){
  }
  return Math.max(0,Math.min(maxStart(side),Math.round(value*100)/100));
 }
-function setCue(side,value){chosen[side+'_start_seconds']=snapTime(value,side);refreshSide(side);}
+function setCue(side,value){
+ const key=side+'_start_seconds',next=snapTime(value,side);
+ if(next!==chosen[key]){
+   chosen[key]=next;
+   $('message').textContent='Cue aangepast. Download je keuzes voordat je deze pagina sluit.';
+ }
+ refreshSide(side);
+}
 function stopPlayback(){if(playing){playing.pause();playing=null;}}
 function draw(side){
  const t=deck(side),canvas=$('wave-'+side),ctx=canvas.getContext('2d');
@@ -216,8 +225,8 @@ function refresh(){
  $('pair-info').textContent=chosen.beats+' beats · '+chosen.seconds.toFixed(2)+' s';
  for(const side of ['a','b']){
   const t=deck(side);
-  $('name-'+side).textContent=t.id;
-  $('info-'+side).textContent=t.bpm+' BPM (manual) · '+format(t.duration)+' · '+t.sample_rate+' Hz';
+  $('name-'+side).textContent=t.display_name;
+  $('info-'+side).textContent='Bron '+t.id+' · '+t.bpm+' BPM (handmatig) · '+format(t.duration)+' · '+t.sample_rate+' Hz';
   const slider=$('range-'+side);slider.max=String(maxStart(side));slider.value=String(chosen[side+'_start_seconds']);
   const audio=$('audio-'+side);audio.pause();audio.removeAttribute('src');audio.src=encodeURI(t.path);audio.load();
   refreshSide(side);
@@ -238,7 +247,7 @@ for(const side of ['a','b']){
  $('play-'+side).addEventListener('click',async()=>{
    stopPlayback();const a=$('audio-'+side);
    try{a.currentTime=chosen[side+'_start_seconds'];stopAt=chosen[side+'_start_seconds']+chosen.seconds;playing=a;await a.play();}
-   catch(err){$('message').textContent='Browser could not open this private WAV. Keep editor HTML beside audio/ and check local-file permissions.';}
+   catch(err){$('message').textContent='Browser kan deze privé-WAV niet afspelen. Open de HTML naast je originele muziekbestanden en controleer de bestandsrechten.';}
  });
  const audio=$('audio-'+side);
  audio.addEventListener('timeupdate',()=>{if(playing===audio&&audio.currentTime>=stopAt){stopPlayback();}});
@@ -252,7 +261,7 @@ $('save').addEventListener('click',()=>{
  const url=URL.createObjectURL(blob);const link=document.createElement('a');
  link.href=url;link.download='mixlab-cue-selections.json';link.click();
  setTimeout(()=>URL.revokeObjectURL(url),3000);
- $('message').textContent='Selections saved as JSON. Apply to a NEW manifest; source music was not changed.';
+ $('message').textContent='Cuekeuzes gedownload. Pas ze toe op een NIEUW bronmanifest; je originele muziek is niet gewijzigd.';
 });
 refresh();
 </script></body></html>

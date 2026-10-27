@@ -740,6 +740,12 @@ Studio of WAV. Voeg `--plan-verify-wavs` toe voor exacte SHA-gecontroleerde
 PCM16-bron-/hoofdstuktijden. MixLab hergebruikt de oorspronkelijke muziek,
 playlistvolgorde en gekozen overgangsstijl, en wijzigt het bronmanifest niet.
 
+De originele offline **cue-editor toont nu Nederlandse bediening en
+herkenbare lokale songbestandsnamen** naast de oorspronkelijke, voor alle
+SHA-gebonden exports onveranderde track-ID's. Een handmatige wijziging
+laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
+Dit is geen automatisch herkende songtitel of rechtenbewijs.
+
 Vanuit een **opgeslagen** handmatige playlist kun je met
 `--resume --plan-html --plan-cue-editor /private/music/new-editor.html`
 nu ook de bestaande offline visuele cue-editor starten, zonder Studio-
