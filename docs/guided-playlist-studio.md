@@ -106,6 +106,15 @@ Ook `mixlab.cue_editor apply` weigert een tegenstrijdige handmatige
 selectie voordat een nieuw manifest wordt gemaakt: je oorspronkelijke
 WAV-bronnen, manifest en rechtenverklaringen veranderen niet.
 
+De editor heeft ook **Beluister A + B**: speel beide originele lokale
+WAV-decks tegelijk vanaf de handmatig ingestelde A- en B-startcues,
+met een begrensde overgangsduur en beperkt volume. **Stop beide decks**,
+een andere cue of een andere overgang beëindigt de voorluistering.
+Dit is uitsluitend een grove timinghulp, niet de gerenderde crossfade,
+bass-swap, echo-exit of een sample-nauwkeurige BPM-/beatmatch.
+Beoordeel de échte overgang na renderen in de privé Full Set Player.
+Lokale bestandsnamen met spaties, `#` of `?` worden correct URL-gecodeerd.
+
 De visuele editor toont nu ook **live de geplande volledige mixtijd en
 hoofdstuktijdlijn** wanneer je een cue verschuift, inclusief hoeveel
 overgangen zijn aangepast en het verschil met de oorspronkelijk opgeslagen

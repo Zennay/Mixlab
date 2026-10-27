@@ -184,6 +184,15 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="fineprev-b" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-b" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-b">▶ Beluister B</button></div>
 <audio id="audio-b" controls preload="metadata"></audio></section>
 </div>
+<section class="footer" aria-labelledby="ab-preview-heading">
+<h2 id="ab-preview-heading">Voorluisteren: cue A + B tegelijk</h2>
+<p>Hoor beide originele WAV-bronnen tegelijk vanaf jouw handmatig gekozen
+startcues, op laag volume. Dit is alleen een ruwe timingcontrole;
+geen definitieve mix, crossfade, beatmatch of MixLab-DSP-render.</p>
+<div class="buttons"><button type="button" class="primary" id="play-ab">▶ Beluister A + B</button>
+<button type="button" id="stop-ab" disabled>■ Stop beide decks</button></div>
+<p id="ab-status" role="status" aria-live="polite">Nog niet samen beluisterd.</p>
+</section>
 <section class="footer" aria-labelledby="timeline-title">
 <h2 id="timeline-title">Waar vallen je overgangen in de complete mix?</h2>
 <p>Deze lokale indicatie wordt bij elke handmatige cuewijziging opnieuw
@@ -209,6 +218,7 @@ const $=id=>document.getElementById(id);
 const pairSelect=$('pair');
 for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
 let chosen=pairs[0],playing=null,stopAt=0,edited=false;
+let duetActive=false,duetSerial=0,duetVolumes=null,duetEnds=null;
 function cueProblem(){
  for(let i=1;i<pairs.length;i++){
    const previous=pairs[i-1],current=pairs[i];
@@ -431,13 +441,28 @@ function snapTime(value,side,fine=false){
 function setCue(side,value,fine=false){
  const key=side+'_start_seconds',next=snapTime(value,side,fine);
  if(next!==chosen[key]){
+   stopPlayback();
    rememberCueEdit();
    chosen[key]=next;
  }
  refreshSide(side);
  refreshCueStatus();
 }
-function stopPlayback(){if(playing){playing.pause();playing=null;}}
+function stopPlayback(){
+  ++duetSerial;
+  if(playing){playing.pause();playing=null;}
+  if(duetActive){
+    duetActive=false;
+    for(const side of ['a','b'])$('audio-'+side).pause();
+    if(duetVolumes){
+      $('audio-a').volume=duetVolumes[0];
+      $('audio-b').volume=duetVolumes[1];
+    }
+  }
+  duetVolumes=null;duetEnds=null;
+  $('play-ab').disabled=false;
+  $('stop-ab').disabled=true;
+}
 function draw(side){
  const t=deck(side),canvas=$('wave-'+side),ctx=canvas.getContext('2d');
  const w=canvas.width,h=canvas.height,signal=t.waveform;
@@ -473,7 +498,7 @@ function refresh(){
   $('name-'+side).textContent=t.display_name;
   $('info-'+side).textContent='Bron '+t.id+' · '+t.bpm+' BPM (handmatig) · '+format(t.duration)+' · '+t.sample_rate+' Hz';
   const slider=$('range-'+side);slider.max=String(maxStart(side));slider.value=String(chosen[side+'_start_seconds']);
-  const audio=$('audio-'+side);audio.pause();audio.removeAttribute('src');audio.src=encodeURI(t.path);audio.load();
+  const audio=$('audio-'+side);audio.pause();audio.removeAttribute('src');audio.src=t.path.split('/').map(encodeURIComponent).join('/');audio.load();
   refreshSide(side);
  }
  refreshCueStatus();
@@ -542,9 +567,47 @@ for(const side of ['a','b']){
    catch(err){$('message').textContent='Browser kan deze privé-WAV niet afspelen. Open de HTML naast je originele muziekbestanden en controleer de bestandsrechten.';}
  });
  const audio=$('audio-'+side);
- audio.addEventListener('timeupdate',()=>{if(playing===audio&&audio.currentTime>=stopAt){stopPlayback();}});
+ audio.addEventListener('timeupdate',()=>{
+   if(playing===audio&&audio.currentTime>=stopAt)stopPlayback();
+   if(duetActive&&duetEnds&&(
+       $('audio-a').currentTime>=duetEnds[0] ||
+       $('audio-b').currentTime>=duetEnds[1]))stopPlayback();
+ });
+ audio.addEventListener('ended',()=>{if(duetActive)stopPlayback();});
  audio.addEventListener('ended',()=>{if(playing===audio)playing=null;});
 }
+$('play-ab').addEventListener('click',async()=>{
+  stopPlayback();
+  if(cueProblem() || !plannedSetTimeline()){
+    $('ab-status').textContent='Corrigeer eerst de ongeldige complete playlist/cues.';
+    return;
+  }
+  const a=$('audio-a'),b=$('audio-b');
+  const token=duetSerial;
+  duetVolumes=[a.volume,b.volume];
+  duetEnds=[chosen.a_start_seconds+chosen.seconds,
+            chosen.b_start_seconds+chosen.seconds];
+  a.currentTime=chosen.a_start_seconds;
+  b.currentTime=chosen.b_start_seconds;
+  a.volume=.3;b.volume=.3;
+  duetActive=true;
+  $('play-ab').disabled=true;$('stop-ab').disabled=false;
+  $('ab-status').textContent='A + B tegelijk: '+chosen.id+' · '+
+    chosen.seconds.toFixed(2)+' s. Ruwe timingcontrole, geen DJ-render.';
+  try{
+    await Promise.all([a.play(),b.play()]);
+  }catch(error){
+    if(duetActive&&token===duetSerial){
+      stopPlayback();
+      $('ab-status').textContent='Kan beide lokale WAVs niet tegelijk afspelen.';
+    }
+  }
+});
+$('stop-ab').addEventListener('click',()=>{
+  if(!duetActive)return;
+  stopPlayback();
+  $('ab-status').textContent='Beide decks gestopt.';
+});
 $('snap').addEventListener('change',()=>{for(const side of ['a','b'])refreshSide(side);});
 $('save').addEventListener('click',()=>{
  if(cueProblem()){
