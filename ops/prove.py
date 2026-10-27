@@ -17,10 +17,8 @@ def main():
     started = time.monotonic()
     destination = Path(sys.argv[1])
     destination.mkdir(parents=True, exist_ok=False)
-    # The suite (~190 s on 4 unpinned cores, including test_quality's companion
-    # re-run of every sibling module) outgrew 180 s; this lane pins one CPU at nice 10.
     result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
-                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=480)
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
     (destination / "tests.log").write_text(result.stdout)
     print(result.stdout)
     if result.returncode:

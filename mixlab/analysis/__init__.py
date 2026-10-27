@@ -30,8 +30,6 @@ class Analysis:
     phrase_starts_seconds: tuple = ()
     key: str | None = None
     key_source: str = "unavailable"
-    key_confidence: float = 0.
-    key_candidates: tuple = ()
     warnings: tuple = ()
     schema_version: int = 1
 

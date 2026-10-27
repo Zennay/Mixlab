@@ -1,0 +1,117 @@
+name: MixLab ML-07 private A-B assignment balance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mixlab/quality/assignment_balance.py"
+      - "tests/test_quality_assignment_balance.py"
+      - "docs/quality-assignment-balance.md"
+      - ".github/workflows/ml07-assignment-balance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixlab-ml07-side-balance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  assignment-balance:
+    if: >-
+      github.repository == 'Zennay/Mixlab' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+      && ((github.event_name != 'pull_request' && github.event_name != 'pull_request_target') || (github.event.pull_request.head.repo.full_name == github.repository && github.actor == 'Zennay'))
+    runs-on: [self-hosted, portfolio-pool, vps]
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Immutable SHA checkout without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check exact trigger revision
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile and run genuine five-pair synthetic PCM regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          python -m py_compile mixlab/quality/assignment_balance.py tests/test_quality_assignment_balance.py
+          /usr/bin/time -v python -m unittest discover -s tests -p 'test_quality_assignment_balance.py' -v
+
+      - name: Checkout exact independent ML-05 producer (read-only)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Zennay/Mixlab
+          ref: 28ad9d4bf64d9364c8bb58397ff5f6df307bab12
+          path: upstream-pr71
+          persist-credentials: false
+      - name: Prove actual ML-05 producer can generate valid skewed PCM pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream-pr71 rev-parse HEAD)" = "28ad9d4bf64d9364c8bb58397ff5f6df307bab12"
+          cp mixlab/quality/study_binding.py upstream-pr71/mixlab/quality/study_binding.py
+          cp mixlab/quality/assignment_balance.py upstream-pr71/mixlab/quality/assignment_balance.py
+          cd upstream-pr71
+          ulimit -v 196608
+          /usr/bin/time -v python -B - <<'PY'
+          import importlib.util
+          import json
+          import random
+          from mixlab.evaluation import verify_pack
+          from mixlab.evaluation.study_pack import build
+          from mixlab.quality.assignment_balance import audit_study_assignment
+
+          spec = importlib.util.spec_from_file_location(
+              "original_ml05_fixture", "tests/test_evaluation_study_pack.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          fixture = module.StudyPackTests
+          fixture.setUpClass()
+          try:
+              expected = fixture.study_doc["study_id"]
+              initial = audit_study_assignment(fixture.study, fixture.pack, expected)
+              assert initial["trial_count"] == 5 and initial["milestone_pass"] is False
+              # A true producer-driven skew, not a fabricated or mislabeled WAV.
+              skew_seed = None
+              for seed in range(1000):
+                  randomizer = random.Random(seed)
+                  sides = []
+                  for _ in range(5):
+                      variants = ["baseline", "candidate"]
+                      randomizer.shuffle(variants)
+                      sides.append(variants[0] == "baseline")
+                  if len(set(sides)) == 1:
+                      skew_seed = seed
+                      break
+              assert skew_seed is not None
+              skew_pack = fixture.root / "seeded-skew-pack"
+              build(fixture.manifest, fixture.study, skew_pack, seed=skew_seed)
+              _, evidence, trials = verify_pack(skew_pack)
+              assert len(trials) == 5 and evidence["study_id"] == expected
+              result = audit_study_assignment(fixture.study, skew_pack, expected)
+              assert result["global_side_imbalance"] is True
+              assert result["side_assignment_review_required"] is True
+              assert result["milestone_pass"] is False
+              assert str(fixture.root) not in json.dumps(result)
+              print("Real pinned ML-05 frozen producer: checksum-valid 5:0 side skew -> private HOLD")
+          finally:
+              fixture.tearDownClass()
+          PY
