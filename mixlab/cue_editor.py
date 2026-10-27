@@ -157,6 +157,9 @@ audio{width:100%;margin-top:10px} .footer{margin-top:28px;padding:20px;backgroun
   gap:16px;background:#212536;border:1px solid #3f4358;border-radius:10px;padding:11px 13px}
 #mix-timeline strong{display:block;overflow-wrap:anywhere}
 #mix-timeline small{color:#c8c2ec;font-variant-numeric:tabular-nums}
+#mix-timeline .cue-delta{display:block;color:#a9edd5;margin:5px 0;
+  font-weight:650;overflow-wrap:anywhere}
+#mix-timeline .cue-delta.changed{color:#ffd6a6}
 @media(max-width:600px){#mix-timeline li{grid-template-columns:1fr;gap:4px}}
 .primary{background:#c8b4ff;color:#131020;font-weight:800;border-color:#c8b4ff}
 code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
@@ -427,6 +430,9 @@ function refreshLiveTimeline(){
  summary.textContent='Verwachte complete set: '+format(planned.total/planned.rate)+
    ' · '+edited+' handmatig gewijzigde overgangen · '+comparison+
    ' · '+planned.chapters.length+' niet-lege hoofdstukken.';
+ const originalTransitions=new Map((originalTiming?.chapters||[])
+   .filter(chapter=>chapter.kind==='transition')
+   .map(chapter=>[chapter.id,chapter]));
  for(const chapter of planned.chapters){
    const li=document.createElement('li');
    const timing=document.createElement('small');
@@ -439,6 +445,24 @@ function refreshLiveTimeline(){
    detail.textContent=(chapter.kind==='transition'?'Overgang '+chapter.id:'Nummer '+chapter.id);
    body.append(title,detail);
    if(chapter.kind==='transition'){
+     const comparison=document.createElement('small');
+     const baseline=originalTransitions.get(chapter.id);
+     const originalCue=originalCueValues.find(p=>p.id===chapter.id);
+     const currentCue=pairs.find(p=>p.id===chapter.id);
+     const cueEdited=currentCue.a_start_seconds!==originalCue.a ||
+       currentCue.b_start_seconds!==originalCue.b;
+     comparison.className='cue-delta';
+     if(!baseline){
+       comparison.textContent='Geen geldige oorspronkelijke overgangstijd beschikbaar.';
+     }else{
+       const delta=(chapter.from-baseline.from)/planned.rate;
+       const sign=delta>0?'+':'';
+       comparison.className+=' '+(Math.abs(delta)>.000001?'changed':'unchanged');
+       comparison.textContent='Oorspronkelijk '+format(baseline.from/originalTiming.rate)+
+         ' · verschuiving '+sign+delta.toFixed(2)+' s · '+
+         (cueEdited?'cue van dit paar aangepast':'cue van dit paar ongewijzigd');
+     }
+     body.append(comparison);
      const edit=document.createElement('button');
      edit.textContent='Wijzig deze overgang';
      edit.setAttribute('aria-label','Wijzig overgang: '+chapter.description);
@@ -683,7 +707,7 @@ $('play-ab').addEventListener('click',async()=>{
     return;
   }
   const a=$('audio-a'),b=$('audio-b');
-  const token=duetSerial;
+  const token=[REDACTED]
   duetVolumes=[a.volume,b.volume];
   duetEnds=[chosen.a_start_seconds+chosen.seconds,
             chosen.b_start_seconds+chosen.seconds];
@@ -697,7 +721,7 @@ $('play-ab').addEventListener('click',async()=>{
   try{
     await Promise.all([a.play(),b.play()]);
   }catch(error){
-    if(duetActive&&token===duetSerial){
+    if(duetActive&&token=[REDACTED]
       stopPlayback();
       $('ab-status').textContent='Kan beide lokale WAVs niet tegelijk afspelen.';
     }
