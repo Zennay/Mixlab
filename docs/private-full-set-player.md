@@ -29,6 +29,16 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
   schakelt naar **Stop herhalen** met een zichtbare en voor schermlezers
   herkenbare aan/uitstatus. Een ander overgangssegment kiezen, handmatig
   springen of in de golfvorm zoeken stopt de vorige loop;
+- **Luister met context** naast elk gerenderd overgangshoofdstuk:
+  beluister dezelfde reeds voltooide WAV vanaf maximaal **2 seconden vóór**
+  de overgang tot maximaal **2 seconden erna**. De browser stopt de
+  contextluistering vanzelf na het fragment (op de gebruikelijke
+  `timeupdate`-gebeurtenissen, dus niet sample-nauwkeurig).
+  Geen herhaalmodus en geen wijzigingen aan het eigenlijke WAV-bestand.
+  Contextluisteren is ook beschikbaar vanuit de privé-aanpassingslijst;
+  overschakelen naar exact overgangsherhalen stopt de contextmodus.
+  Handmatig buiten het fragment springen of eventmodus openen stopt de
+  contextluistering onmiddellijk; eventmodus blokkeert de bediening;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
@@ -49,6 +59,12 @@ naam, renderfamilie, exacte hoofdstukstart-/fragmentduur en de bij het maken
 van de speler vastgelegde **WAV SHA-256**. Daardoor weet je bij welk
 compleet mixresultaat de opmerkingen horen. Het is geen hercontrole van
 een later gewijzigd WAV-bestand en geen onafhankelijke blinde beoordeling.
+
+**Beluisteren met een stukje muziek ervoor en erna** helpt beoordelen of
+het eerste nummer natuurlijk wegloopt en het volgende nummer goed inzet.
+Met **Luister met context** in de aanpassingslijst hoor je dezelfde
+reeds gerenderde overgang inclusief de begrensde omgeving. Het blijft een
+persoonlijke DJ-luisterhulp, geen onafhankelijke muzikale kwaliteitsmeting.
 
 **Aanpassingen direct opnieuw beluisteren:** zodra je een overgang als
 **Wil aanpassen** markeert, verschijnt die automatisch in de sectie
