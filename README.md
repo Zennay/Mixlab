@@ -794,6 +794,11 @@ als privé-visueel plan openen** met `--resume --plan-html` zonder nieuwe
 Studio of WAV. Voeg `--plan-verify-wavs` toe voor exacte SHA-gecontroleerde
 PCM16-bron-/hoofdstuktijden. MixLab hergebruikt de oorspronkelijke muziek,
 playlistvolgorde en gekozen overgangsstijl, en wijzigt het bronmanifest niet.
+Als je voor de heropende visuele preview bewust een **andere**
+`--family` kiest, toont de pagina diezelfde verplichte `--family` ook in de
+latere renderopdracht. Zo kan de uiteindelijke WAV niet ongemerkt terugvallen
+op de oudere opgeslagen standaardstijl; handmatig goedgekeurde per-paarstijlen
+blijven onaangetast.
 
 De originele offline **cue-editor toont nu Nederlandse bediening en
 herkenbare lokale songbestandsnamen** naast de oorspronkelijke, voor alle

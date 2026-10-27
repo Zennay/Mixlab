@@ -26,7 +26,10 @@ def local_song_title(source_path):
     return label or 'Naamloos nummer'
 
 
-def render(plan, display_names=None, *, workflow='party_mix'):
+def render(plan, display_names=None, *, workflow='party_mix', next_family=None):
+    if next_family is not None and (workflow != 'guided' or
+          next_family not in ('baseline', 'bass_swap', 'echo_exit', 'hard_cut')):
+        raise ValueError('Invalid guided preview-only transition style')
     if workflow not in ('party_mix', 'guided'):
         raise ValueError('Invalid private playlist workflow')
     route, pairs = plan['track_order'], plan['transitions']
@@ -137,6 +140,15 @@ def render(plan, display_names=None, *, workflow='party_mix'):
                     '44,1 kHz PCM16-WAVs om vóór het renderen '
                     'de echte hoofdstukstarttijden te berekenen.</p></section>')
     if workflow == 'guided':
+        repeat_family = ' --family '+next_family if next_family else ''
+        family_note = (
+            '<p><strong>Belangrijk:</strong> je hebt deze preview bewust met '
+            '<code>--family '+next_family+'</code> bekeken. Dit verandert '
+            'het bewaarde manifest niet. Herhaal <code>--family '+next_family+
+            '</code> daarom bij de echte render; zonder die vlag krijg je '
+            'de eerder opgeslagen standaardstijl.</p>' if next_family else
+            '<p>De opgeslagen standaard-overgangsstijl wordt hergebruikt. '
+            'Expliciet goedgekeurde per-paarstijlen blijven beschermd.</p>')
         next_step = ('<p>Je handmatige bronmanifest is al opgeslagen. Gebruik '
                      '<code>--resume --full-set-wav</code> om dezelfde playlist later '
                      'te renderen. Gebruik dezelfde muziekbibliotheek en manifest, '
@@ -145,11 +157,7 @@ def render(plan, display_names=None, *, workflow='party_mix'):
                      '<code>--plan-verify-wavs</code> weg.</p>'
                      '<pre><code>python3 -m mixlab.playlist_studio MUZIEKMAP '
                      'PLAYLIST.json NIEUWE_SESSIE --resume '
-                     '--full-set-wav NIEUWE_MIX.wav</code></pre>'
-                     '<p>De standaard-overgangsstijl uit je playlist wordt '
-                     'hergebruikt. Je kunt die bewust wijzigen met '
-                     '<code>--family</code>; expliciet goedgekeurde stijlen '
-                     'blijven beschermd.</p>')
+                     '--full-set-wav NIEUWE_MIX.wav'+repeat_family+'</code></pre>'+family_note)
     else:
         next_step = ('<p>Voer dezelfde <code>mixlab.party_mix</code>-opdracht '
                      'opnieuw uit zonder <code>--preview</code>, '
@@ -244,14 +252,16 @@ def render(plan, display_names=None, *, workflow='party_mix'):
             '<body><main>'+content+'</main></body></html>')
 
 
-def publish(plan, output_wav, *, display_names=None, workflow='party_mix'):
+def publish(plan, output_wav, *, display_names=None, workflow='party_mix',
+            next_family=None):
     target = Path(str(Path(output_wav).absolute()) + '.preview.html')
     if target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise ValueError('New private preview path required')
     for parent in (target, *target.parents):
         if parent.is_symlink() or (parent / '.git').exists():
             raise ValueError('Private preview cannot be created in Git or symlink folders')
-    data = render(plan, display_names=display_names, workflow=workflow).encode('utf-8')
+    data = render(plan, display_names=display_names, workflow=workflow,
+                  next_family=next_family).encode('utf-8')
     if len(data) > 65536:
         raise ValueError('Private plan HTML exceeds 64 KiB')
     with target.open('xb') as out:
