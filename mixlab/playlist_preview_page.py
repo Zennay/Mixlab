@@ -26,7 +26,9 @@ def local_song_title(source_path):
     return label or 'Naamloos nummer'
 
 
-def render(plan, display_names=None):
+def render(plan, display_names=None, *, workflow='party_mix'):
+    if workflow not in ('party_mix', 'guided'):
+        raise ValueError('Invalid private playlist workflow')
     route, pairs = plan['track_order'], plan['transitions']
     if not isinstance(route, list) or not isinstance(pairs, list) or not 2 <= len(route) <= 11 or len(pairs) != len(route)-1:
         raise ValueError('Invalid manual plan')
@@ -62,14 +64,33 @@ def render(plan, display_names=None):
             'mixtijd is nog geen gerenderde audio.' if verified else
             'Dit is alleen een handmatig mixplan. Bronhashes en volledige mixtijd '
             'zijn niet gecontroleerd.')
+    if workflow == 'guided':
+        next_step = ('<p>Je handmatige bronmanifest is al opgeslagen. Gebruik '
+                     '<code>--resume --full-set-wav</code> om dezelfde playlist later '
+                     'te renderen. Gebruik dezelfde muziekbibliotheek en manifest, '
+                     'maar kies een nieuwe sessiemap en WAV. Laat '
+                     '<code>--manifest-only</code>, <code>--plan-html</code> en '
+                     '<code>--plan-verify-wavs</code> weg.</p>'
+                     '<pre><code>python3 -m mixlab.playlist_studio MUZIEKMAP '
+                     'PLAYLIST.json NIEUWE_SESSIE --resume '
+                     '--full-set-wav NIEUWE_MIX.wav</code></pre>'
+                     '<p>De standaard-overgangsstijl uit je playlist wordt '
+                     'hergebruikt. Je kunt die bewust wijzigen met '
+                     '<code>--family</code>; expliciet goedgekeurde stijlen '
+                     'blijven beschermd.</p>')
+    else:
+        next_step = ('<p>Voer dezelfde <code>mixlab.party_mix</code>-opdracht '
+                     'opnieuw uit zonder <code>--preview</code>, '
+                     '<code>--preview-html</code> en '
+                     '<code>--verify-wavs</code>. Daarna wordt de echte WAV '
+                     'gerenderd; sessiemap en WAV moeten nog nieuw zijn.</p>')
     content = ('<header><span class="eyebrow">MIXLAB / PRIVÉ MIXPLAN</span><h1>Jouw volgende mix.</h1>'
                '<p class="intro">Van tracklijst naar volledige set, zonder ingewikkelde studio.</p>'
                '<p class="notice">'+h(note)+'</p></header>'
                '<section aria-label="Overzicht"><div class="stats">'+stats+'</div></section>'
                '<section aria-labelledby="order"><h2 id="order">Speelvolgorde</h2><ol>'+''.join(items)+'</ol></section>'
-               '<section class="next"><h2>Klaar om te mixen?</h2><p>Controleer de handmatig gekozen nummers '
-               'en overgangen. Gebruik daarna je oorspronkelijke opdracht zonder '
-               '<code>--preview</code> en <code>--preview-html</code> om echte audio te maken.</p></section>'
+               '<section class="next"><h2>Klaar om te mixen?</h2><p>Controleer de '
+               'nummers en handmatig gekozen overgangen.</p>'+next_step+'</section>'
                '<footer>Geen bronbestanden of volledige bronpaden in deze pagina. Lokale bestandsnamen en trackcodes kunnen herkenbaar zijn: houd dit overzicht privé. '
                'M1 blijft open; echte BPM, cues, muzieklicenties en kwaliteit vergen menselijke controle.</footer>')
     css = (':root{color-scheme:dark}*{box-sizing:border-box}'
@@ -89,6 +110,7 @@ def render(plan, display_names=None):
            '.arrow{font-size:28px;color:#96ddbe}.join p{font-size:13px;margin:1px 0;color:#afc3d0}'
            '.next{background:#1b2a35;border-radius:16px;padding:1px 20px 16px;margin-top:25px}'
            '.identifier{display:block;font-size:12px;opacity:.72;letter-spacing:.02em}'
+           'pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c1d26;padding:14px;border-radius:9px}'
            'code{font:13px monospace;color:#a6ead6}footer{margin-top:36px;border-top:1px solid #3d5161;padding-top:20px}'
            '@media(max-width:520px){main{padding:24px 14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}')
     return ('<!doctype html><html lang="nl"><head><meta charset="utf-8">'
@@ -99,14 +121,14 @@ def render(plan, display_names=None):
             '<body><main>'+content+'</main></body></html>')
 
 
-def publish(plan, output_wav, *, display_names=None):
+def publish(plan, output_wav, *, display_names=None, workflow='party_mix'):
     target = Path(str(Path(output_wav).absolute()) + '.preview.html')
     if target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise ValueError('New private preview path required')
     for parent in (target, *target.parents):
         if parent.is_symlink() or (parent / '.git').exists():
             raise ValueError('Private preview cannot be created in Git or symlink folders')
-    data = render(plan, display_names=display_names).encode('utf-8')
+    data = render(plan, display_names=display_names, workflow=workflow).encode('utf-8')
     if len(data) > 65536:
         raise ValueError('Private plan HTML exceeds 64 KiB')
     with target.open('xb') as out:

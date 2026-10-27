@@ -20,7 +20,8 @@ from .set_player import publish_player
 
 def render_party_mix(manifest, session_directory, output_wav, transitions=(),
                      *, family=None, timeout_seconds=600, suggestions=False,
-                     preview=False, verify_wavs=False, preview_html=False):
+                     preview=False, verify_wavs=False, preview_html=False,
+                     preview_workflow='party_mix'):
     """Render the source Studio and chosen continuous set in one safe run.
 
     The expensive private Studio is deliberately retained if the final WAV
@@ -134,7 +135,8 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
             # Browser-only labels: never expose a source directory or change
             # source IDs, the saved manifest, or the machine preview JSON.
             names = {entry['id']: local_song_title(entry['path']) for entry in catalog}
-            result['preview_html'] = str(publish(result, output, display_names=names))
+            result['preview_html'] = str(publish(result, output, display_names=names,
+                                                 workflow=preview_workflow))
             result['status'] = 'private-offline-plan-page-created-no-audio'
         return result
     # Full Studio must render every pair in order to satisfy user selections.
