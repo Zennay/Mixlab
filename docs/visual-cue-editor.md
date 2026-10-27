@@ -39,8 +39,10 @@ Open /private/imported-music/cue-editor.html locally with Firefox or Chromium.
 Move the downloaded selection JSON to your private library or reference its Downloads path. Apply it against the original manifest, writing a NEW name:
 
 ~~~bash
-python3 -m mixlab.cue_editor apply /private/imported-music/source_manifest.json /private/mixlab-cue-selections.json /private/imported-music/approved-cues.json
+python3 -m mixlab.cue_editor apply /private/imported-music/source_manifest.json /private/mixlab-cue-selections.json /private/imported-music/approved-cues.json --plan-html --plan-verify-wavs
 ~~~
+
+With `--plan-html --plan-verify-wavs`, the same command also writes a NEW offline private HTML visual set plan beside the music folder, never a Studio or WAV. The preview shows the verified exact expected full-set duration and track/transition timeline; the original manifest is unchanged. Its path is returned as `private_plan_html`. The path is automatically derived from the new manifest filename (`approved-cues-planned-set.wav.preview.html` in this example), and a preexisting plan is never overwritten. Omit these optional flags for the original apply-only behavior. If optional page generation fails after a new manifest was safely created, the CLI returns nonzero and tells you that the new manifest was preserved. A private plan is not proof of rights or musical quality.
 
 Apply revalidates the registered WAV source hashes and formats, requires exact source manifest SHA, checks that each declared pair appears exactly once, and rejects cues that exceed a source file's frame budget. It also checks that connected transitions are in the right order and that each new outgoing cue starts **on or after the previous incoming transition ends**. Invalid selections fail before a new manifest is written; the originals and the user's downloaded JSON are preserved. It never rewrites the original manifest or media, nor changes an existing frozen evaluation pack.
 

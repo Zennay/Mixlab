@@ -196,7 +196,7 @@ Nog geen geldige complete mixtijd berekend.</p>
 <div class="footer">
 <button class="primary" id="save">Download cuekeuzes (.json)</button>
 <p id="message" role="status" aria-live="polite">Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.</p>
-<p class="warning">Download eerst je cuekeuzes als privé-JSON. Zet dat bestand in je privé muziekmap en gebruik <code>python3 -m mixlab.cue_editor apply OUD_MANIFEST.json CUEKEUZES.json NIEUW_MANIFEST.json</code> om een <strong>nieuw</strong> bronmanifest met die cues te maken. Het oude manifest, de bron-WAVs en rechtenverklaringen blijven ongewijzigd. Open het nieuwe plan via <code>python3 -m mixlab.playlist_studio MUZIEKMAP NIEUW_MANIFEST.json NIEUWE_SESSIE --resume --plan-html --plan-verify-wavs</code> voordat je met <code>--resume --full-set-wav</code> de echte WAV rendert.</p>
+<p class="warning">Download eerst je cuekeuzes als privé-JSON. Zet dat bestand in je privé muziekmap en gebruik <code>python3 -m mixlab.cue_editor apply OUD_MANIFEST.json CUEKEUZES.json NIEUW_MANIFEST.json --plan-html --plan-verify-wavs</code> om een <strong>nieuw</strong> bronmanifest met die cues te maken. Het oude manifest, de bron-WAVs en rechtenverklaringen blijven ongewijzigd. Die opdracht maakt ook een nieuwe, lokale, gecontroleerde HTML-tijdlijn zonder audio te renderen. Je kunt het nieuwe manifest zo controleren voordat je met <code>--resume --full-set-wav</code> de echte WAV rendert.</p>
 </div></main>
 <script type="application/json" id="local-data">__DATA__</script>
 <script>
@@ -670,6 +670,39 @@ def apply(source_manifest, selection_json, destination):
     return destination
 
 
+def apply_with_private_plan(source_manifest, selection_json, destination,
+                            *, verify_wavs=False):
+    """Save manually revised cues AND a separate offline preview, no audio."""
+    destination = Path(destination).absolute()
+    parent = destination.parent.parent
+    planned_wav = parent / (destination.stem + '-planned-set.wav')
+    planned_session = parent / (destination.stem + '-plan-only-session')
+    html = Path(str(planned_wav) + '.preview.html')
+    # Check the optional page's location before committing a new source
+    # manifest; never overwrite an existing plan or a real user WAV.
+    from .session import _private_project_dir
+    from .set_export import _valid_destination
+    _private_project_dir(planned_session, Path(source_manifest).absolute())
+    _valid_destination(planned_wav, planned_session)
+    if html.exists() or html.is_symlink():
+        raise ValueError('Private planned-mix HTML already exists; choose a fresh manifest name')
+    result = apply(source_manifest, selection_json, destination)
+    try:
+        from .party_mix import render_party_mix
+        new_source = _read_spec(result)
+        family = new_source.get('default_family', 'bass_swap')
+        preview = render_party_mix(
+            result, planned_session, planned_wav, family=family,
+            preview=True, verify_wavs=verify_wavs, preview_html=True,
+            preview_workflow='guided')
+    except (ValueError, TypeError, OSError, KeyError) as exc:
+        # An optional HTML failure cannot erase valid manually authored cues.
+        raise ValueError('New private cue manifest was preserved, but the '
+                         'optional private plan could not be created: '
+                         + str(exc)) from exc
+    return result, preview
+
+
 def main():
     parser = argparse.ArgumentParser(description="MixLab visual cue selection on private local WAVs")
     modes = parser.add_subparsers(dest="mode", required=True)
@@ -680,15 +713,32 @@ def main():
     p.add_argument("source_manifest")
     p.add_argument("selection_json")
     p.add_argument("output_manifest")
+    p.add_argument("--plan-html", action="store_true",
+                   help="Also create a new private visual full-set plan, without a Studio or WAV")
+    p.add_argument("--plan-verify-wavs", action="store_true",
+                   help="With --plan-html: verify original PCM16 SHA hashes and exact chapter times")
     args = parser.parse_args()
     try:
-        result = prepare(args.source_manifest, args.output_html) if args.mode == "prepare" else (
-            apply(args.source_manifest, args.selection_json, args.output_manifest))
+        extra = {}
+        if args.mode == "prepare":
+            result = prepare(args.source_manifest, args.output_html)
+        elif args.plan_verify_wavs and not args.plan_html:
+            raise ValueError("--plan-verify-wavs requires --plan-html")
+        elif args.plan_html:
+            result, preview = apply_with_private_plan(
+                args.source_manifest, args.selection_json, args.output_manifest,
+                verify_wavs=args.plan_verify_wavs)
+            extra = {"private_plan_html": preview["preview_html"],
+                     "actual_wav_rendered": False,
+                     "planned_mix_seconds": (preview["complete_mix_duration"]
+                                             if args.plan_verify_wavs else None)}
+        else:
+            result = apply(args.source_manifest, args.selection_json, args.output_manifest)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.exit(2, "MixLab cue editor: " + str(exc) + "\n")
     print(json.dumps({"ready": True, "private_file": str(result),
                       "mode": args.mode, "audio_uploaded": False,
-                      "cue_source": "manually chosen"}))
+                      "cue_source": "manually chosen", **extra}))
 
 
 if __name__ == "__main__":

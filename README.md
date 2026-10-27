@@ -776,7 +776,10 @@ Vanuit een **opgeslagen** handmatige playlist kun je met
 nu ook de bestaande offline visuele cue-editor starten, zonder Studio-
 of WAV-rendering. Daarmee pas je A/B-cues bewust aan via de lokale
 waveforms en exporteer je de selectie naar een **nieuw** SHA-gebonden
-manifest met `mixlab.cue_editor apply`; de oorspronkelijke bronmetadata,
+manifest met `mixlab.cue_editor apply`; geef desgewenst meteen
+`--plan-html --plan-verify-wavs` mee om in **dezelfde opdracht** een nieuwe
+privéplanpagina inclusief SHA-geverifieerde mixtijd en hoofdstukken te maken,
+zonder Studio of WAV te renderen. Het oorspronkelijke bronmanifest,
 audio en goedgekeurde stijlen worden niet overschreven. Alleen voor originele
 SHA-gecontroleerde PCM16-WAVs; dit is geen automatische beatdetectie.
 
