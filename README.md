@@ -85,7 +85,11 @@ markeren en een korte creatieve notitie toevoegen. Download je persoonlijke
 overgangsnotities als apart privé-JSON met WAV-hash, exacte hoofdstuktijden
 en de geselecteerde paar-ID's. Niets wordt automatisch opgeslagen, geüpload
 of als onafhankelijk luisteronderzoek meegeteld; sla het JSON-bestand zelf
-op voordat je de pagina sluit.
+op voordat je de pagina sluit. Je kunt die privé-JSON daarna
+**lokaal terugladen in dezelfde WAV-speler**, ook na opnieuw openen van
+het HTML-bestand. MixLab weigert een afwijkende WAV-SHA, overgangsstijl
+of hoofdstuktijd en beschermt al ingevulde notities tegen stilzwijgend
+overschrijven. Er is geen account, server of automatische browseropslag.
 
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. Je kunt nu **iedere werkelijk gerenderde overgang
