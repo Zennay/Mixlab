@@ -12,6 +12,8 @@ WORKFLOW = (Path(__file__).resolve().parents[1]
 CHECKOUT = "11d5960a326750d5838078e36cf38b85af677262"
 PYTHON = "ece7cb06caefa5fff74198d8649806c4678c61a1"
 HEAD = "${{ github.event.pull_request.head.sha || github.sha }}"
+# Repository policy since a12f255: every job runs on the VPS runner pool.
+RUNNER = "[self-hosted, portfolio-pool, vps]"
 
 
 def assert_accepted(source: str):
@@ -36,8 +38,8 @@ def assert_accepted(source: str):
     assert re.search(r"(?m)^permissions:\s*\n\s+contents:\s*read\s*$", source), (
         "permissions must stay read-only"
     )
-    assert len(re.findall(r"^\s+runs-on:\s*ubuntu-latest\s*$", source, re.M)) == 2, (
-        "both quality jobs must remain hosted"
+    assert len(re.findall(r"^\s+runs-on:\s*" + re.escape(RUNNER) + r"\s*$", source, re.M)) == 2, (
+        "both quality jobs must run on the VPS runner pool"
     )
 
 
@@ -68,7 +70,8 @@ class SourceBoundDCWorkflowTests(unittest.TestCase):
             ('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', 'echo "passed"'),
             ("persist-credentials: false", "persist-credentials: true"),
             ("contents: read", "contents: write"),
-            ("runs-on: ubuntu-latest", "runs-on: self-hosted"),
+            ("runs-on: " + RUNNER, "runs-on: ubuntu-latest"),
+            ("runs-on: " + RUNNER, "runs-on: self-hosted"),
         ):
             with self.subTest(replacement=new):
                 changed = self.source.replace(old, new, 1)
