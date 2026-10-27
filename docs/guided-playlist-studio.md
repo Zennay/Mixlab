@@ -335,7 +335,14 @@ gewijzigd. De aparte privépagina is nog geen WAV of Studio. Zonder
 controleert MixLab de originele 44,1 kHz PCM16-bronnen en SHA-256 opnieuw
 voor de precieze tijdlijn. De eerder handmatig gekozen `--family` uit het
 manifest wordt hergebruikt en de oorspronkelijk goedgekeurde per-paarstijlen
-blijven gelden. Een gewijzigde WAV of ongeldige route doet de **expliciete
+blijven gelden. Wil je een **alternatieve standaardstijl alleen bekijken**,
+geef dan bijvoorbeeld `--resume --plan-html --family baseline` op. Dit
+wijzigt je originele manifest nadrukkelijk **niet**. De nieuwe privépagina
+neemt daarom automatisch ook `--family baseline` op in de getoonde latere
+`--resume --full-set-wav`-opdracht. Laat deze vlag weg en de originele
+standaard uit je bestaande bronmanifest geldt weer. Bewust handmatig
+**per paar goedgekeurde** `approved_family`-overgangen blijven beschermd.
+Een gewijzigde WAV of ongeldige route doet de **expliciete
 heropenopdracht falen** in plaats van een lege pagina als succes te melden.
 Gebruik later een aparte `--resume --full-set-wav`-opdracht om werkelijk te
 renderen: combineer die niet met `--plan-html` of met `--ideas`.

@@ -311,6 +311,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 preview = render_party_mix(
                     manifest, destination, suggested_wav, family=effective_family,
                     preview_workflow='guided', preview=True, verify_wavs=plan_verify_wavs,
+                    preview_next_family=(family if resume and family is not None
+                                         and family != saved_family else None),
                     preview_html=True)
             except (ValueError, TypeError, OSError, KeyError):
                 # Reopening is an explicit preview request. If it failed,
