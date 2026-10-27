@@ -145,6 +145,43 @@ python3 -m mixlab.playlist_studio \
 MixLab schrijft dan alleen `my-playlist.private.json` en stopt vóór de
 CPU-intensieve audio-import. De hele begeleide invoer is daarmee veilig bewaard.
 
+Wil je **meteen na het kiezen van de nummers en cuepunten een visueel
+mixplan**, zonder een tweede commando te hoeven leren? Voeg de optionele
+`--plan-html` toe aan dezelfde begeleide invoer:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --beats 16 --manifest-only --plan-html
+~~~
+
+De wizard maakt het echte handmatige SHA-gebonden bronmanifest en daarnaast
+één afzonderlijke **privé offline pagina**
+`/private/mixlab-playlist-01.wav.preview.html` (0600). Daar zie je de
+speelvolgorde, gekozen overgangen, BPM en uitgaande/inkomende cuepunten.
+Er wordt nog géén sessiemap, Studio, mix-WAV of audio-speler gemaakt.
+De standaardinstelling toont de handmatig opgegeven familiekeuze
+(`bass_swap`), tenzij een volledig goedgekeurde lijst individuele
+stijlkeuzes uit het bestaande goedkeuringsformulier is meegegeven.
+
+Voor bestaande **originele lokale 44,1 kHz PCM16-WAVs** kun je bovendien
+`--plan-verify-wavs` toevoegen; dan worden de bron-SHA's en de WAV-headers
+gecontroleerd en toont de pagina de exact verwachte mixtijd. Dit valideert
+nog geen muziekrechten of muzikale kwaliteit. Voor MP3/FLAC en andere
+formaten gebruik je alleen `--plan-html` zonder
+`--plan-verify-wavs`; hun exacte lengte vereist later de gewone audio-import.
+
+Het JSON-resultaat geeft `private_plan_html` en `planned_complete_wav` terug.
+Dat tweede pad is slechts een **voorstel**, geen geproduceerde WAV. Om later
+daadwerkelijk te mixen, gebruik dezelfde bronmanifest met `--resume` en
+`--full-set-wav` naar die voorgestelde nieuwe bestandsnaam. Bestaande WAVs of
+HTML-bestanden worden nooit overschreven. Als alleen de optionele HTML faalt,
+blijft je handmatig ingevulde bronmanifest intact; de wizard geeft een
+expliciete waarschuwing, niet een verzonnen successtatus voor de pagina.
+`--plan-html` vereist `--manifest-only`; `--plan-verify-wavs` vereist beide.
+
 Maak later met exact diezelfde bronmanifest een **nieuwe** sessie en de
 browsergebaseerde Studio. Alle hashes, rechtenverklaringen en handmatige
 cuepunten worden ongewijzigd opnieuw gebruikt:
