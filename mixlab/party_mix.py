@@ -13,10 +13,11 @@ from pathlib import Path
 from .cueprep import _read_spec
 from .session import _manual_cues_present, _private_project_dir, make_session
 from .set_export import _unique_pairs, _valid_destination, export_set
+from .studio import FAMILY_NAMES
 
 
-def render_party_mix(manifest, session_directory, output_wav, transitions,
-                     *, timeout_seconds=600, suggestions=False):
+def render_party_mix(manifest, session_directory, output_wav, transitions=(),
+                     *, family=None, timeout_seconds=600, suggestions=False):
     """Render the source Studio and chosen continuous set in one safe run.
 
     The expensive private Studio is deliberately retained if the final WAV
@@ -28,7 +29,6 @@ def render_party_mix(manifest, session_directory, output_wav, transitions,
     output = Path(output_wav).absolute()
     # Validate all cheap user-controlled destinations/selections BEFORE doing
     # CPU-heavy conversion; no partial output or session is created here.
-    selected = _unique_pairs(transitions)
     _valid_destination(output, session_dir)
     if output.is_relative_to(session_dir) or session_dir.is_relative_to(output):
         raise ValueError("The output WAV must be outside the private session directory")
@@ -37,6 +37,18 @@ def render_party_mix(manifest, session_directory, output_wav, transitions,
     declared = _read_spec(source)
     _manual_cues_present(declared)
     pairs = declared.get("pairs")
+    if not isinstance(pairs, list) or not 1 <= len(pairs) <= 10:
+        raise ValueError("A complete set needs 1..10 registered transitions")
+    if family is not None:
+        if transitions or family not in FAMILY_NAMES:
+            raise ValueError("Choose either --family or explicit --transition values")
+        selected = _unique_pairs([f"{pair['id']}:{family}" for pair in pairs])
+    else:
+        selected = _unique_pairs(transitions)
+    # One-command *complete* sets must not silently omit registered songs,
+    # start in the middle, reorder transitions or export only a subset.
+    if [pid for pid, _ in selected] != [pair['id'] for pair in pairs]:
+        raise ValueError("Select every registered transition in playlist order; no partial set")
     by_id = {}
     for pair in pairs:
         pid = pair.get("id")
@@ -68,8 +80,11 @@ def main():
     parser.add_argument("source_manifest", help="Private SHA-pinned permitted local music manifest")
     parser.add_argument("new_session_directory", help="New private session directory outside source music and Git")
     parser.add_argument("new_output_wav", help="New destination .wav outside the session and Git")
-    parser.add_argument("--transition", action="append", required=True, metavar="PAIR:FAMILY",
-                        help="One explicitly chosen transition, repeat in playlist order (up to 10)")
+    choices = parser.add_mutually_exclusive_group(required=True)
+    choices.add_argument("--family", choices=tuple(FAMILY_NAMES),
+                         help="One manually chosen transition style for every registered pair")
+    choices.add_argument("--transition", action="append", metavar="PAIR:FAMILY",
+                         help="Choose all registered pairs in order, repeat for each transition")
     parser.add_argument("--timeout-seconds", type=int, default=600,
                         help="Allowed FFmpeg processing time per input track, 30..900 seconds")
     parser.add_argument("--suggestions", action="store_true",
@@ -77,7 +92,7 @@ def main():
     args = parser.parse_args()
     try:
         result = render_party_mix(args.source_manifest, args.new_session_directory,
-                                  args.new_output_wav, args.transition,
+                                  args.new_output_wav, args.transition or (), family=args.family,
                                   timeout_seconds=args.timeout_seconds,
                                   suggestions=args.suggestions)
     except (ValueError, TypeError, OSError, KeyError) as exc:
