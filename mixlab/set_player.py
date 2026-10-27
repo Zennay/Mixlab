@@ -177,6 +177,9 @@ beluisteren. Dit wijzigt de WAV of handmatig goedgekeurde cues niet.</p>
 <button id="revision-next" type="button" disabled>Beluister volgende aanpassing</button>
 </div>
 <button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
+<button id="download-report" type="button" disabled>Download leesbare DJ-checklist (.txt)</button>
+<p class="muted">De checklist is voor je persoonlijke planning. Alleen je privé-JSON
+kan later opnieuw in MixLab geladen worden; download die ook om je keuzes te bewaren.</p>
 <button id="confirm-notes-saved" type="button" disabled>Ik heb mijn JSON opgeslagen</button>
 <p class="muted">Bevestig pas nadat je hebt gecontroleerd dat de download echt
 is opgeslagen. Zonder die bevestiging waarschuwt MixLab bij het sluiten
@@ -411,6 +414,7 @@ data.chapters.forEach((ch,i)=>{
 const reviewList=document.getElementById("creative-reviews");
 const reviewProgress=document.getElementById("review-progress");
 const exportReview=document.getElementById("download-review");
+const exportReport=document.getElementById("download-report");
 const confirmSaved=document.getElementById("confirm-notes-saved");
 const notesSaveStatus=document.getElementById("notes-save-status");
 const revisionQueue=document.getElementById("revision-queue");
@@ -520,6 +524,7 @@ function refreshReviewProgress(){
   const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
     note.value.trim()!=="").length;
   exportReview.disabled=marked===0 || eventMode;
+  exportReport.disabled=marked===0 || eventMode;
   importButton.disabled=eventMode || importBusy;
   importFile.disabled=eventMode || importBusy;
   const current=notesSnapshot();
@@ -739,6 +744,58 @@ function makePrivateCreativeNotes(){
       decision:status.value, note:note.value.slice(0,280)
     }))};
 }
+function readableDJChecklist(data){
+  const safe=value=>String(value??"")
+    .replace(/[\x00-\x1f\x7f-\x9f]+/g," ")
+    .replace(/\\s+/g," ").trim();
+  const preciseTime=seconds=>{
+    const hundredths=Math.round(seconds*100);
+    const h=Math.floor(hundredths/360000);
+    const m=Math.floor(hundredths/6000)%60;
+    const sec=Math.floor(hundredths/100)%60;
+    const cs=hundredths%100;
+    const pad=x=>String(x).padStart(2,"0");
+    return (h?pad(h)+":":"")+pad(m)+":"+pad(sec)+"."+pad(cs);
+  };
+  const entries=data.transitions;
+  const changes=entries.filter(x=>x.decision==="adjust");
+  const keep=entries.filter(x=>x.decision==="keep");
+  const notes=entries.filter(x=>x.decision==="unreviewed");
+  const lines=["MIXLAB | PRIVE DJ-AANPASSINGSLIJST",
+    "Persoonlijke luistersuggesties, GEEN onafhankelijke kwaliteits- of rechtencontrole.",
+    "", "WAV SHA-256: "+data.wav_sha256,
+    "Setduur: "+preciseTime(data.duration_seconds),
+    "Aanpassen: "+changes.length+" | Klinkt goed: "+keep.length+
+      " | Alleen notitie: "+notes.length, ""];
+  function section(title,records,marker){
+    lines.push(title);
+    if(!records.length){lines.push("Geen.","");return;}
+    for(const item of records){
+      const start=item.start_seconds;
+      const end=start+item.duration_seconds;
+      lines.push(marker+" "+preciseTime(start)+" - "+preciseTime(end)+
+        " | "+safe(item.display_name));
+      lines.push("    Paar: "+safe(item.pair_id)+
+        " | Stijl: "+safe(item.family));
+      lines.push("    Notitie: "+(safe(item.note)||"(geen)"),"");
+    }
+  }
+  section("NOG AAN TE PASSEN",changes,"[ ]");
+  section("KLINKT GOED (EIGEN OORDEEL)",keep,"[x]");
+  section("ALLEEN NOTITIE / GEEN KEUZE",notes,"[?]");
+  lines.push("Dit tekstbestand is geen herlaadbare MixLab-notitiebron.",
+    "Bewaar ook de originele prive-overgangsnotities JSON.");
+  return lines.join("\\n")+"\\n";
+}
+exportReport.addEventListener("click",()=>{
+  if(eventMode || exportReport.disabled)return;
+  const report=makePrivateCreativeNotes();
+  if(!report.transitions.length)return;
+  save("mixlab-dj-checklist.private.txt",readableDJChecklist(report),
+    "text/plain;charset=utf-8");
+  // Unlike the canonical notes JSON this is NOT a recoverable save.
+  // Do not offer the 'I saved my JSON' confirmation for a TXT download.
+});
 exportReview.addEventListener("click",()=>{
   if(eventMode || exportReview.disabled)return;
   save("mixlab-transition-notes.private.json",

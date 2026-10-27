@@ -110,6 +110,24 @@ betreft de SHA-binding die de speler bij het oorspronkelijke renderen
 heeft vastgelegd, geen latere onafhankelijke audio-audit. Ook import is
 onmogelijk in Eventmodus. Een bestand kiezen is géén upload.
 
+**Leesbare DJ-checklist meenemen:** naast het herlaadbare privé-JSON kun je
+nu met **Download leesbare DJ-checklist (.txt)** een persoonlijke checklist
+opslaan. Die groepeert je eerdere beoordelingen onder *Nog aan te passen*,
+*Klinkt goed (eigen oordeel)* en *Alleen notitie*, met het echte WAV-tijdstip,
+het overgangspaar, de gekozen renderfamilie en je vrije toelichting.
+De checklist bevat de WAV-SHA-256 zodat je de notities bij de juiste mix
+kunt houden. Vrij ingevoerde tekst wordt tot veilige enkele regels
+teruggebracht zodat een meerregelige notitie geen extra nep-overgang kan
+maken. Het is een **persoonlijke, lokaal gegenereerde TXT-export**, geen
+voltooide cue-aanpassing, muzikale kwaliteitsmeting of onafhankelijke audit.
+
+**Belangrijk:** TXT is **niet** terug te laden in MixLab en telt niet als
+bevestiging dat je oorspronkelijke notities veilig zijn opgeslagen.
+Download en controleer ook de oorspronkelijke JSON, en bevestig die pas
+dan met **Ik heb mijn JSON opgeslagen**. Beide bestanden kunnen herkenbare
+muzieknamen of persoonlijke notities bevatten; deel ze niet achteloos.
+In Eventmodus zijn beide persoonlijke exportknoppen uitgeschakeld.
+
 **Voorkom verlies van nieuwe aantekeningen:** de speler toont nu duidelijk
 wanneer een keuze of toelichting is gewijzigd maar nog niet veilig is
 bewaard. Klik **Download privé-overgangsnotities JSON**, controleer dat de
