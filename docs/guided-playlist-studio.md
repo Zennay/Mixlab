@@ -310,7 +310,12 @@ python3 -m mixlab.playlist_studio /private/music \
 
 Het resultaat bevat `private_plan_html` **en** `private_cue_editor_html`.
 De editor leest de originele SHA-gecontroleerde **PCM16 WAVs** lokaal om
-waveforms te tonen. Er wordt geen Studio, nieuwe muziek of WAV-export
+waveforms te tonen. In de Nederlandse cue-editor herken je bij het
+kiezen van een overgang en op beide decks voortaan de **lokale
+bestandsnaam zonder extensie**, naast de originele technische bron-ID.
+De zichtbare naam is geen onafhankelijk herkende artiest of echte tracktitel.
+Een gewijzigde cue krijgt direct de melding dat de keuzes nog gedownload
+moeten worden. Er wordt geen Studio, nieuwe muziek of WAV-export
 gepubliceerd. Kies handmatig A/B-cuepunten in de offline editor, download
 `mixlab-cue-selections.json` en plaats dat JSON in je privémuziekmap.
 Verwerk die keuze uitsluitend naar een **nieuw** bronmanifest:

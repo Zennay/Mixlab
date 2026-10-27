@@ -23,6 +23,7 @@ Open /private/imported-music/cue-editor.html locally with Firefox or Chromium.
 
 ### What you can do
 
+- The offline browser editor uses **Dutch labels** and shows the recognisable private source **filename without its extension** alongside each original technical track ID. You select pairs by song name, not by having to decode opaque `track-001` identifiers; labels are not authenticated metadata or rights proofs. Manual unsaved cue changes show a clear reminder to download the private JSON.
 - View both A and B audio-energy waveforms, independently edit their start times with a slider or click on the waveform, and see precise timestamps.
 - Preview only the currently selected transition-length excerpt on each deck. A second preview stops the first.
 - Nudge by one beat or four beats. Optionally snap to a **manually declared** first-downbeat and BPM grid (no automatic beat inference).
