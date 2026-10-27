@@ -208,8 +208,13 @@ gecontroleerd en toont de pagina naast de exact verwachte mixtijd ook
 **waar alle nummers en overgangen op de uiteindelijke WAV-tijdlijn
 starten en eindigen**. De frametijden komen uit de lokaal SHA-gecontroleerde
 PCM16-bronnen en dezelfde cue-rekenregels als de echte WAV-export; zonder
-deze broncontrole wordt geen tijdlijn verzonnen. Dit valideert nog geen
-muziekrechten, gehoorde overgang of muzikale kwaliteit. Voor MP3/FLAC en andere
+deze broncontrole wordt geen tijdlijn verzonnen. Bij geverifieerde WAVs
+staat boven de exacte hoofdstuklijst nu ook een **proportionele mixkaart**:
+nummerfragmenten en overgangen hebben een breedte volgens hun echte
+PCM-frametelling. Klik een vak of gebruik Tab en Enter om direct naar de
+bijbehorende hoofdstuktijd te springen, zonder scripts of audio te starten.
+De nauwkeurige tijden blijven in de toegankelijke lijst eronder staan.
+Dit valideert nog geen muziekrechten, gehoorde overgang of muzikale kwaliteit. Voor MP3/FLAC en andere
 formaten gebruik je alleen `--plan-html` zonder
 `--plan-verify-wavs`; hun exacte lengte vereist later de gewone audio-import.
 
