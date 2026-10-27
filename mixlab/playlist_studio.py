@@ -191,7 +191,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           resume=False, manifest_only=False, ideas=False,
                           full_set_wav=None, family="bass_swap", styles=(),
                           delivery=None, bitrate_kbps=192, journey_plan=None,
-                          approval_file=None):
+                          approval_file=None, plan_html=False, plan_verify_wavs=False):
     """Run the complete local product workflow after explicit human annotation."""
     if approval_file is not None and journey_plan is None:
         raise ValueError("--approval-file needs the original --journey-plan")
@@ -203,6 +203,10 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         raise ValueError("--journey-plan is only for a fresh playlist, not --resume")
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
+    if plan_html and not manifest_only:
+        raise ValueError("--plan-html requires --manifest-only")
+    if plan_verify_wavs and not plan_html:
+        raise ValueError("--plan-verify-wavs requires --plan-html")
     if manifest_only and ideas:
         raise ValueError("--ideas needs imported private audio; it cannot run with --manifest-only")
     if manifest_only and full_set_wav is not None:
@@ -249,11 +253,35 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         if not 1 <= idea_beats <= 64:
             raise ValueError("Idea duration must be in the canonical 1..64-beat range")
     if manifest_only:
+        response = {"ready": True, "stage": "manual-playlist-manifest",
+                    "private_source_manifest": str(manifest), "session_directory": None,
+                    "private_plan_html": None, "planned_complete_wav": None,
+                    "offline": True, "automatic_tempo_matching": False,
+                    "music_preference_proven": False}
+        if plan_html:
+            # The proposed destination is not published. It can later be
+            # passed to --full-set-wav, after the actual source is rechecked.
+            suggested_wav = destination.parent / (destination.name + '.wav')
+            try:
+                from .party_mix import render_party_mix
+                preview = render_party_mix(
+                    manifest, destination, suggested_wav, tuple(approved_styles),
+                    family=None if approved_styles else family, preview=True,
+                    verify_wavs=plan_verify_wavs, preview_html=True)
+            except (ValueError, TypeError, OSError, KeyError):
+                # Preserve the irreplaceable manually entered cues/rights
+                # even when this entirely optional companion cannot render.
+                response['warnings'] = [
+                    'Private manifest saved; optional plan page unavailable. '
+                    'Correct the manifest or use standalone preview.']
+            else:
+                response['private_plan_html'] = preview['preview_html']
+                response['planned_complete_wav'] = str(suggested_wav)
+                response['planned_mix_seconds'] = (
+                    preview['complete_mix_duration'] if plan_verify_wavs else None)
+                write('Private playlist page ready. No session or audio rendered.')
         write("Manifest saved. Render later with the same command and --resume.")
-        return {"ready": True, "stage": "manual-playlist-manifest",
-                "private_source_manifest": str(manifest), "session_directory": None,
-                "offline": True, "automatic_tempo_matching": False,
-                "music_preference_proven": False}
+        return response
     # Existing session admission and hash policies remain authoritative. It
     # also cleans up its own fresh output folder on decoding/render errors.
     studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
@@ -328,6 +356,10 @@ def main():
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--manifest-only", action="store_true",
                         help="Record the verified ordered playlist without decoding or rendering")
+    parser.add_argument("--plan-html", action="store_true",
+                        help="With --manifest-only: create a private visual playlist page without rendering audio")
+    parser.add_argument("--plan-verify-wavs", action="store_true",
+                        help="With --plan-html: verify original PCM16 WAVs and show the expected mix length")
     parser.add_argument("--resume", action="store_true",
                         help="Render a new private session from an existing unchanged source manifest")
     parser.add_argument("--ideas", action="store_true",
@@ -353,7 +385,8 @@ def main():
             ideas=args.ideas, full_set_wav=args.full_set_wav,
             family=args.family, styles=args.style,
             delivery=args.delivery, bitrate_kbps=args.bitrate_kbps,
-            journey_plan=args.journey_plan, approval_file=args.approval_file)
+            journey_plan=args.journey_plan, approval_file=args.approval_file,
+            plan_html=args.plan_html, plan_verify_wavs=args.plan_verify_wavs)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
