@@ -754,6 +754,15 @@ muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige w
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
 
+In de offline A/B-cue-editor kun je nu ook je eerder gedownloade
+`mixlab-cue-selections.json` **terugladen**. De browser herstelt alle
+handmatige cues tegelijk, inclusief de verwachte complete-settijdlijn,
+als bronmanifest-SHA, echte PCM-cuegrenzen en elk geregistreerd paar exact
+kloppen. Een import is één ongedaan-maakbare stap; ongeldige bestanden
+veranderen geen bestaande invoer. De bron-WAVs en originele manifesten
+blijven ongemoeid: de daadwerkelijke toepassing schrijft pas daarna een
+apart, nieuw bronmanifest. Geen upload of automatische browseropslag.
+
 De offline A/B-cue-editor heeft nu **Ongedaan maken, Opnieuw en Herstel dit paar** voor bewuste handmatige experimenten. Je kunt ook over meerdere overgangsparen terug en vooruit in je bewerkingen (maximaal 40 stappen): cuepunten, de verwachte volledige setlengte en de geldigheid van de nieuwe cuekeuzes bewegen mee. Herstel dit paar zet uitsluitend dat paar terug naar de originele broncues en is zelf ongedaan te maken. De geschiedenis wordt niet opgeslagen of geüpload: je kiest zelf wanneer je de definitieve cue-JSON downloadt en in een nieuw manifest toepast.
 
 Vanuit een **opgeslagen** handmatige playlist kun je met

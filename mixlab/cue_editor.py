@@ -131,6 +131,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visib
 .cue-history{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
 .cue-history button:disabled{opacity:.4;cursor:not-allowed}
 #history-status{color:#c3b5e9;margin:0 0 19px}
+#cue-import-status{color:#c3b5e9;min-height:1.5em;margin:12px 0 22px}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 .lane{border:1px solid #383e53;background:linear-gradient(135deg,#1e2030,#151720);border-radius:20px;padding:24px}
 h2{font-size:1.4rem;margin:10px 0} .summary{color:#adb4c7;font-size:.83rem;margin:0 0 20px}
@@ -162,6 +163,12 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <button id="restore-pair" type="button" disabled>Herstel dit paar</button>
 <button id="restore-all" type="button" disabled>Herstel alle cues</button></div></div>
 <p id="history-status" role="status" aria-live="polite">Nog geen cuewijzigingen.</p>
+<div class="cue-history" role="group" aria-label="Eerder opgeslagen cuekeuzes laden">
+<label for="cue-import-file">Eerder gedownloade cuekeuzes (.json, max 64 KiB)
+<input id="cue-import-file" type="file" accept=".json,application/json"></label>
+<button id="cue-import" type="button">Laad opgeslagen cues</button>
+</div>
+<p id="cue-import-status" role="status" aria-live="polite">Nog geen cuekeuzes geladen.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
 <p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
@@ -292,6 +299,55 @@ function restoreCurrentPair(){
  if(chosen.a_start_seconds===original.a&&chosen.b_start_seconds===original.b)return;
  rememberCueEdit();chosen.a_start_seconds=original.a;
  chosen.b_start_seconds=original.b;refresh();
+}
+function validateLoadedCues(value){
+ if(!value || typeof value!=="object" || Array.isArray(value) ||
+    value.schema_version!==1 || value.kind!=="manual-cue-overrides" ||
+    value.manifest_sha256!==data.manifest_sha256 ||
+    !Array.isArray(value.pairs) || value.pairs.length!==pairs.length)
+   throw Error("Cuekeuzes horen niet bij dit exacte originele bronmanifest.");
+ const byId=new Map(pairs.map(p=>[p.id,p]));
+ const seen=new Set(),selected=new Map();
+ for(const item of value.pairs){
+   if(!item || typeof item!=="object" || Array.isArray(item) ||
+      Object.keys(item).sort().join(',')!==
+        'a_start_seconds,b_start_seconds,id' ||
+      !byId.has(item.id) || seen.has(item.id))
+     throw Error("Ongeldige, vreemde of dubbele overgang in cuekeuzes.");
+   const pair=byId.get(item.id);
+   for(const [side,track] of [['a',bank[pair.a]],['b',bank[pair.b]]]){
+     const seconds=item[side+'_start_seconds'];
+     if(typeof seconds!=="number" || !Number.isFinite(seconds) ||
+       seconds<0 || seconds>900 ||
+       Math.round(seconds*track.sample_rate)+
+         Math.round(pair.seconds*track.sample_rate)>track.frame_count)
+       throw Error("Cue valt buiten de originele SHA-gecontroleerde WAV.");
+   }
+   seen.add(item.id);selected.set(item.id,item);
+ }
+ // Validate complete connected route and pair overlaps BEFORE altering
+ // any live editor controls, including the last source PCM frame budget.
+ const route=[pairs[0].a,...pairs.map(p=>p.b)];
+ if(route.length!==data.tracks.length ||
+    new Set(route).size!==route.length ||
+    data.tracks.some(t=>!route.includes(t.id)))
+   throw Error("Cuekeuzes beschrijven geen complete originele playlist.");
+ let previous=null,tailStart=0,total=0;
+ for(const pair of pairs){
+   const cue=selected.get(pair.id),track=bank[pair.a];
+   const frames=Math.round(pair.seconds*track.sample_rate);
+   const a=Math.round(cue.a_start_seconds*track.sample_rate);
+   const b=Math.round(cue.b_start_seconds*track.sample_rate);
+   if(previous && (pair.a!==previous.b || a<tailStart))
+     throw Error("Nieuwe uitgaande cue overlapt de vorige overgang.");
+   total+=a-tailStart+frames;
+   tailStart=b+frames;previous=pair;
+ }
+ const last=bank[route[route.length-1]];
+ const tail=last.frame_count-tailStart;
+ if(tail<0 || total+tail<2 || 44+(total+tail)*4>512*1024*1024)
+   throw Error("De geselecteerde cues passen niet in één complete WAV.");
+ return selected;
 }
 const originalTiming=plannedSetTimeline();
 function refreshHistoryStatus(){
@@ -426,6 +482,45 @@ $('undo').addEventListener('click',undoCueEdit);
 $('redo').addEventListener('click',redoCueEdit);
 $('restore-pair').addEventListener('click',restoreCurrentPair);
 $('restore-all').addEventListener('click',restoreAllCues);
+let cueImportBusy=false;
+$('cue-import').addEventListener('click',async()=>{
+ if(cueImportBusy)return;
+ const input=$('cue-import-file'),file=input.files && input.files[0];
+ const status=$('cue-import-status');
+ if(!file){status.textContent='Kies eerst een opgeslagen privé-JSON.';return;}
+ if(!Number.isSafeInteger(file.size) || file.size<1 || file.size>65536){
+   status.textContent='Cuekeuzes mogen maximaal 64 KiB groot zijn.';return;
+ }
+ if(edited && !window.confirm('Dit vervangt de huidige onopgeslagen cues. '+
+      'Heb je jouw keuzes al gedownload?')){
+   status.textContent='Laden geannuleerd; huidige cues zijn behouden.';return;
+ }
+ const previous=snapshot();
+ cueImportBusy=true;input.disabled=true;$('cue-import').disabled=true;
+ try{
+   const raw=await file.text();
+   if(raw.length>65536 || input.files[0]!==file ||
+      pairs.some((p,i)=>p.a_start_seconds!==previous.values[i][0] ||
+                         p.b_start_seconds!==previous.values[i][1]))
+     throw Error('De editor is tijdens het laden gewijzigd.');
+   const accepted=validateLoadedCues(JSON.parse(raw));
+   // A valid saved revision becomes exactly ONE Undo operation.
+   rememberCueEdit();
+   for(const pair of pairs){
+     const stored=accepted.get(pair.id);
+     pair.a_start_seconds=stored.a_start_seconds;
+     pair.b_start_seconds=stored.b_start_seconds;
+   }
+   refresh();
+   status.textContent=pairs.length+' cueparen hersteld uit deze originele '+
+     'SHA-gebonden playlist. Je kunt dit in één stap ongedaan maken.';
+ }catch(error){
+   status.textContent='Import geweigerd: '+(error instanceof SyntaxError?
+     'geen geldige JSON.':error.message);
+ }finally{
+   cueImportBusy=false;input.disabled=false;$('cue-import').disabled=false;
+ }
+});
 for(const side of ['a','b']){
  const t=$('range-'+side);t.addEventListener('input',()=>setCue(side,Number(t.value)));
  const canvas=$('wave-'+side);
