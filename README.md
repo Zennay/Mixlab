@@ -147,6 +147,11 @@ naar hetzelfde handmatig gekozen overgangsmoment te zoeken. De vorige
 variant pauzeert en slechts één lokale speler is tegelijk actief. Dit is
 creatief luisteren, geen onafhankelijk blind kwaliteitsonderzoek.
 
+Tijdens het beoordelen met de offline Full Set Player kun je ook zonder
+muis navigeren met **J** (vorige passage), **K** (pauze/start) en **L**
+(volgende passage). Deze oefentoetsen blijven uit bij typen in velden en
+in Eventmodus; de bestaande live-toets **P** blijft beschikbaar.
+
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. Je kunt nu **iedere werkelijk gerenderde overgang
 lokaal blijven herhalen** voor een handmatige beluistering: kies

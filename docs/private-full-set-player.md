@@ -53,6 +53,14 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
   **Eventmodus** opent, herstelt MixLab altijd 1× en vergrendelt de
   oefensnelheidskeuze tot je die modus weer verlaat;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
+- **J/K/L-sneltoetsen tijdens privé oefenen:** `J` herstart de huidige
+  passage of gaat naar de vorige, `K` pauzeert/hervat de bestaande WAV,
+  `L` gaat naar de volgende. Deze toetsen zijn alleen actief als de focus
+  **niet** in een invulveld, select, link, knop of teksteditor staat en
+  er geen modificatietoets of autorepeat gebruikt wordt. In Eventmodus
+  zijn J/K/L uitgeschakeld: live blijft alleen de bestaande `P`-pauzeknop
+  beschikbaar. Hoofdstuknavigatie annuleert bestaande auditie-loops;
+  de originelen, outputreceipts en cue-aantekeningen veranderen niet;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
 

@@ -130,6 +130,7 @@ aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
 <small>Gesamplede amplitudeweergave (geen nauwkeurige loudness-meting). Klik of gebruik ←/→ om te springen.</small>
 <p id="now" aria-live="polite">Kies play om je set te luisteren.</p>
 <div class="controls"><button id="prev">◀ Vorige passage</button><button id="next">Volgende passage ▶</button></div>
+<p class="muted">Sneltoetsen tijdens oefenen: J vorige passage, K pauze/start, L volgende passage. Niet bij typen of in eventmodus.</p>
 <p class="muted" id="meta"></p>
 </section>
 <section class="section"><h2>Interactieve tijdlijn</h2>
@@ -735,9 +736,26 @@ eventPlay.addEventListener("click",()=>{
   else audio.pause();
 });
 window.addEventListener("keydown",e=>{
-  if(!eventMode || e.key.toLowerCase()!=="p" || e.altKey || e.ctrlKey || e.metaKey)return;
-  if(e.target instanceof HTMLElement && ["BUTTON","INPUT","TEXTAREA"].includes(e.target.tagName))return;
-  e.preventDefault();eventPlay.click();
+  if(e.defaultPrevented || e.repeat || e.isComposing ||
+     e.altKey || e.ctrlKey || e.metaKey || typeof e.key!=="string")return;
+  const target=e.target;
+  if(target instanceof HTMLElement &&
+     (target.isContentEditable || ["BUTTON","INPUT","TEXTAREA","SELECT","A"].includes(target.tagName)))return;
+  const key=e.key.toLowerCase();
+  if(eventMode){
+    if(key==="p"){e.preventDefault();eventPlay.click();}
+    return;
+  }
+  if(key==="j" || key==="l"){
+    e.preventDefault();
+    document.getElementById(key==="j"?"prev":"next").click();
+  }else if(key==="k"){
+    e.preventDefault();
+    if(audio.paused)audio.play().catch(()=>{
+      document.getElementById("now").textContent="Kan de lokale WAV niet afspelen.";
+    });
+    else audio.pause();
+  }
 });
 document.getElementById("prev").addEventListener("click",()=>{
   if(audio.currentTime>data.chapters[current].start_seconds+3)jump(current);
