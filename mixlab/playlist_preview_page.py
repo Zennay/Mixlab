@@ -73,9 +73,16 @@ def render(plan, display_names=None, *, workflow='party_mix'):
             raise ValueError('Invalid verified private DJ timeline')
         pair_names = {item['pair']: item for item in pairs}
         chunks = []
-        for part in chapters:
+        map_items = []
+        frame_cursor = 0
+        for index, part in enumerate(chapters, 1):
             if not isinstance(part, dict) or part.get('kind') not in ('solo', 'transition'):
                 raise ValueError('Invalid planned chapter kind')
+            frame_count, frame_start = part.get('frames'), part.get('start_frame')
+            if (type(frame_count) is not int or frame_count <= 0 or
+                    type(frame_start) is not int or frame_start != frame_cursor):
+                raise ValueError('Noncontiguous private DJ chapter timeline')
+            frame_cursor += frame_count
             ident = part['label']
             if part['kind'] == 'solo':
                 if ident not in route:
@@ -90,17 +97,38 @@ def render(plan, display_names=None, *, workflow='party_mix'):
                 title = ((display_names[a] if display_names is not None else a) +
                          ' → ' + (display_names[b] if display_names is not None else b))
                 kind = 'Overgang · ' + style_names.get(part['family'], part['family'])
-            chunks.append('<li class="chapter"><span class="chapter-time">'+
+            chapter_id = 'mix-chapter-' + str(index).zfill(2)
+            position = (clock(part['start_seconds']) + ' tot ' +
+                        clock(part['start_seconds'] + part['duration_seconds']))
+            bar_class = 'bar-transition' if part['kind']=='transition' else 'bar-solo'
+            map_items.append('<li class="'+bar_class+'" style="flex:'+str(frame_count)+
+                ' 1 0"><a href="#'+chapter_id+'" aria-label="'+
+                h(kind+' '+title+' · '+position)+'" title="'+
+                h(title+' · '+position)+'"><span class="sr-only">'+
+                h(kind+' '+title)+'</span></a></li>')
+            chunks.append('<li id="'+chapter_id+'" class="chapter"><span class="chapter-time">'+
                 h(clock(part['start_seconds']))+'–'+
                 h(clock(part['start_seconds'] + part['duration_seconds']))+
                 '</span><div><small>'+h(kind)+'</small><strong>'+h(title)+
                 '</strong></div></li>')
+        if (type(plan.get('exact_expected_pcm_frames')) is not int or
+                frame_cursor != plan['exact_expected_pcm_frames']):
+            raise ValueError('Private chapter timeline does not cover complete WAV')
+        visual_map = ('<div class="map-key" aria-hidden="true">'
+                      '<span class="key-solo">Nummer</span>'
+                      '<span class="key-transition">Overgang</span></div>'
+                      '<ol class="mix-map" aria-label="Klikbare mixkaart met '
+                      'verhoudingen van alle echte WAV-fragmenten">'+
+                      ''.join(map_items)+'</ol>'
+                      '<p class="muted">De gekleurde vakken tonen de relatieve '
+                      'duur van de onderdelen. Klik of gebruik Tab en Enter '
+                      'voor de exacte begintijd en duur hieronder.</p>')
         timeline = ('<section aria-labelledby="timeline-heading">'
                     '<h2 id="timeline-heading">Wanneer hoor je wat?</h2>'
                     '<p class="muted">Verwachte start- en eindtijd op de complete WAV. '
                     'Gebaseerd op lokale, SHA-gecontroleerde PCM16-bronnen en '
                     'jouw handmatige cues; niet op gehoor geverifieerd.</p>'
-                    '<ol class="timeline">'+''.join(chunks)+'</ol></section>')
+                    +visual_map+'<ol class="timeline">'+''.join(chunks)+'</ol></section>')
     elif not verified:
         timeline = ('<section aria-labelledby="timeline-heading">'
                     '<h2 id="timeline-heading">Wanneer hoor je wat?</h2>'
@@ -155,6 +183,22 @@ def render(plan, display_names=None, *, workflow='party_mix'):
            '.next{background:#1b2a35;border-radius:16px;padding:1px 20px 16px;margin-top:25px}'
            '.identifier{display:block;font-size:12px;opacity:.72;letter-spacing:.02em}'
            '.muted{color:#b7c8d4}.timeline{display:grid;gap:8px}'
+           '.mix-map{display:flex;gap:2px;height:60px;margin:16px 0 10px;'
+           'padding:0;background:#263645;border-radius:12px;overflow:hidden}'
+           '.mix-map li{display:flex;min-width:3px}'
+           '.mix-map a{display:block;width:100%;min-width:0;outline-offset:-4px}'
+           '.mix-map a:focus-visible{outline:3px solid #fff;z-index:1}'
+           '.mix-map .bar-solo{background:#267b78}'
+           '.mix-map .bar-transition{background:#8c64ce}'
+           '.mix-map a:hover{background:#ffffff30}'
+           '.map-key{display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;color:#d8e7ee}'
+           '.map-key span{display:flex;align-items:center;gap:7px}'
+           '.map-key span:before{content:"";width:12px;height:12px;display:inline-block;border-radius:3px}'
+           '.map-key .key-solo:before{background:#267b78}'
+           '.map-key .key-transition:before{background:#8c64ce}'
+           '.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;'
+           'clip:rect(0,0,0,0);white-space:nowrap}'
+           '.chapter:target{border-color:#d7b9ff;outline:2px solid #d7b9ff;scroll-margin-top:24px}'
            '.chapter{display:flex;align-items:center;gap:14px;background:#162733;'
            'border:1px solid #385062;border-radius:12px;padding:12px 16px}'
            '.chapter-time{min-width:100px;font-variant-numeric:tabular-nums;font-weight:750;color:#a6f4d2}'

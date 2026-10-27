@@ -182,8 +182,13 @@ vooraf berekende hoofdstuktijdlijn**: wanneer ieder solofragment en iedere
 handmatig gecuede overgang in de uiteindelijke WAV begint en eindigt.
 Deze start- en eindtijden gebruiken exact de 44,1 kHz PCM-frametelling
 van de bestaande exporter en zijn nog géén beluisterde of daadwerkelijk
-gerenderde audio. Als bronhashes, header of cues niet zijn geverifieerd,
-toont de pagina eerlijk dat de tijdlijn nog onbekend is.
+gerenderde audio. Een **aanklikbare, proportionele tijdlijn** maakt nu
+zichtbaar welk deel van de totale set uit nummers of overgangen bestaat.
+De vakken gaan met klik of toetsenbord (Tab/Enter) naar hun bijbehorende
+exacte hoofdstuktijd, zonder JavaScript of audiobestanden. De verhoudingen
+komen uit echte PCM-frametellingen, niet uit gegokte duur. Als bronhashes,
+header of cues niet zijn geverifieerd, toont de pagina eerlijk dat de
+tijdlijn nog onbekend is.
 De pagina gebruikt de **herkenbare lokale bestandsnamen zonder extensie** als songtitels en
 toont de technische track-ID er kleiner onder. Dit zijn geen geverifieerde
 muziekmetadata. De pagina bevat **geen muziek, volledige bronpaden, scripts,

@@ -723,6 +723,10 @@ python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /pri
 ```
 
 Met `--preview --verify-wavs --preview-html` toont MixLab nu ook
+**een statische, proportionele mixkaart** waarin alle solo's en overgangen
+de echte onderlinge duurverhouding uit PCM-frames krijgen. Je kunt met
+muis of toetsenbord van elk vak naar de exacte hoofdstuktijd springen,
+zonder netwerk, scripts of een nieuw audio-bestand. Daaronder staan
 **de echte vooraf berekende tijdlijn van ieder nummer en elke overgang**,
 met exact aan de PCM-frametelling gekoppelde starttijden. In de JSON staat
 de volledige `planned_chapters`-lijst; die kan na het renderen één-op-één
