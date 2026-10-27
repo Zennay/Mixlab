@@ -183,8 +183,10 @@ toont de technische track-ID er kleiner onder. Dit zijn geen geverifieerde
 muziekmetadata. De pagina bevat **geen muziek, volledige bronpaden, scripts,
 externe links of netwerkaanvragen**. Bestandsnamen kunnen privé-informatie
 onthullen; houd het lokale overzicht dus privé. Een bestaand overzicht
-wordt niet overschreven. Verwijder daarna `--preview` én `--preview-html`
-om de echte WAV-set te renderen; de pagina kan dat niet zelfstandig starten.
+wordt niet overschreven. De offline pagina geeft de concrete volgende
+stap voor deze route: verwijder `--preview`, `--preview-html` **en**
+`--verify-wavs` voordat je de opdracht opnieuw uitvoert. Het resultaat
+wordt pas dan een echte WAV-set; de pagina kan dat niet zelfstandig starten.
 
 Zonder `--preview-html` blijft de bestaande voorvertoning 100% zonder
 bestandsaanmaak. `--preview-html` is alleen toegestaan bij `--preview`.

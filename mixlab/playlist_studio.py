@@ -54,12 +54,16 @@ def _positive_cue(value):
 
 def create_playlist_manifest(music_directory, output_manifest, new_session,
                              *, read=input, write=print, beats=16, partition="development",
-                             journey_plan=None, approval_file=None, approval_styles=None):
+                             journey_plan=None, approval_file=None, approval_styles=None,
+                             default_family="bass_swap"):
     """Capture an ordered rights-permitted private playlist and every manual cue.
 
     Cheap input checks run before touching the local song collection. Sources
     are read only to SHA-256 pin the exact bytes; they are never copied here.
     """
+    from .studio import FAMILY_NAMES
+    if default_family not in FAMILY_NAMES:
+        raise ValueError("Choose an existing explicit playlist transition family")
     if type(beats) is not int or not 1 <= beats <= 64:
         raise ValueError("Use a valid 1..64-beat transition duration")
     if partition not in ("development", "evaluation"):
@@ -176,7 +180,8 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
         previous_incoming_end = b_start + length_seconds
     spec = {"schema_version": 1, "purpose": "development-pilot"
             if partition == "development" else "frozen-evaluation-preparation",
-            "tracks": catalog, "pairs": pairs}
+            "tracks": catalog, "pairs": pairs,
+            "default_family": default_family}
     raw = (json.dumps(spec, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     if len(raw) > MAX_SPEC_BYTES:
         raise ValueError("Private source manifest exceeds 1 MiB")
@@ -194,7 +199,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           *, read=input, write=print, beats=16,
                           timeout_seconds=600, partition="development",
                           resume=False, manifest_only=False, ideas=False,
-                          full_set_wav=None, family="bass_swap", styles=(),
+                          full_set_wav=None, family=None, styles=(),
                           delivery=None, bitrate_kbps=192, journey_plan=None,
                           approval_file=None, plan_html=False, plan_verify_wavs=False):
     """Run the complete local product workflow after explicit human annotation."""
@@ -224,13 +229,27 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         music_directory, output_manifest, new_session, resume=resume)
     if type(timeout_seconds) is not int or not 30 <= timeout_seconds <= 900:
         raise ValueError("Audio decoder timeout must be between 30 and 900 seconds")
+    # The operator's chosen fallback family belongs to the saved manual
+    # playlist, so resuming without --family cannot silently alter the mix.
+    from .studio import FAMILY_NAMES
+    if family is not None and family not in FAMILY_NAMES:
+        raise ValueError("Invalid manually chosen transition family")
+    if resume:
+        from .cueprep import _read_spec
+        saved_family = _read_spec(manifest).get('default_family', 'bass_swap')
+        if saved_family not in FAMILY_NAMES:
+            raise ValueError('Invalid saved default transition family')
+        effective_family = family if family is not None else saved_family
+    else:
+        effective_family = family if family is not None else 'bass_swap'
     approved_styles = []
     if resume:
         write("Resuming the exact existing private playlist manifest without changing its cues.")
     else:
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
                                  beats=beats, partition=partition, journey_plan=journey_plan,
-                                 approval_file=approval_file, approval_styles=approved_styles)
+                                 approval_file=approval_file, approval_styles=approved_styles,
+                                 default_family=effective_family)
     # Reject contradictory style overrides and invalid pinned decisions
     # before expensive import and Studio rendering, also during --resume.
     from .cueprep import _read_spec
@@ -282,8 +301,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
             try:
                 from .party_mix import render_party_mix
                 preview = render_party_mix(
-                    manifest, destination, suggested_wav, family=family,
-                    preview=True, verify_wavs=plan_verify_wavs,
+                    manifest, destination, suggested_wav, family=effective_family,
+                    preview_workflow='guided', preview=True, verify_wavs=plan_verify_wavs,
                     preview_html=True)
             except (ValueError, TypeError, OSError, KeyError):
                 # Preserve the irreplaceable manually entered cues/rights
@@ -340,7 +359,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
             names = {entry['id']: local_song_title(entry['path'])
                      for entry in original['tracks']}
             instant_set = render_instant_set(destination, full_set_wav,
-                                             family=family, styles=styles,
+                                             family=effective_family, styles=styles,
                                              delivery=delivery,
                                              bitrate_kbps=bitrate_kbps,
                                              display_names=names)
@@ -388,7 +407,7 @@ def main():
                         help="Suggest RMS-based manual-grid cue options and prepare an offline review board")
     parser.add_argument("--full-set-wav",
                         help="Optionally publish a complete private WAV and offline player in the same run")
-    parser.add_argument("--family", default="bass_swap",
+    parser.add_argument("--family", default=None,
                         choices=("baseline", "bass_swap", "echo_exit", "hard_cut"),
                         help="Manually chosen style for all complete-set transitions")
     parser.add_argument("--style", action="append", default=[], metavar="PAIR:FAMILY",

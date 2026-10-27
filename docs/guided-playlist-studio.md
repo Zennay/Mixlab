@@ -190,6 +190,29 @@ nog geen muziekrechten of muzikale kwaliteit. Voor MP3/FLAC en andere
 formaten gebruik je alleen `--plan-html` zonder
 `--plan-verify-wavs`; hun exacte lengte vereist later de gewone audio-import.
 
+**De offline planpagina geeft nu per route de juiste volgende stap.**
+Een met de wizard aangemaakt plan beschrijft de daadwerkelijke hervatopdracht:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/mixlab-playlist-01 \
+  --resume --full-set-wav /private/mixlab-playlist-01.wav
+~~~
+
+Laat daarbij `--manifest-only`, `--plan-html` en `--plan-verify-wavs`
+weg. De pagina bevat alleen **plaatsaanduidingen** voor paden, nooit je
+privé-directory of manifestbestandsnaam. Gebruik dus je eigen oorspronkelijke
+paden. De vanuit de wizard gekozen `--family` wordt nu als
+`default_family` in het bestaande privé bronmanifest opgeslagen en
+bij `--resume` vanzelf hergebruikt; als er geen keuze was, blijft
+`bass_swap` de standaard. Een bewust opnieuw opgegeven `--family`
+mag die algemene standaard wijzigen, maar kan niet een expliciet
+met het goedkeuringsformulier vastgelegde `approved_family` overrulen.
+Oude manifesten zonder `default_family` blijven bruikbaar en gebruiken
+hun vroegere standaard `bass_swap`.
+
 Het JSON-resultaat geeft `private_plan_html` en `planned_complete_wav` terug.
 Dat tweede pad is slechts een **voorstel**, geen geproduceerde WAV. Om later
 daadwerkelijk te mixen, gebruik dezelfde bronmanifest met `--resume` en
