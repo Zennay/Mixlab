@@ -105,6 +105,13 @@ echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
 afgaan. De lijst herstelt uit je eigen privé-JSON, niet uit een server;
 het is geen automatische DJ-mixbewerking of onafhankelijke luisteraudit.
 
+De offline handmatige cue-editor beschermt niet-gedownloade A/B-cuewijzigingen
+nu met een zichtbare status en de gebruikelijke browserwaarschuwing bij
+sluiten of vernieuwen. Een nieuw cue-JSON-downloadmoment, undo/redo en
+het terugladen van de eerder gedownloade keuzes werken de status bij;
+controleer zelf of de download werkelijk is opgeslagen. Geen server of
+automatische browseropslag.
+
 Na het handmatig herhaald beluisteren van een overgang kun je nu in de
 volledig offline Full Set Player ook **‘Klinkt goed’ of ‘Wil aanpassen’**
 markeren en een korte creatieve notitie toevoegen. Download je persoonlijke

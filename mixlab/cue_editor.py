@@ -131,6 +131,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visib
 .cue-history{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
 .cue-history button:disabled{opacity:.4;cursor:not-allowed}
 #history-status{color:#c3b5e9;margin:0 0 19px}
+#save-status{color:#bceacf;font-weight:650;margin:0 0 19px}
 #cue-import-status{color:#c3b5e9;min-height:1.5em;margin:12px 0 22px}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 .lane{border:1px solid #383e53;background:linear-gradient(135deg,#1e2030,#151720);border-radius:20px;padding:24px}
@@ -163,6 +164,7 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <button id="restore-pair" type="button" disabled>Herstel dit paar</button>
 <button id="restore-all" type="button" disabled>Herstel alle cues</button></div></div>
 <p id="history-status" role="status" aria-live="polite">Nog geen cuewijzigingen.</p>
+<p id="save-status" role="status" aria-live="polite">Geen ongedownloade cuewijzigingen.</p>
 <div class="cue-history" role="group" aria-label="Eerder opgeslagen cuekeuzes laden">
 <label for="cue-import-file">Eerder gedownloade cuekeuzes (.json, max 64 KiB)
 <input id="cue-import-file" type="file" accept=".json,application/json"></label>
@@ -260,6 +262,23 @@ function plannedSetTimeline(){
  return {rate,total,chapters};
 }
 const originalCueValues=pairs.map(p=>({id:p.id,a:p.a_start_seconds,b:p.b_start_seconds}));
+// Initially the SHA-bound source manifest is a safe recoverable baseline.
+// Later the last user-initiated JSON download is the saved cue snapshot.
+function cueSnapshot(){
+ return JSON.stringify(pairs.map(p=>[p.id,p.a_start_seconds,p.b_start_seconds]));
+}
+let lastDownloadedCues=cueSnapshot();
+function hasUnsavedCues(){return cueSnapshot()!==lastDownloadedCues;}
+function refreshDownloadStatus(){
+ $('save-status').textContent=hasUnsavedCues()?
+  'Niet gedownload: je gewijzigde cuekeuzes gaan verloren als je dit venster sluit.':
+  'Geen ongedownloade cuewijzigingen.';
+}
+window.addEventListener('beforeunload',event=>{
+ if(!hasUnsavedCues())return;
+ event.preventDefault();
+ event.returnValue=''; // The browser owns the native close/reload warning.
+});
 const undoHistory=[],redoHistory=[];
 function snapshot(forPair=chosen.id){
  return {pairId:forPair,values:pairs.map(p=>[p.a_start_seconds,p.b_start_seconds])};
@@ -409,6 +428,7 @@ function refreshLiveTimeline(){
 }
 function refreshCueStatus(){
  refreshHistoryStatus();
+ refreshDownloadStatus();
  const problem=cueProblem() || (!plannedSetTimeline()?
    'De opgegeven nummers vormen geen complete, renderbare mix. '+
    'Verbind alle bronnen precies eenmaal voordat je cuekeuzes bewaart.':null);
@@ -556,7 +576,9 @@ $('save').addEventListener('click',()=>{
  const url=URL.createObjectURL(blob);const link=document.createElement('a');
  link.href=url;link.download='mixlab-cue-selections.json';link.click();
  setTimeout(()=>URL.revokeObjectURL(url),3000);
- $('message').textContent='Cuekeuzes gedownload. Pas ze toe op een NIEUW bronmanifest; je originele muziek is niet gewijzigd.';
+ lastDownloadedCues=cueSnapshot();
+ refreshDownloadStatus();
+ $('message').textContent='Download gestart. Controleer of mixlab-cue-selections.json is bewaard en pas de keuzes toe op een NIEUW bronmanifest; je originele muziek is niet gewijzigd.';
 });
 refresh();
 </script></body></html>
