@@ -155,6 +155,10 @@ niet overschreven. De opdracht valideert eerst de handmatige keuzes en
 paden, bouwt vervolgens de bestaande import/Studio, en gebruikt de
 gecontroleerde [continuous set-export](continuous-set-export.md).
 
+Bij succes ontstaan **direct drie bruikbare bestanden** naast elkaar: de complete afspeelbare WAV, de private checksum-gebonden WAV-receipt, en automatisch een nieuwe offline `volledige-set.wav.player.html`. Open deze HTML rechtstreeks in een lokale browser om de **hele mix** te beluisteren, de gesamplede golfvorm te zien en via de track- en overgangshoofdstukken naar een specifiek fragment te springen. De speler kan ook hoofdstukken als JSON of CUE exporteren. Alle hoofdstukposities en de WAV-identiteit worden afgeleid uit de **echte** Studio→WAV-export en de geverifieerde private receipt; er worden geen BPM, rechten of echte tracknamen bij verzonnen. Alles blijft privé en werkt zonder server, analytics of uploads.
+
+Als alleen het maken van de optionele speler mislukt, bevat de opdracht een `player_warning` maar blijven de correcte WAV en private receipt **behouden**. De speler kan later met `python3 -m mixlab.set_player PRIVATE_STUDIO COMPLETE.wav` afzonderlijk worden gegenereerd, zolang dat HTML-bestand nog niet bestaat.
+
 Bij succes ontstaat de gehele afspeelbare WAV plus een private, checksum-
 gebonden receipt. Als de Studio succesvol is gemaakt maar de laatste
 playlistcompositie faalt (bijv. een A→B→C-route die terugloopt), blijft
