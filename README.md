@@ -691,6 +691,14 @@ python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /pri
   --transition pair-001:bass_swap --transition pair-002:echo_exit
 ```
 
+Met `--preview --verify-wavs --preview-html` toont MixLab nu ook
+**de echte vooraf berekende tijdlijn van ieder nummer en elke overgang**,
+met exact aan de PCM-frametelling gekoppelde starttijden. In de JSON staat
+de volledige `planned_chapters`-lijst; die kan na het renderen één-op-één
+met de SHA-gebonden hoofdstukspeler worden vergeleken. Zonder originele
+PCM16-bronverificatie wordt geen gerenderde duur of precieze setpositie
+verzonnen.
+
 De offline playlist-planpagina toont nu de **juiste volgende stap per productroute**: de wizard geeft `--resume --full-set-wav` in plaats van ongeldige previewinstructies, de directe partijmix vraagt alle previewvlaggen weg te halen. De wizard bewaart bovendien een expliciet gekozen standaard-`--family` in de private bronmanifest zodat later hervatten de oorspronkelijke handmatige stijl volgt. Expliciet goedgekeurde per-paarstijlen blijven beschermd.
 
 De visuele playlistpagina toont nu de herkenbare lokale bestandsnaam zonder extensie boven de oorspronkelijke technische track-ID, zodat de volgorde daadwerkelijk leesbaar is. De pagina blijft privé; bronmappen en audiobestanden worden niet toegevoegd.

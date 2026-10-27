@@ -64,6 +64,50 @@ def render(plan, display_names=None, *, workflow='party_mix'):
             'mixtijd is nog geen gerenderde audio.' if verified else
             'Dit is alleen een handmatig mixplan. Bronhashes en volledige mixtijd '
             'zijn niet gecontroleerd.')
+    # Frame-aligned planned chapters are available only after original WAV
+    # hashes/headers and every manual cue boundary have been verified.
+    timeline = ''
+    chapters = plan.get('planned_chapters') if verified else None
+    if chapters is not None:
+        if not isinstance(chapters, list) or not 1 <= len(chapters) <= 21:
+            raise ValueError('Invalid verified private DJ timeline')
+        pair_names = {item['pair']: item for item in pairs}
+        chunks = []
+        for part in chapters:
+            if not isinstance(part, dict) or part.get('kind') not in ('solo', 'transition'):
+                raise ValueError('Invalid planned chapter kind')
+            ident = part['label']
+            if part['kind'] == 'solo':
+                if ident not in route:
+                    raise ValueError('Unknown song in planned timeline')
+                title = display_names[ident] if display_names is not None else ident
+                kind = 'Nummer'
+            else:
+                if ident not in pair_names:
+                    raise ValueError('Unknown transition in planned timeline')
+                pair = pair_names[ident]
+                a, b = pair['from_track'], pair['to_track']
+                title = ((display_names[a] if display_names is not None else a) +
+                         ' → ' + (display_names[b] if display_names is not None else b))
+                kind = 'Overgang · ' + style_names.get(part['family'], part['family'])
+            chunks.append('<li class="chapter"><span class="chapter-time">'+
+                h(clock(part['start_seconds']))+'–'+
+                h(clock(part['start_seconds'] + part['duration_seconds']))+
+                '</span><div><small>'+h(kind)+'</small><strong>'+h(title)+
+                '</strong></div></li>')
+        timeline = ('<section aria-labelledby="timeline-heading">'
+                    '<h2 id="timeline-heading">Wanneer hoor je wat?</h2>'
+                    '<p class="muted">Verwachte start- en eindtijd op de complete WAV. '
+                    'Gebaseerd op lokale, SHA-gecontroleerde PCM16-bronnen en '
+                    'jouw handmatige cues; niet op gehoor geverifieerd.</p>'
+                    '<ol class="timeline">'+''.join(chunks)+'</ol></section>')
+    elif not verified:
+        timeline = ('<section aria-labelledby="timeline-heading">'
+                    '<h2 id="timeline-heading">Wanneer hoor je wat?</h2>'
+                    '<p class="muted">De exacte tijdlijn is nog onbekend. '
+                    'Gebruik <code>--verify-wavs</code> met originele '
+                    '44,1 kHz PCM16-WAVs om vóór het renderen '
+                    'de echte hoofdstukstarttijden te berekenen.</p></section>')
     if workflow == 'guided':
         next_step = ('<p>Je handmatige bronmanifest is al opgeslagen. Gebruik '
                      '<code>--resume --full-set-wav</code> om dezelfde playlist later '
@@ -88,7 +132,7 @@ def render(plan, display_names=None, *, workflow='party_mix'):
                '<p class="intro">Van tracklijst naar volledige set, zonder ingewikkelde studio.</p>'
                '<p class="notice">'+h(note)+'</p></header>'
                '<section aria-label="Overzicht"><div class="stats">'+stats+'</div></section>'
-               '<section aria-labelledby="order"><h2 id="order">Speelvolgorde</h2><ol>'+''.join(items)+'</ol></section>'
+               '<section aria-labelledby="order"><h2 id="order">Speelvolgorde</h2><ol>'+''.join(items)+'</ol></section>'+timeline+
                '<section class="next"><h2>Klaar om te mixen?</h2><p>Controleer de '
                'nummers en handmatig gekozen overgangen.</p>'+next_step+'</section>'
                '<footer>Geen bronbestanden of volledige bronpaden in deze pagina. Lokale bestandsnamen en trackcodes kunnen herkenbaar zijn: houd dit overzicht privé. '
@@ -110,9 +154,14 @@ def render(plan, display_names=None, *, workflow='party_mix'):
            '.arrow{font-size:28px;color:#96ddbe}.join p{font-size:13px;margin:1px 0;color:#afc3d0}'
            '.next{background:#1b2a35;border-radius:16px;padding:1px 20px 16px;margin-top:25px}'
            '.identifier{display:block;font-size:12px;opacity:.72;letter-spacing:.02em}'
+           '.muted{color:#b7c8d4}.timeline{display:grid;gap:8px}'
+           '.chapter{display:flex;align-items:center;gap:14px;background:#162733;'
+           'border:1px solid #385062;border-radius:12px;padding:12px 16px}'
+           '.chapter-time{min-width:100px;font-variant-numeric:tabular-nums;font-weight:750;color:#a6f4d2}'
+           '.chapter strong{display:block;overflow-wrap:anywhere}'
            'pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c1d26;padding:14px;border-radius:9px}'
            'code{font:13px monospace;color:#a6ead6}footer{margin-top:36px;border-top:1px solid #3d5161;padding-top:20px}'
-           '@media(max-width:520px){main{padding:24px 14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}')
+           '@media(max-width:520px){main{padding:24px 14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.chapter{align-items:flex-start;gap:8px;flex-direction:column}}')
     return ('<!doctype html><html lang="nl"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta name="robots" content="noindex,nofollow">'
