@@ -79,6 +79,12 @@ broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
 opgegeven nummers moeten exact eenmaal in de route staan voordat er
 überhaupt een complete WAV wordt gepubliceerd.
 
+Bij het privé oefenen in de Full Set Player kun je de afspeelsnelheid
+instellen op **0,75×, 1× of 1,25×** tijdens herhalen of contextluisteren.
+Eventmodus zet de speler altijd automatisch terug op **1×**. Dit verandert
+niets aan de WAV, mixtijden of SHA-receipts en is **geen** betrouwbare
+muzikale kwaliteitsbeoordeling bij een afwijkende afspeelsnelheid.
+
 In de offline speler kun je een bestaande overgang nu ook
 **in context beluisteren**: kies 2, 8 of 16 seconden oorspronkelijke muziek
 vóór en ná de echte SHA-gebonden overgang, zonder nieuwe rendering.

@@ -50,6 +50,7 @@ font-weight:650;margin:12px 0 18px}
 .context-setting select{font:inherit;background:#262b3e;color:#fff;
 border:1px solid #9f91d5;border-radius:9px;padding:10px 12px}
 .context-setting select:focus-visible{outline:3px solid #cdbbff;outline-offset:2px}
+#practice-speed-note{margin:0 0 16px}
 #creative-reviews{display:grid;gap:12px;margin-top:15px}
 .review-row{display:grid;gap:10px;background:#151b29;border:1px solid #444961;
   border-radius:13px;padding:16px}
@@ -138,6 +139,14 @@ Eventmodus schakelt deze auditieknoppen uit.</p>
 <select id="context-seconds"><option value="2" selected>2 seconden</option>
 <option value="8">8 seconden</option><option value="16">16 seconden</option></select>
 </label>
+<label class="context-setting" for="practice-speed">Afspeelsnelheid bij oefenen
+<select id="practice-speed"><option value="0.75">0,75× langzamer</option>
+<option value="1" selected>1× origineel</option>
+<option value="1.25">1,25× sneller</option></select>
+</label>
+<p class="muted" id="practice-speed-note">Oefensnelheid 1×: de originele
+WAV wordt niet aangepast. Luisteren op andere snelheid is geen
+betrouwbare beoordeling van de uiteindelijke muzikale kwaliteit.</p>
 <p id="transition-audition-status" role="status" aria-live="polite">Geen overgang in herhaling.</p>
 <ol id="chapters"></ol></section>
 <section class="section"><h2>Je eigen overgangsnotities</h2>
@@ -188,10 +197,34 @@ const reviewRows=[];
 const loopButtons=[];
 const contextButtons=[];
 const contextSeconds=document.getElementById("context-seconds");
+const practiceSpeed=document.getElementById("practice-speed");
+const practiceSpeedNote=document.getElementById("practice-speed-note");
 let contextAudition=null;
 let loopIndex=null;
 const auditionStatus=document.getElementById("transition-audition-status");
 audio.src="./"+encodeURIComponent(data.wav_name);
+function setPracticeSpeed(value){
+  const speed=Number(value);
+  const safe=[.75,1,1.25].includes(speed)?speed:1;
+  if(eventMode && safe!==1)return; // event mode never changes source tempo
+  audio.playbackRate=safe;
+  audio.defaultPlaybackRate=safe;
+  if("preservesPitch" in audio)audio.preservesPitch=true;
+  practiceSpeed.value=String(safe);
+  practiceSpeedNote.textContent=safe===1?
+    "Oefensnelheid 1×: je hoort de originele afspeelsnelheid.":
+    "Oefensnelheid "+String(safe).replace(".",",")+"×: alleen deze lokale " +
+    "afspeelbeurt verandert. Geluid/pitch kan per browser afwijken; " +
+    "beoordeel de definitieve mix op 1×.";
+}
+practiceSpeed.addEventListener("change",()=>{
+  if(eventMode){setPracticeSpeed(1);return;}
+  setPracticeSpeed(practiceSpeed.value);
+});
+audio.addEventListener("ratechange",()=>{
+  if(eventMode && audio.playbackRate!==1)setPracticeSpeed(1);
+});
+setPracticeSpeed(1);
 function drawWaveform(){
   const width=Math.max(1,Math.round(waveform.clientWidth*(window.devicePixelRatio||1)));
   const height=Math.max(1,Math.round(110*(window.devicePixelRatio||1)));
@@ -603,7 +636,10 @@ function updateEventClock(t){
     "Geen verdere overgang · resterend tot einde "+format(seconds);
 }
 function enterEventMode(active){
-  if(active){clearContextAudition();clearTransitionLoop();} // live mode cancels both auditions
+  if(active){
+    clearContextAudition();clearTransitionLoop();
+    setPracticeSpeed(1); // guaranteed regular playback when going live
+  }
   eventMode=active;
   document.body.classList.toggle("event-mode",active);
   audio.controls=!active;
@@ -616,6 +652,7 @@ function enterEventMode(active){
   loopButtons.forEach(({button})=>{button.disabled=disabled;});
   contextButtons.forEach(({button})=>{button.disabled=disabled;});
   contextSeconds.disabled=disabled;
+  practiceSpeed.disabled=disabled;
   reviewRows.forEach(({status,note})=>{
     status.disabled=disabled;note.disabled=disabled;
   });

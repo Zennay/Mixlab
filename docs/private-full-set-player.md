@@ -43,6 +43,15 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
   privé-aanpassingslijst; exact overgangsherhalen annuleert context.
   Handmatig buiten het fragment springen of eventmodus openen stopt context;
   eventmodus blokkeert ook de selector;
+- **Afspeelsnelheid bij oefenen** met 0,75×, 1× (standaard) of 1,25×
+  voor het privé beluisteren van overgangshoofdstukken, geïsoleerde loops
+  en contextluisteren. Dit is alleen de afspeelsnelheid van de browser:
+  de originele WAV, PCM-duur, cuepunten, hoofdstuktijden, toestemming en
+  SHA-gebonden receipts worden **niet** gewijzigd. Een browser kan de
+  toonhoogte bij een afwijkende snelheid anders behandelen; beoordeel de
+  uiteindelijke muzikale kwaliteit daarom altijd op **1×**. Wanneer je
+  **Eventmodus** opent, herstelt MixLab altijd 1× en vergrendelt de
+  oefensnelheidskeuze tot je die modus weer verlaat;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
@@ -131,8 +140,9 @@ In deze modus zie je:
   overslaan tijdens een feest te voorkomen, zijn waveform-klik,
   hoofdstuk-springknoppen, vorige/volgende, de nieuwe overgang-herhaalknoppen
   en de standaard browsertijdlijn **tijdelijk uitgeschakeld**. Een actieve
-  herhaling wordt bij het openen van eventmodus **altijd gestopt**, zodat
-  de DJ-set normaal kan doorlopen.
+  herhaling wordt bij het openen van eventmodus **altijd gestopt**, en
+  de afspeelsnelheid teruggezet naar **1×**, zodat de DJ-set normaal
+  kan doorlopen.
 - Optioneel schermvullende presentatie als de browser die toestaat.
   Met **Verlaat eventmodus** kun je altijd terug naar de normale
   bewerkings-/luisterweergave; de set blijft afspelen.
