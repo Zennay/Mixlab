@@ -134,7 +134,11 @@ op voordat je de pagina sluit. Je kunt die privé-JSON daarna
 **lokaal terugladen in dezelfde WAV-speler**, ook na opnieuw openen van
 het HTML-bestand. MixLab weigert een afwijkende WAV-SHA, overgangsstijl
 of hoofdstuktijd en beschermt al ingevulde notities tegen stilzwijgend
-overschrijven. Er is geen account, server of automatische browseropslag.
+overschrijven. Wil je alle eerdere beoordelingen bewust intrekken,
+dan kun je **Wis alle beoordelingen** gebruiken en ook de lege stand
+als nieuwe, SHA-gebonden privé-JSON downloaden en opnieuw laden.
+Die reset blijft een onopgeslagen wijziging totdat de gebruiker de download
+bevestigt. Er is geen account, server of automatische browseropslag.
 
 Ook in de aparte **Transition Studio** kun je nu met **Vergelijk op
 dezelfde positie** direct wisselen tussen de vier écht gerenderde

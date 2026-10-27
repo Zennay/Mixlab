@@ -95,6 +95,19 @@ zijn deze herhaal- en navigatieknoppen uitgeschakeld. Je aantekeningen
 blijven alleen in het geopende browservenster totdat je zelf het
 privé-JSON-bestand downloadt.
 
+**Alle persoonlijke beoordelingen wissen:** kies in de offline speler
+**Wis alle beoordelingen** en bevestig de vraag. Dit wist uitsluitend de
+huidige notitievelden; de echte WAV, bronmanifesten en receipts blijven intact.
+Had je eerder keuzes opgeslagen of ingeladen, dan is wissen een **nog niet
+opgeslagen wijziging**. Download het bijgewerkte
+`mixlab-transition-notes.private.json`: dit kan nu ook met nul ingevulde
+overgangen (een geldig, aan dezelfde WAV-SHA gebonden leeg dossier).
+Bevestig pas nadat je het nieuwe bestand hebt gecontroleerd. De lege JSON
+kun je later importeren om voor **diezelfde WAV** je oude beoordelingen
+bewust leeg te maken. Een afwijkende WAV-hash wordt geweigerd.
+Eventmodus vergrendelt de wisknop; zonder ingevulde notities is die inactief.
+Annuleer je de bevestiging, dan blijven alle keuzes behouden.
+
 **Eerder opgeslagen notities weer openen:** kies onder *Je eigen overgangsnotities*
 het lokaal bewaarde `mixlab-transition-notes.private.json` en klik
 **Laad privé-overgangsnotities**. De pagina herstelt je keuzes en tekst
@@ -136,8 +149,8 @@ browser het bestand daadwerkelijk heeft opgeslagen, en klik pas dan
 bewijs dat het bestand is bewaard. Een latere wijziging activeert de
 waarschuwing opnieuw; een eerdere download is dan verouderd. Een geldig,
 eerder opgeslagen privé-JSON dat je zelf opnieuw inlaadt, geldt als al
-bewaard. Als je alle tijdelijke beoordelingen bewust wist, is er geen
-nieuw notitiewerk om te verliezen. Tijdens Eventmodus is bevestigen
+bewaard. Ook het bewust wissen van alle eerder opgeslagen beoordelingen is een
+**nieuwe wijziging** die je expliciet als leeg privé-JSON moet bewaren. Tijdens Eventmodus is bevestigen
 uitgeschakeld. Bij het sluiten of vernieuwen van de pagina vraagt MixLab
 om bevestiging zolang nieuwe beoordelingen nog niet als opgeslagen zijn
 bevestigd, **voor zover de browser dit toestaat**. Sommige browsers

@@ -176,6 +176,7 @@ beluisteren. Dit wijzigt de WAV of handmatig goedgekeurde cues niet.</p>
 <ol id="revision-queue"></ol>
 <button id="revision-next" type="button" disabled>Beluister volgende aanpassing</button>
 </div>
+<button id="reset-reviews" type="button" disabled>Wis alle beoordelingen</button>
 <button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
 <button id="download-report" type="button" disabled>Download leesbare DJ-checklist (.txt)</button>
 <p class="muted">De checklist is voor je persoonlijke planning. Alleen je privé-JSON
@@ -413,6 +414,7 @@ data.chapters.forEach((ch,i)=>{
 // network, or automatic approval of the recorded listening decision.
 const reviewList=document.getElementById("creative-reviews");
 const reviewProgress=document.getElementById("review-progress");
+const resetReviews=document.getElementById("reset-reviews");
 const exportReview=document.getElementById("download-review");
 const exportReport=document.getElementById("download-report");
 const confirmSaved=document.getElementById("confirm-notes-saved");
@@ -506,9 +508,9 @@ const notesSnapshot=()=>JSON.stringify(reviewRows.map(({status,note})=>
   [status.value,note.value]));
 let confirmedNotesSnapshot=notesSnapshot();
 let offeredDownloadSnapshot=null;
-const notesNeedSaving=()=>reviewRows.some(({status,note})=>
-  status.value!=="unreviewed" || note.value.trim()!=="") &&
-  notesSnapshot()!==confirmedNotesSnapshot;
+// Clearing saved reviews is itself an unsaved change until its empty JSON
+// has been downloaded and explicitly confirmed by the operator.
+const notesNeedSaving=()=>notesSnapshot()!==confirmedNotesSnapshot;
 window.addEventListener("beforeunload",e=>{
   if(!notesNeedSaving())return;
   e.preventDefault();e.returnValue=""; // Browser may suppress this prompt.
@@ -523,7 +525,8 @@ confirmSaved.addEventListener("click",()=>{
 function refreshReviewProgress(){
   const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
     note.value.trim()!=="").length;
-  exportReview.disabled=marked===0 || eventMode;
+  exportReview.disabled=(marked===0 && !notesNeedSaving()) || eventMode;
+  resetReviews.disabled=marked===0 || eventMode;
   exportReport.disabled=marked===0 || eventMode;
   importButton.disabled=eventMode || importBusy;
   importFile.disabled=eventMode || importBusy;
@@ -546,7 +549,7 @@ function validateSavedNotes(saved){
      saved.wav_sha256!==data.wav_sha256 ||
      saved.duration_seconds!==data.duration_seconds ||
      !Array.isArray(saved.transitions) ||
-     saved.transitions.length<1 || saved.transitions.length>reviewRows.length)
+     saved.transitions.length>reviewRows.length)
     throw Error("Ongeldige notities of een andere complete WAV.");
   const byID=new Map(reviewRows.map(row=>[row.ch.label,row]));
   const seen=new Set();const prepared=[];
@@ -565,6 +568,14 @@ function validateSavedNotes(saved){
   }
   return prepared;
 }
+resetReviews.addEventListener("click",()=>{
+  if(eventMode || resetReviews.disabled)return;
+  if(!window.confirm("Wis alle persoonlijke beoordelingen en notities? Download eerst je privé-JSON als je ze wilt bewaren."))return;
+  reviewRows.forEach(({status,note})=>{status.value="unreviewed";note.value="";});
+  offeredDownloadSnapshot=null;
+  importStatus.textContent="Alle beoordelingen gewist. Download nu je bijgewerkte privé-JSON.";
+  refreshReviewProgress();
+});
 reviewRows.forEach(({status,note})=>{
   status.addEventListener("change",refreshReviewProgress);
   note.addEventListener("input",refreshReviewProgress);
@@ -577,7 +588,8 @@ importButton.addEventListener("click",async()=>{
     importStatus.textContent="Het JSON-bestand moet kleiner dan 64 KiB zijn.";
     return;
   }
-  if(reviewRows.some(({status,note})=>status.value!=="unreviewed"||note.value.trim()) &&
+  if((reviewRows.some(({status,note})=>status.value!=="unreviewed"||note.value.trim()) ||
+      notesNeedSaving()) &&
      !window.confirm("Dit vervangt je huidige overgangsnotities. Heb je ze al gedownload?")){
     importStatus.textContent="Laden geannuleerd; huidige notities behouden.";
     return;
