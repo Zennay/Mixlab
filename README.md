@@ -98,6 +98,13 @@ moeten exact één keer in de A→B-route staan. Ook de afzonderlijke
 `mixlab.cue_editor apply`-opdracht weigert het schrijven van een
 onrenderbaar nieuw manifest. De bestaande bronmuziek blijft intact.
 
+Je kunt je persoonlijke overgangsbeoordelingen nu ook als **leesbare
+DJ-checklist (.txt)** exporteren: een direct bruikbaar overzicht van
+*Nog aan te passen*, *Klinkt goed* en overige notities, met WAV-hash en
+werkelijke hoofdstuktijden. Alleen het bestaande privé-JSON is later weer
+terug te laden; TXT vervangt geen beveiligde notitieback-up of
+onafhankelijk luisteronderzoek.
+
 De privé Full Set Player heeft ook een **automatische lijst van overgangen
 met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
 echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
