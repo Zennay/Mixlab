@@ -766,6 +766,13 @@ muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige w
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
 
+De offline A/B-cue-editor ondersteunt nu ook precieze **± 0,10 s**
+handmatige cue-aanpassingen op beide decks, via knoppen of Shift +
+pijltjestoetsen op de golfvorm. Die stappen omzeilen het optionele
+beatgrid; normale beat-/vier-beatknoppen, Undo/Redo en de complete
+SHA-gebonden WAV-tijdlijn blijven werken. Dit is handmatige afstelling,
+geen automatische beat- of muziekkwaliteitsdetectie.
+
 In de offline A/B-cue-editor kun je nu ook je eerder gedownloade
 `mixlab-cue-selections.json` **terugladen**. De browser herstelt alle
 handmatige cues tegelijk, inclusief de verwachte complete-settijdlijn,

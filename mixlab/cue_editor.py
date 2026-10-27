@@ -169,18 +169,19 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <button id="cue-import" type="button">Laad opgeslagen cues</button>
 </div>
 <p id="cue-import-status" role="status" aria-live="polite">Nog geen cuekeuzes geladen.</p>
+<p class="lede">Fijn afstellen: gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
 <p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-a"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-a" aria-label="Tijdstip uitgaande cue"></div>
-<div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="play-a">▶ Beluister A</button></div>
+<div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="fineprev-a" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-a" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-a">▶ Beluister A</button></div>
 <audio id="audio-a" controls preload="metadata"></audio></section>
 <section class="lane"><small>INKOMEND / DECK B</small><h2 id="name-b"></h2>
 <p class="summary" id="info-b"></p><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Kies inkomende cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-b"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-b" aria-label="Tijdstip inkomende cue"></div>
-<div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="play-b">▶ Beluister B</button></div>
+<div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="fineprev-b" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-b" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-b">▶ Beluister B</button></div>
 <audio id="audio-b" controls preload="metadata"></audio></section>
 </div>
 <section class="footer" aria-labelledby="timeline-title">
@@ -420,15 +421,15 @@ function refreshCueStatus(){
 function format(seconds){const m=Math.floor(seconds/60);const s=(seconds%60).toFixed(2).padStart(5,'0');return String(m)+':'+s;}
 function deck(side){return bank[chosen[side]];}
 function maxStart(side){return Math.max(0,deck(side).duration-chosen.seconds);}
-function snapTime(value,side){
+function snapTime(value,side,fine=false){
  const track=deck(side),beat=60/track.bpm;
- if($('snap').checked&&typeof track.first_downbeat_seconds==='number'){
+ if(!fine&&$('snap').checked&&typeof track.first_downbeat_seconds==='number'){
    value=track.first_downbeat_seconds+Math.round((value-track.first_downbeat_seconds)/beat)*beat;
  }
  return Math.max(0,Math.min(maxStart(side),Math.round(value*100)/100));
 }
-function setCue(side,value){
- const key=side+'_start_seconds',next=snapTime(value,side);
+function setCue(side,value,fine=false){
+ const key=side+'_start_seconds',next=snapTime(value,side,fine);
  if(next!==chosen[key]){
    rememberCueEdit();
    chosen[key]=next;
@@ -528,9 +529,12 @@ for(const side of ['a','b']){
  const canvas=$('wave-'+side);
  function moveFromCanvas(fraction){setCue(side,fraction*deck(side).duration);}
  canvas.addEventListener('click',e=>moveFromCanvas((e.clientX-canvas.getBoundingClientRect().left)/canvas.getBoundingClientRect().width));
- canvas.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setCue(side,chosen[side+'_start_seconds']+(e.key==='ArrowRight'?1:-1)*60/deck(side).bpm);}});
+ canvas.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setCue(side,chosen[side+'_start_seconds']+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?.1:60/deck(side).bpm),Boolean(e.shiftKey));}});
  for(const [name,beats] of [['prev',-1],['next',1],['barprev',-4],['barnext',4]]){
   $(name+'-'+side).addEventListener('click',()=>setCue(side,chosen[side+'_start_seconds']+beats*60/deck(side).bpm));
+ }
+ for(const [name,amount] of [['fineprev',-.1],['finenext',.1]]){
+  $(name+'-'+side).addEventListener('click',()=>setCue(side,chosen[side+'_start_seconds']+amount,true));
  }
  $('play-'+side).addEventListener('click',async()=>{
    stopPlayback();const a=$('audio-'+side);
