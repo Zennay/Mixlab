@@ -5,6 +5,7 @@ All review forms remain private; real listener evidence is NOT collected here.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -99,12 +100,16 @@ def run(manifest_path, split_path, private_destination, *, pairs=5, seed=0,
     source = Path(manifest_path).absolute()
     if source.suffix.lower() != '.json':
         raise ValueError('Expected a private JSON library manifest')
+    # Check the actual manifest, source hashes, rights declarations and split
+    # before allocating a workspace or asking for any human decisions.
+    candidates = build_candidates(source, split_path, manual_keys, measure_keys)
+    if type(pairs) is not int or not 5 <= pairs <= 10 or type(seed) is not int or not 0 <= seed < 2 ** 63:
+        raise ValueError('Invalid frozen study size or preregistered seed')
     root = _private_dir(private_destination)
     raw, pending = root / 'unreviewed.json', root / 'keys-pending.json'
     reviewed, approved = root / 'keys-reviewed.json', root / 'approved.json'
     frozen, cue_pending = root / 'frozen.json', root / 'cues-pending.json'
     cue_reviewed, pack = root / 'cues-reviewed.json', root / 'blind-pack'
-    candidates = build_candidates(source, split_path, manual_keys, measure_keys)
     _new_json(raw, candidates)
     prepare_keys(raw, pending)
     nkeys = _key_review(ask, pending, reviewed)
@@ -113,17 +118,23 @@ def run(manifest_path, split_path, private_destination, *, pairs=5, seed=0,
     _new_json(frozen, study)
     prepare_cues(source, frozen, cue_pending)
     ncues = _cue_review(ask, cue_pending, cue_reviewed)
-    new_manifest = source.with_name(source.stem + '.m1-' + study['study_id'][:12] + '.json')
+    # A study id identifies the immutable selection, not a single operator
+    # session. Two separate attempts with the same seed/study must never
+    # collide or overwrite one another's independently confirmed cue sheets.
+    session_id = hashlib.sha256(os.fsencode(root)).hexdigest()[:16]
+    new_manifest = source.with_name(source.stem + '.m1-' + study['study_id'][:12]
+                                    + '-' + session_id + '.json')
     approve_cues(source, frozen, cue_reviewed, new_manifest)
     build_pack(new_manifest, frozen, pack, seed=seed)
-    _, evidence, trials = verify_pack(pack)
+    receipt, evidence, trials = verify_pack(pack)
     if verify_study_pack(pack, frozen) != study['study_id']:
         raise ValueError('Private render does not match the frozen study')
     if len(trials) != pairs or len(evidence['renders']) != 2 * pairs:
         raise ValueError('Incomplete blind audio pack')
     return dict(status='private-pack-ready-not-listener-validated', key_reviews=nkeys,
                 cue_approvals=ncues, frozen_pairs=len(trials),
-                rendered_wavs=len(evidence['renders']), study_id=study['study_id'])
+                rendered_wavs=len(evidence['renders']), study_id=study['study_id'],
+                pack_id=receipt['pack_id'])
 
 
 def main(argv=None):
