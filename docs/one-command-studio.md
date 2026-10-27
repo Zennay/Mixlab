@@ -177,8 +177,14 @@ Dit maakt expliciet **alleen** een nieuw privébestand
 `/private/volledige-set.wav.preview.html` aan (0600). Open dat lokale
 HTML-bestand in een browser om de volledige tracklijst, volgorde, overgangs-
 stijlen, handmatig gekozen BPM en cuepunten te bekijken. Bij gecontroleerde
-WAV-bronnen toont de pagina ook de berekende mixtijd. De pagina gebruikt
-de **herkenbare lokale bestandsnamen zonder extensie** als songtitels en
+WAV-bronnen toont de pagina naast de berekende mixtijd ook een **echte
+vooraf berekende hoofdstuktijdlijn**: wanneer ieder solofragment en iedere
+handmatig gecuede overgang in de uiteindelijke WAV begint en eindigt.
+Deze start- en eindtijden gebruiken exact de 44,1 kHz PCM-frametelling
+van de bestaande exporter en zijn nog géén beluisterde of daadwerkelijk
+gerenderde audio. Als bronhashes, header of cues niet zijn geverifieerd,
+toont de pagina eerlijk dat de tijdlijn nog onbekend is.
+De pagina gebruikt de **herkenbare lokale bestandsnamen zonder extensie** als songtitels en
 toont de technische track-ID er kleiner onder. Dit zijn geen geverifieerde
 muziekmetadata. De pagina bevat **geen muziek, volledige bronpaden, scripts,
 externe links of netwerkaanvragen**. Bestandsnamen kunnen privé-informatie
@@ -209,7 +215,12 @@ Hiermee leest MixLab alléén de originele WAV-headers en de volledige bron-SHA2
 en controleert of alle handmatige beginpunten inclusief het einde van elke
 transitie **binnen de werkelijke lokale tracklengte** vallen. Het overzicht
 meldt het exact verwachte aantal PCM-frames, WAV-grootte en de mixtijd op
-basis van de bestaande 44,1 kHz stereo PCM16-renderer. De normale renderer
+basis van de bestaande 44,1 kHz stereo PCM16-renderer. Bij zo'n gecontroleerd
+voorbeeld geeft de JSON nu ook `planned_chapters` terug: de volledige
+frame-aligned volgorde van solo-/overgangsfragmenten met labels, startframes,
+frametelling en menselijke start-/fragmenttijd. Deze onderdelen zijn direct
+vergelijkbaar met de echte WAV-hoofdstukken; zonder `--verify-wavs` worden
+geen exacte starttijden beweerd. De normale renderer
 controleert tijdens de latere echte import/export opnieuw alle bestanden.
 Er wordt geen muziek gedecodeerd, getranscodeerd, geüpload of als WAV
 geëxporteerd tijdens de preview. Voor MP3/FLAC en andere bronnen gebruik je

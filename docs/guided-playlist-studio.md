@@ -204,8 +204,12 @@ handmatig gekozen standaard voor die overgang.
 
 Voor bestaande **originele lokale 44,1 kHz PCM16-WAVs** kun je bovendien
 `--plan-verify-wavs` toevoegen; dan worden de bron-SHA's en de WAV-headers
-gecontroleerd en toont de pagina de exact verwachte mixtijd. Dit valideert
-nog geen muziekrechten of muzikale kwaliteit. Voor MP3/FLAC en andere
+gecontroleerd en toont de pagina naast de exact verwachte mixtijd ook
+**waar alle nummers en overgangen op de uiteindelijke WAV-tijdlijn
+starten en eindigen**. De frametijden komen uit de lokaal SHA-gecontroleerde
+PCM16-bronnen en dezelfde cue-rekenregels als de echte WAV-export; zonder
+deze broncontrole wordt geen tijdlijn verzonnen. Dit valideert nog geen
+muziekrechten, gehoorde overgang of muzikale kwaliteit. Voor MP3/FLAC en andere
 formaten gebruik je alleen `--plan-html` zonder
 `--plan-verify-wavs`; hun exacte lengte vereist later de gewone audio-import.
 

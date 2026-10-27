@@ -29,6 +29,20 @@ def inspect_playlist(manifest_path, catalog, route, transitions):
         frames[ident] = info['frames']
     before = 0
     total = 0
+    chapters = []
+    def add_chapter(kind, ident, count, family=None):
+        nonlocal total
+        # The final exporter omits zero-frame solos from its player chapters.
+        if count > 0:
+            section = dict(kind=kind, label=ident,
+                           start_frame=total, frames=count,
+                           start_seconds=round(total / OUTPUT_RATE, 6),
+                           duration_seconds=round(count / OUTPUT_RATE, 6))
+            if family is not None:
+                section['family'] = family
+            chapters.append(section)
+        total += count
+
     for item in transitions:
         length = round(item['beats'] * 60 / item['bpm'] * OUTPUT_RATE)
         a = round(item['outgoing_cue_seconds'] * OUTPUT_RATE)
@@ -36,17 +50,19 @@ def inspect_playlist(manifest_path, catalog, route, transitions):
         if (length < 2 or a < before or a + length > frames[item['from_track']]
                 or b + length > frames[item['to_track']]):
             raise ValueError('A manual transition extends outside the original PCM WAV or overlaps a previous transition')
-        total += a - before + length
+        add_chapter('solo', item['from_track'], a - before)
+        add_chapter('transition', item['pair'], length, item['family'])
         before = b + length
     tail = frames[route[-1]] - before
     if tail < 0:
         raise ValueError('Last song ends before the final transition')
-    total += tail
+    add_chapter('solo', route[-1], tail)
     expected_bytes = 44 + total * 4  # Import normalizes PCM16 mono/stereo to stereo.
     if total < 2 or expected_bytes > MAX_SET_BYTES:
         raise ValueError('Complete PCM preview exceeds the existing 512 MiB renderer budget')
     return dict(complete_mix_duration=round(total / OUTPUT_RATE, 6),
                 exact_expected_pcm_frames=total,
+                planned_chapters=chapters,
                 expected_stereo_pcm_wav_bytes=expected_bytes,
                 source_wav_hashes_and_headers_verified=True,
                 source_audio_validated=False,
