@@ -828,3 +828,5 @@ de officiële SHA-geverifieerde `Real Join Reels` en plaats het nieuwe
 masterbron-SHA's, de daadwerkelijke PCM16-fragmenten en exacte joinfades;
 de browser gebruikt alleen deze lokaal bestaande WAVs, zonder eigen fades of
 uploads. [Hybrid Revision Desk](docs/marathon-human-hybrid-master.md#10-audition-genuine-originalblend-wav-excerpts-while-revising).
+
+The private offline cue editor also offers **Herstel alle cues** to reset all manual pair positions together after confirmation. The reset can be undone as one action; original sources stay unchanged.
