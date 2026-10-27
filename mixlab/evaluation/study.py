@@ -97,6 +97,59 @@ def _describe(a, b, tolerance):
             "harmonic_class": stratum, "renderable_without_stretch": delta <= 1e-9}
 
 
+
+def _feasible_fallback(strata, count, max_track_uses, evaluation_count):
+    """Find a feasible limited-reuse pair set when greedy selection got stuck.
+
+    A greedy prefix may exhaust the wrong tracks even when a 5–10 edge
+    allocation exists. Backtrack over the *same* seeded candidate order,
+    preferring harmonic balance, with an explicit CPU/state bound. Never
+    silently exceed the original track reuse or pair uniqueness limits.
+    """
+    compatible = strata["compatible"]
+    different = sorted(strata["contrasting"] + strata["unknown"],
+                       key=lambda item: item[0])
+    pool = compatible + different
+    preferred = tuple(range(len(compatible)))
+    other = tuple(range(len(compatible), len(pool)))
+    goal = math.ceil(count / 2)
+    selected, seen, uses = [], set(), {}
+    remaining_states = [40000 if evaluation_count <= 16 else 1500]
+
+    def choose(compat_count):
+        if len(selected) == count:
+            return [pool[i] for i in selected]
+        key = tuple(sorted(selected))
+        if key in seen or remaining_states[0] <= 0:
+            return None
+        remaining_states[0] -= 1
+        seen.add(key)
+        # Preserve the prior preference for about half compatible pairs.
+        order = (preferred + other if compat_count < goal else other + preferred)
+        for index in order:
+            if index in selected:
+                continue
+            _, a, b, _ = pool[index]
+            left, right = a["id"], b["id"]
+            if uses.get(left, 0) >= max_track_uses or uses.get(right, 0) >= max_track_uses:
+                continue
+            selected.append(index)
+            uses[left] = uses.get(left, 0) + 1
+            uses[right] = uses.get(right, 0) + 1
+            found = choose(compat_count + (index < len(compatible)))
+            if found is not None:
+                return found
+            uses[left] -= 1
+            uses[right] -= 1
+            selected.pop()
+        return None
+
+    found = choose(0)
+    if found is None and remaining_states[0] <= 0:
+        raise ValueError("Bounded pair allocation search exhausted; adjust seed or candidate split")
+    return found
+
+
 def freeze(candidates_path, count, seed, tempo_tolerance_percent=0., max_track_uses=2):
     if type(count) is not int or not 5 <= count <= 10:
         raise ValueError("A study freezes 5 to 10 pairs")
@@ -144,7 +197,11 @@ def freeze(candidates_path, count, seed, tempo_tolerance_percent=0., max_track_u
     take(sorted(strata["compatible"] + strata["contrasting"] + strata["unknown"],
                 key=lambda item: item[0]), count)
     if len(chosen) < count:
-        raise ValueError("Not enough eligible evaluation pairs for the requested study size")
+        # Do not reject a feasible frozen trial merely because the first
+        # seeded greedy prefix saturated the wrong source recording IDs.
+        chosen = _feasible_fallback(strata, count, max_track_uses, len(evaluation))
+        if chosen is None:
+            raise ValueError("Not enough eligible evaluation pairs for the requested study size")
     chosen.sort(key=lambda item: item[0])
     families = sorted(CANDIDATE_FAMILIES, key=lambda family: _rank(seed, "family", family))
     pairs = []
