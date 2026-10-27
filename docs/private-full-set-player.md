@@ -33,6 +33,31 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
 
+## Creatieve overgangsnotities — privé en zonder account
+
+Gebruik onder de hoofdstuklijst **Je eigen overgangsnotities** om elk
+werkelijk gerenderd overgangsfragment na het beluisteren te markeren als
+**Klinkt goed** of **Wil aanpassen**, met een vrije notitie van maximaal
+280 tekens. De reeds beschikbare **Herhaal overgang**-knop laat je
+herhaald luisteren vóór je iets invult; de originele mix zelf verandert niet.
+
+De knop **Download privé-overgangsnotities JSON** wordt beschikbaar zodra
+je ten minste één keuze of notitie hebt gemaakt. Het bestand
+`mixlab-transition-notes.private.json` bevat alleen de door jou ingevulde
+overgangen, originele paar-ID, uit je lokale bestanden afgeleide zichtbare
+naam, renderfamilie, exacte hoofdstukstart-/fragmentduur en de bij het maken
+van de speler vastgelegde **WAV SHA-256**. Daardoor weet je bij welk
+compleet mixresultaat de opmerkingen horen. Het is geen hercontrole van
+een later gewijzigd WAV-bestand en geen onafhankelijke blinde beoordeling.
+
+**Bewaar je JSON voordat je dit browservenster sluit of vernieuwt.**
+MixLab slaat deze aantekeningen niet automatisch op: geen browseropslag,
+geen achtergrondservice, geen netwerk, geen aanpassing van de SHA-gebonden
+muziekbron, rechtenverklaring, originele WAV of receipts. De notities zijn
+persoonlijk en kunnen herkenbare muzieknamen bevatten; houd het bestand
+privé. Bij activering van **Eventmodus** zijn bewerken en downloaden
+uitgeschakeld; na verlaten van eventmodus kun je verder.
+
 Als alleen het maken van de HTML-speler faalt, blijft de eerder atomair
 gepubliceerde WAV intact; de CLI meldt dan `player_warning`. Er worden nooit
 bestaande pagina's of muziekbestanden overschreven.
