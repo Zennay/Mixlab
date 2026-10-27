@@ -161,6 +161,32 @@ python3 -m mixlab.party_mix \
   --family bass_swap --preview
 ```
 
+Wil je de route liever als **visueel overzicht** op je telefoon of computer
+bekijken? Gebruik `--preview --preview-html` of combineer
+`--preview --verify-wavs --preview-html` voor een SHA-gebonden tijdsindicatie:
+
+```bash
+python3 -m mixlab.party_mix \
+  /private/songs/input.json \
+  /private/mixlab-sessie \
+  /private/volledige-set.wav \
+  --family bass_swap --preview --verify-wavs --preview-html
+```
+
+Dit maakt expliciet **alleen** een nieuw privébestand
+`/private/volledige-set.wav.preview.html` aan (0600). Open dat lokale
+HTML-bestand in een browser om de volledige tracklijst, volgorde, overgangs-
+stijlen, handmatig gekozen BPM en cuepunten te bekijken. Bij gecontroleerde
+WAV-bronnen toont de pagina ook de berekende mixtijd. De pagina bevat
+enkel de track-ID's en geplande tijden, **geen muziek, bronpaden, scripts,
+externe links of netwerkaanvragen**. Track-ID's kunnen door de gebruiker
+gekozen namen bevatten, dus houd de pagina privé. Een bestaand overzicht
+wordt niet overschreven. Verwijder daarna `--preview` én `--preview-html`
+om de echte WAV-set te renderen; de pagina kan dat niet zelfstandig starten.
+
+Zonder `--preview-html` blijft de bestaande voorvertoning 100% zonder
+bestandsaanmaak. `--preview-html` is alleen toegestaan bij `--preview`.
+
 MixLab geeft de exacte route (track-ID's), overgangsstijlen, handmatig
 vastgelegde BPM, beginpunten, beattellingen en de totale **overgangsduur**
 als leesbare JSON terug. Het standaardoverzicht is géén voorspelling van de lengte van de
@@ -186,8 +212,10 @@ geëxporteerd tijdens de preview. Voor MP3/FLAC en andere bronnen gebruik je
 de gewone `--preview`; voor die bronnen kan de exacte lengte **zonder
 daadwerkelijke audio-import niet eerlijk worden voorspeld**. Het vlaggetje
 `--verify-wavs` is uitsluitend geldig samen met `--preview`.
-Ook de bronhashes, audiokwaliteit en onafhankelijk geverifieerde
-muziekrechten worden in previewmodus **niet** gecontroleerd. De uiteindelijke
+In de gewone preview worden bronhashes en audiokwaliteit niet gecontroleerd.
+Met `--verify-wavs` worden de volledige bronhashes en WAV-headers juist
+**wel** gecontroleerd, maar niet de volledige decodekwaliteit of onafhankelijke
+muziekrechten. De uiteindelijke
 render valideert die altijd opnieuw. Als een volgende uitgaande cue vóór
 het einde van de vorige binnenkomende overgang ligt, weigert MixLab de
 playlist nu zowel bij preview als bij een normale opdracht **vóór het
