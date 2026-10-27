@@ -820,6 +820,10 @@ apart, nieuw bronmanifest. Geen upload of automatische browseropslag.
 
 Als handmatig verplaatste A/B-cuepunten twee overgangen laten overlappen,
 blokkeert de privé-editor het opslaan en biedt **Ga naar probleemovergang**.
+Via **Gebruik veilige startcue** kan de DJ vervolgens bewust de eerste
+framegeldige Deck A-startcue toepassen en met Undo/Redo terugdraaien.
+Bij een onoplosbare overlap blijft die knop uitgeschakeld; er wordt nooit
+automatisch een muzikaal cuepunt of goedkeuring verzonnen.
 Daarmee opent de juiste Deck A-waveform en zie je de vroegste geldige
 uitgaande cuepositie op basis van echte bron-PCM-frames. Er verandert niets
 automatisch aan muziek, cues of rechten; de DJ beluistert en kiest zelf.
