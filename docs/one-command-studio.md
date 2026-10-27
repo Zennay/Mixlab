@@ -177,10 +177,12 @@ Dit maakt expliciet **alleen** een nieuw privébestand
 `/private/volledige-set.wav.preview.html` aan (0600). Open dat lokale
 HTML-bestand in een browser om de volledige tracklijst, volgorde, overgangs-
 stijlen, handmatig gekozen BPM en cuepunten te bekijken. Bij gecontroleerde
-WAV-bronnen toont de pagina ook de berekende mixtijd. De pagina bevat
-enkel de track-ID's en geplande tijden, **geen muziek, bronpaden, scripts,
-externe links of netwerkaanvragen**. Track-ID's kunnen door de gebruiker
-gekozen namen bevatten, dus houd de pagina privé. Een bestaand overzicht
+WAV-bronnen toont de pagina ook de berekende mixtijd. De pagina gebruikt
+de **herkenbare lokale bestandsnamen zonder extensie** als songtitels en
+toont de technische track-ID er kleiner onder. Dit zijn geen geverifieerde
+muziekmetadata. De pagina bevat **geen muziek, volledige bronpaden, scripts,
+externe links of netwerkaanvragen**. Bestandsnamen kunnen privé-informatie
+onthullen; houd het lokale overzicht dus privé. Een bestaand overzicht
 wordt niet overschreven. Verwijder daarna `--preview` én `--preview-html`
 om de echte WAV-set te renderen; de pagina kan dat niet zelfstandig starten.
 

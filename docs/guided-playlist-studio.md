@@ -161,6 +161,12 @@ De wizard maakt het echte handmatige SHA-gebonden bronmanifest en daarnaast
 één afzonderlijke **privé offline pagina**
 `/private/mixlab-playlist-01.wav.preview.html` (0600). Daar zie je de
 speelvolgorde, gekozen overgangen, BPM en uitgaande/inkomende cuepunten.
+Elke song heeft nu een **herkenbare naam afgeleid van het lokale
+bestandsnaamdeel zonder extensie**; de technische track-ID staat er kleiner
+bij voor controle. Dit is een bestandsnaam, geen geverifieerde artiest-/titel-
+metadata en geen bewijs van muziekrechten. Volledige map- en bronpaden
+worden niet in de pagina geplaatst. Omdat bestandsnamen privé-informatie
+kunnen verraden, blijft de offline pagina uitsluitend lokaal (modus 0600).
 Er wordt nog géén sessiemap, Studio, mix-WAV of audio-speler gemaakt.
 De standaardinstelling toont de handmatig opgegeven familiekeuze
 (`bass_swap`), tenzij een volledig goedgekeurde lijst individuele
