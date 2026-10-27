@@ -132,6 +132,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visib
 .cue-history button:disabled{opacity:.4;cursor:not-allowed}
 #history-status{color:#c3b5e9;margin:0 0 19px}
 #cue-import-status{color:#c3b5e9;min-height:1.5em;margin:12px 0 22px}
+.problem-navigation{border:1px solid #ba9363;background:#352616;
+  padding:12px 16px;border-radius:12px;margin:14px 0}
+.problem-navigation[hidden]{display:none}
+.problem-navigation p{color:#f9e2b9}
+#jump-to-problem{border-color:#edc083;background:#593e21;color:#fff}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 .lane{border:1px solid #383e53;background:linear-gradient(135deg,#1e2030,#151720);border-radius:20px;padding:24px}
 h2{font-size:1.4rem;margin:10px 0} .summary{color:#adb4c7;font-size:.83rem;margin:0 0 20px}
@@ -206,6 +211,10 @@ Nog geen geldige complete mixtijd berekend.</p>
 <div class="footer">
 <button class="primary" id="save">Download cuekeuzes (.json)</button>
 <p id="message" role="status" aria-live="polite">Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.</p>
+<div id="cue-problem-navigation" class="problem-navigation" hidden>
+<p id="cue-problem-guidance" role="status" aria-live="polite"></p>
+<button id="jump-to-problem" type="button">Ga naar probleemovergang</button>
+</div>
 <p class="warning">Download eerst je cuekeuzes als privé-JSON. Zet dat bestand in je privé muziekmap en gebruik <code>python3 -m mixlab.cue_editor apply OUD_MANIFEST.json CUEKEUZES.json NIEUW_MANIFEST.json --plan-html --plan-verify-wavs</code> om een <strong>nieuw</strong> bronmanifest met die cues te maken. Het oude manifest, de bron-WAVs en rechtenverklaringen blijven ongewijzigd. Die opdracht maakt ook een nieuwe, lokale, gecontroleerde HTML-tijdlijn zonder audio te renderen. Je kunt het nieuwe manifest zo controleren voordat je met <code>--resume --full-set-wav</code> de echte WAV rendert.</p>
 </div></main>
 <script type="application/json" id="local-data">__DATA__</script>
@@ -219,20 +228,37 @@ const pairSelect=$('pair');
 for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
 let chosen=pairs[0],playing=null,stopAt=0,edited=false;
 let duetActive=false,duetSerial=0,duetVolumes=null,duetEnds=null;
-function cueProblem(){
+function cueProblemDetail(){
  for(let i=1;i<pairs.length;i++){
    const previous=pairs[i-1],current=pairs[i];
    if(previous.b!==current.a)
-     return 'De overgangsparen vormen geen doorlopende afspeelvolgorde.';
+     return {pairId:current.id,
+       message:'De overgangsparen vormen geen doorlopende afspeelvolgorde.',
+       guidance:'Overgang '+current.id+' sluit niet aan op het vorige nummer. '+
+       'De bronvolgorde moet in een nieuw manifest worden gecorrigeerd.'};
    const rate=bank[current.a].sample_rate;
    const priorEnd=Math.round(previous.b_start_seconds*rate)+
      Math.round(previous.beats*60/bank[previous.a].bpm*rate);
-   if(Math.round(current.a_start_seconds*rate)<priorEnd)
-     return current.id+' begint vóór de vorige inkomende overgang eindigt. '+
-       'Verplaats de uitgaande cue naar een later tijdstip.';
+   if(Math.round(current.a_start_seconds*rate)<priorEnd){
+     let earliest=Math.ceil(priorEnd/rate*100-1e-8)/100;
+     // The displayed hundredth must itself round to a valid PCM frame;
+     // do not understate the earliest playable cue due to float rounding.
+     if(Math.round(earliest*rate)<priorEnd)
+       earliest=Math.round((earliest+.01)*100)/100;
+     const max=Math.max(0,bank[current.a].duration-current.seconds);
+     const achievable=earliest<=max;
+     return {pairId:current.id,
+       message:current.id+' begint vóór de vorige inkomende overgang eindigt.',
+       guidance:achievable?
+         'Ga naar '+current.id+' (Deck A). Vroegste geldige startcue: '+
+          format(earliest)+'; kies dit tijdstip zelf en luister naar de overgang.':
+         'Ga naar '+current.id+'. Er past geen latere Deck A-cue in dit '+
+         'bronnummer; pas de eerdere Deck B-cue aan of maak een nieuw plan.'};
+   }
  }
  return null;
 }
+function cueProblem(){return cueProblemDetail()?.message||null;}
 // Reconstruct the planned complete WAV's nonempty chapters using the
 // exact local manually selected PCM16 source frames. No audio is rendered.
 function plannedSetTimeline(){
@@ -419,13 +445,17 @@ function refreshLiveTimeline(){
 }
 function refreshCueStatus(){
  refreshHistoryStatus();
- const problem=cueProblem() || (!plannedSetTimeline()?
+ const issue=cueProblemDetail();
+ const problem=(issue&&issue.message) || (!plannedSetTimeline()?
    'De opgegeven nummers vormen geen complete, renderbare mix. '+
    'Verbind alle bronnen precies eenmaal voordat je cuekeuzes bewaart.':null);
  $('save').disabled=!!problem;
  $('message').textContent=problem?'Nog niet opslaan: '+problem:
    edited?'Cues klaar. Download je keuzes voordat je de pagina sluit.':
    'Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.';
+ $('cue-problem-navigation').hidden=!issue;
+ $('jump-to-problem').disabled=!issue;
+ $('cue-problem-guidance').textContent=issue?issue.guidance:'';
  refreshLiveTimeline();
 }
 function format(seconds){const m=Math.floor(seconds/60);const s=(seconds%60).toFixed(2).padStart(5,'0');return String(m)+':'+s;}
@@ -505,6 +535,14 @@ function refresh(){
 }
 pairSelect.addEventListener('change',()=>{
  chosen=pairs.find(p=>p.id===pairSelect.value);refresh();
+});
+$('jump-to-problem').addEventListener('click',()=>{
+ const issue=cueProblemDetail();
+ if(!issue)return;
+ const target=pairs.find(p=>p.id===issue.pairId);
+ if(!target)return;
+ chosen=target;pairSelect.value=target.id;refresh();
+ $('wave-a').focus();
 });
 $('undo').addEventListener('click',undoCueEdit);
 $('redo').addEventListener('click',redoCueEdit);
