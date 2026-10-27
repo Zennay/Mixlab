@@ -773,6 +773,8 @@ beatgrid; normale beat-/vier-beatknoppen, Undo/Redo en de complete
 SHA-gebonden WAV-tijdlijn blijven werken. Dit is handmatige afstelling,
 geen automatische beat- of muziekkwaliteitsdetectie.
 
+De offline originele A/B-cue-editor biedt nu ook **bronluisteren met context**: beluister deck A of B met 2, 8 of 16 seconden aanloop en uitloop rond je handmatig gekozen cue. De browser pauzeert na het bronfragment; cuewaarden en originele WAVs blijven ongewijzigd. De twee originele bronnen worden afzonderlijk beluisterd: **dit is niet de werkelijk gemixte overgang**. Die beoordeel je pas in de gerenderde privé-WAV.
+
 In de offline A/B-cue-editor kun je nu ook je eerder gedownloade
 `mixlab-cue-selections.json` **terugladen**. De browser herstelt alle
 handmatige cues tegelijk, inclusief de verwachte complete-settijdlijn,

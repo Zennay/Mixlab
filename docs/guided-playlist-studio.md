@@ -46,6 +46,7 @@ bronmanifest in je muziekmap en:
 - de **Transition Studio** voor het vergelijken van echte gerenderde
   bass-swap, echo-exit, hard-cut en baseline varianten;
 - de visuele cue-editor als aanvullende **handmatige** referentie;
+  nu ook met 2/8/16 seconden originele bronmuziek vóór en ná iedere handmatige cue, afzonderlijk per deck en zonder render;
 - de offline **Set Composer** om een doorlopende route te kiezen,
   het keuzeplan op te slaan en [één complete WAV](offline-set-composer.md)
   plus [hoofdstukspeler](private-full-set-player.md) te maken.
