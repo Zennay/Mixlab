@@ -263,6 +263,33 @@ controleert daarna opnieuw de bestaande officiële manifest-,
 bronhash-, cue- en audioadmission. Er wordt **niets** stilzwijgend
 hersteld, opnieuw getimed of over bestaande uitvoer geschreven.
 `--resume` en `--manifest-only` mogen niet tegelijk worden gekozen.
+Een plan opnieuw bekijken doe je met `--resume --plan-html` (zonder
+`--manifest-only`); dit geeft nog geen daadwerkelijke audio of sessie.
+
+### Een bestaande playlist opnieuw als visueel plan openen
+
+Je kunt je al handmatig opgeslagen, brongebonden playlist opnieuw **als nieuwe
+privé-HTML-planpagina** bekijken zonder de dure Studio-/WAV-render te starten:
+
+~~~bash
+python3 -m mixlab.playlist_studio \
+  /private/music \
+  /private/music/my-playlist.private.json \
+  /private/nieuw-plan-project \
+  --resume --plan-html --plan-verify-wavs
+~~~
+
+Kies een **nieuwe**, nog niet bestaande sessienaam voor de geplande WAV/HTML;
+het bestaande manifest en de bronmuziek worden niet opnieuw aangemaakt of
+gewijzigd. De aparte privépagina is nog geen WAV of Studio. Zonder
+`--plan-verify-wavs` worden geen exacte tijden verzonnen; met de optie
+controleert MixLab de originele 44,1 kHz PCM16-bronnen en SHA-256 opnieuw
+voor de precieze tijdlijn. De eerder handmatig gekozen `--family` uit het
+manifest wordt hergebruikt en de oorspronkelijk goedgekeurde per-paarstijlen
+blijven gelden. Een gewijzigde WAV of ongeldige route doet de **expliciete
+heropenopdracht falen** in plaats van een lege pagina als succes te melden.
+Gebruik later een aparte `--resume --full-set-wav`-opdracht om werkelijk te
+renderen: combineer die niet met `--plan-html` of met `--ideas`.
 
 ## Privacy, herstel en echte beperkingen
 

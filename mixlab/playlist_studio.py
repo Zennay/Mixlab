@@ -213,8 +213,10 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         raise ValueError("--journey-plan is only for a fresh playlist, not --resume")
     if resume and manifest_only:
         raise ValueError("Choose either --resume or --manifest-only, never both")
-    if plan_html and not manifest_only:
-        raise ValueError("--plan-html requires --manifest-only")
+    if plan_html and not (manifest_only or resume):
+        raise ValueError("--plan-html requires --manifest-only or --resume")
+    if resume and plan_html and (full_set_wav is not None or ideas):
+        raise ValueError("Review a saved plan separately from WAV rendering or imported audio ideas")
     if plan_verify_wavs and not plan_html:
         raise ValueError("--plan-verify-wavs requires --plan-html")
     if manifest_only and ideas:
@@ -288,8 +290,10 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         idea_beats = next(iter(durations))
         if not 1 <= idea_beats <= 64:
             raise ValueError("Idea duration must be in the canonical 1..64-beat range")
-    if manifest_only:
-        response = {"ready": True, "stage": "manual-playlist-manifest",
+    if manifest_only or (resume and plan_html):
+        response = {"ready": True,
+                    "stage": ("resumed-private-playlist-plan" if resume
+                              else "manual-playlist-manifest"),
                     "private_source_manifest": str(manifest), "session_directory": None,
                     "private_plan_html": None, "planned_complete_wav": None,
                     "offline": True, "automatic_tempo_matching": False,
@@ -305,6 +309,10 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                     preview_workflow='guided', preview=True, verify_wavs=plan_verify_wavs,
                     preview_html=True)
             except (ValueError, TypeError, OSError, KeyError):
+                # Reopening is an explicit preview request. If it failed,
+                # never report a false successful preview to the operator.
+                if resume:
+                    raise
                 # Preserve the irreplaceable manually entered cues/rights
                 # even when this entirely optional companion cannot render.
                 response['warnings'] = [
@@ -316,7 +324,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 response['planned_mix_seconds'] = (
                     preview['complete_mix_duration'] if plan_verify_wavs else None)
                 write('Private playlist page ready. No session or audio rendered.')
-        write("Manifest saved. Render later with the same command and --resume.")
+        write("Saved playlist reopened without audio or source changes." if resume
+              else "Manifest saved. Render later with the same command and --resume.")
         return response
     # The guided one-command WAV is an explicit user request. Refuse an
     # impossible output path/short playlist/bad cue BEFORE decoding songs or
@@ -429,7 +438,7 @@ def main():
     parser.add_argument("--manifest-only", action="store_true",
                         help="Record the verified ordered playlist without decoding or rendering")
     parser.add_argument("--plan-html", action="store_true",
-                        help="With --manifest-only: create a private visual playlist page without rendering audio")
+                        help="With --manifest-only or --resume: create a private visual plan without rendering audio")
     parser.add_argument("--plan-verify-wavs", action="store_true",
                         help="With --plan-html: verify original PCM16 WAVs and show the expected mix length")
     parser.add_argument("--resume", action="store_true",
