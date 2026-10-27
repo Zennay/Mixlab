@@ -35,38 +35,51 @@ def _new_json(path, document):
     write_exclusive(path, document)
 
 
-def _answer(ask, message, allowed):
-    value = ask(message).strip()
-    if value not in allowed:
-        raise ValueError('Unrecognized decision; no music or approvals were inferred')
-    return value
+MAX_INPUT_ATTEMPTS = 3
+
+
+def _answer(ask, message, allowed, *, retry=False):
+    """Retry non-approval choices; consent/rights confirmation is one-shot."""
+    attempts = MAX_INPUT_ATTEMPTS if retry else 1
+    for attempt in range(attempts):
+        prompt = message if attempt == 0 else 'Invalid choice; try again: ' + message
+        value = ask(prompt).strip()
+        if value in allowed:
+            return value
+    raise ValueError('Unrecognized decision; no music or approvals were inferred')
 
 
 def _number(ask, label, lower, upper, integer=False):
-    raw = ask(label).strip()
-    try:
-        value = int(raw) if integer else float(raw)
-    except (ValueError, OverflowError) as exc:
-        raise ValueError('Cue value must be a finite number') from exc
+    """Give operators limited chances to correct cues, not approvals."""
     import math
-    if not math.isfinite(value) or not lower <= value <= upper or (integer and str(value) != raw):
-        raise ValueError('Cue value is outside the supported range')
-    return value
+    for attempt in range(MAX_INPUT_ATTEMPTS):
+        prompt = label if attempt == 0 else 'Invalid cue value; try again: ' + label
+        raw = ask(prompt).strip()
+        try:
+            value = int(raw) if integer else float(raw)
+        except (ValueError, OverflowError):
+            continue
+        if (math.isfinite(value) and lower <= value <= upper and
+                (not integer or str(value) == raw)):
+            return value
+    raise ValueError('Cue value is invalid after three attempts')
 
 
 def _key_review(ask, draft, destination):
     document = json.loads(draft.read_text())
-    for row in document['keys']:
-        action = _answer(ask, f"Source {row['id']} · proposed key {row['proposed_key'] or 'unknown'} ({row['proposed_source']}); [a]ccept measured, [o]verride, [u]nknown: ", {'a','o','u'})
+    for number, row in enumerate(document['keys'], 1):
+        index = f'{number}/{len(document["keys"])}'
+        can_accept = row['proposed_source'] == 'measured-heuristic' and row['proposed_key'] is not None
+        options = {'a', 'o', 'u'} if can_accept else {'o', 'u'}
+        choices = '[a]ccept measured, [o]verride, [u]nknown' if can_accept else '[o]verride, [u]nknown'
+        action = _answer(ask, f"Source {index} · {row['id']} · proposed key {row['proposed_key'] or 'unknown'} ({row['proposed_source']}); {choices}: ", options, retry=True)
         if action == 'a':
             if row['proposed_source'] != 'measured-heuristic' or row['proposed_key'] is None:
                 raise ValueError('No measured key to accept; choose override or unknown')
             row['decision'] = 'accept'
             row['confirmed_key'] = row['proposed_key']
         elif action == 'o':
-            key = ask(f"Enter independently checked major/minor key for {row['id']} (e.g. C major): ").strip()
-            if key not in KEYS:
-                raise ValueError('Unsupported or unconfirmed musical key')
+            key = _answer(ask, f"Enter independently checked major/minor key for {row['id']} (e.g. C major): ", KEYS, retry=True)
             row['decision'] = 'override'
             row['confirmed_key'] = key
         else:
@@ -81,13 +94,14 @@ def _key_review(ask, draft, destination):
 
 def _cue_review(ask, draft, destination):
     document = json.loads(draft.read_text())
-    for row in document['pairs']:
+    for number, row in enumerate(document['pairs'], 1):
         name, a, b = row['pair_id'], row['a'], row['b']
-        row['beats'] = _number(ask, f'{name}: checked beat count for {a} to {b}: ', 1, 64, integer=True)
-        row['a_start'] = _number(ask, f'{name}: outgoing {a} cue in seconds: ', 0, 250)
-        row['b_start'] = _number(ask, f'{name}: incoming {b} cue in seconds: ', 0, 250)
-        _answer(ask, f'{name}: enter CUES-VERIFIED after personally checking both cues: ', {'CUES-VERIFIED'})
-        _answer(ask, f'{name}: enter PRIVATE-ONLY to declare authorization for private processing: ', {'PRIVATE-ONLY'})
+        step = f'{number}/{len(document["pairs"])} · {name}'
+        row['beats'] = _number(ask, f'{step}: checked beat count for {a} to {b}: ', 1, 64, integer=True)
+        row['a_start'] = _number(ask, f'{step}: outgoing {a} cue in seconds: ', 0, 250)
+        row['b_start'] = _number(ask, f'{step}: incoming {b} cue in seconds: ', 0, 250)
+        _answer(ask, f'{step}: enter CUES-VERIFIED after personally checking both cues: ', {'CUES-VERIFIED'})
+        _answer(ask, f'{step}: enter PRIVATE-ONLY to declare authorization for private processing: ', {'PRIVATE-ONLY'})
         row['human_cues_confirmed'] = True
         row['permission_for_private_render_confirmed'] = True
     _new_json(destination, document)
