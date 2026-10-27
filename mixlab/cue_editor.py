@@ -149,7 +149,14 @@ canvas{width:100%;height:152px;background:#10121b;border:1px solid #454a62;borde
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
 .row .time{font-variant-numeric:tabular-nums;min-width:75px;font-weight:700}
 .range{width:100%;accent-color:#bdabff}.buttons{display:flex;gap:8px;flex-wrap:wrap}
+.zoom-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0}
+.zoom-controls button[aria-pressed=true]{border-color:#c8b4ff;background:#3d335b}
+.zoom-controls span{font-variant-numeric:tabular-nums;color:#c6d8dd}
 audio{width:100%;margin-top:10px} .footer{margin-top:28px;padding:20px;background:#171a27;border:1px solid #3f4358;border-radius:16px}
+.duet-balance{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0}
+.duet-balance label{flex:1;min-width:180px}
+.duet-balance output{font-variant-numeric:tabular-nums;color:#d9c8ff;font-weight:750}
+.duet-balance input{width:100%;accent-color:#bdabff}
 .timeline-summary{background:#211d35;border:1px solid #6a5d92;padding:14px;
   margin:12px 0;border-radius:12px;font-variant-numeric:tabular-nums}
 #mix-timeline{list-style:none;padding:0;margin:14px 0;display:grid;gap:9px}
@@ -179,16 +186,16 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <button id="cue-import" type="button">Laad opgeslagen cues</button>
 </div>
 <p id="cue-import-status" role="status" aria-live="polite">Nog geen cuekeuzes geladen.</p>
-<p class="lede">Fijn afstellen: gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
+<p class="lede">Fijn afstellen: kies per deck 1×, 4× of 16× golfvormzoom rond je eigen cue. Klikken op de ingezoomde golfvorm kiest de juiste absolute positie; zoom verandert geen cue. Gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
-<p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
+<p class="summary" id="info-a"></p><div class="zoom-controls" role="group" aria-label="Golfvormzoom deck A"><button type="button" id="zoom-all-a" aria-pressed="true">Heel nummer · 1×</button><button type="button" id="zoom-4-a" aria-pressed="false">4×</button><button type="button" id="zoom-16-a" aria-pressed="false">16×</button><span id="zoom-status-a" role="status">Overzicht volledige track</span></div><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-a"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-a" aria-label="Tijdstip uitgaande cue"></div>
 <div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="fineprev-a" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-a" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-a">▶ Beluister A</button></div>
 <audio id="audio-a" controls preload="metadata"></audio></section>
 <section class="lane"><small>INKOMEND / DECK B</small><h2 id="name-b"></h2>
-<p class="summary" id="info-b"></p><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Kies inkomende cuepositie op de golfvorm"></canvas>
+<p class="summary" id="info-b"></p><div class="zoom-controls" role="group" aria-label="Golfvormzoom deck B"><button type="button" id="zoom-all-b" aria-pressed="true">Heel nummer · 1×</button><button type="button" id="zoom-4-b" aria-pressed="false">4×</button><button type="button" id="zoom-16-b" aria-pressed="false">16×</button><span id="zoom-status-b" role="status">Overzicht volledige track</span></div><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Kies inkomende cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-b"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-b" aria-label="Tijdstip inkomende cue"></div>
 <div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="fineprev-b" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-b" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-b">▶ Beluister B</button></div>
@@ -199,6 +206,15 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <p>Hoor beide originele WAV-bronnen tegelijk vanaf jouw handmatig gekozen
 startcues, op laag volume. Dit is alleen een ruwe timingcontrole;
 geen definitieve mix, crossfade, beatmatch of MixLab-DSP-render.</p>
+<div class="duet-balance" role="group" aria-label="Luisterbalans voor de twee originele decks">
+<label for="duet-volume-a">Deck A · <output id="duet-value-a">30%</output>
+<input id="duet-volume-a" type="range" min="0" max="50" step="5" value="30"
+aria-label="Luistervolume uitgaand deck A, procent"></label>
+<label for="duet-volume-b">Deck B · <output id="duet-value-b">30%</output>
+<input id="duet-volume-b" type="range" min="0" max="50" step="5" value="30"
+aria-label="Luistervolume inkomend deck B, procent"></label></div>
+<p>Pas alleen het lokale A+B-voorluistervolume aan. Je originele WAV's,
+handmatige cuekeuzes en de definitieve MixLab-mix worden niet aangepast.</p>
 <div class="buttons"><button type="button" class="primary" id="play-ab">▶ Huidige cues A + B</button>
 <button type="button" id="play-original-ab" disabled>▶ Opgeslagen cues A + B</button>
 <button type="button" id="stop-ab" disabled>■ Stop beide decks</button></div>
@@ -236,6 +252,17 @@ const pairSelect=$('pair');
 for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
 let chosen=pairs[0],playing=null,stopAt=0,edited=false;
 let duetActive=false,duetSerial=0,duetVolumes=null,duetEnds=null;
+function previewGain(side){
+  const value=Number($("duet-volume-"+side).value);
+  return Number.isFinite(value)?Math.max(0,Math.min(.5,value/100)):.3;
+}
+for(const side of ["a","b"]){
+  $("duet-volume-"+side).addEventListener("input",()=>{
+    const gain=previewGain(side);
+    $("duet-value-"+side).textContent=Math.round(gain*100)+"%";
+    if(duetActive)$("audio-"+side).volume=gain;
+  });
+}
 function cueProblemDetail(){
  for(let i=1;i<pairs.length;i++){
    const previous=pairs[i-1],current=pairs[i];
@@ -516,31 +543,58 @@ function stopPlayback(){
     chosen.a_start_seconds===saved.a&&chosen.b_start_seconds===saved.b);
   $('stop-ab').disabled=true;
 }
+const waveformZoom={a:1,b:1};
+function visibleWaveform(side){
+ const track=deck(side),span=track.duration/waveformZoom[side];
+ const cue=chosen[side+'_start_seconds'];
+ return {left:Math.max(0,Math.min(track.duration-span,cue-span/2)),span};
+}
+function setWaveformZoom(side,zoom){
+ if(![1,4,16].includes(zoom))return;
+ waveformZoom[side]=zoom;
+ refreshSide(side); // purely visual; do not modify cues or edit history
+}
+for(const side of ['a','b']){
+ for(const [id,level] of [['all',1],['4',4],['16',16]])
+   $('zoom-'+id+'-'+side).addEventListener('click',()=>setWaveformZoom(side,level));
+}
 function draw(side){
  const t=deck(side),canvas=$('wave-'+side),ctx=canvas.getContext('2d');
  const w=canvas.width,h=canvas.height,signal=t.waveform;
+ const view=visibleWaveform(side);
  ctx.clearRect(0,0,w,h);
  ctx.fillStyle='#111521';ctx.fillRect(0,0,w,h);
  let max=.01;
  for(const v of signal){if(v>max)max=v;}
  ctx.fillStyle='#8c83dc';
  for(let x=0;x<w;x++){
-    const l=Math.floor(x*signal.length/w),r=Math.max(l+1,Math.floor((x+1)*signal.length/w));
-    let peak=0;for(let k=l;k<Math.min(r,signal.length);k++)peak=Math.max(peak,signal[k]);
-    const height=Math.max(1,Math.min(h-14,peak/max*(h-14)));
-    ctx.fillRect(x,(h-height)/2,1,height);
+   const from=view.left+x/w*view.span;
+   const to=view.left+(x+1)/w*view.span;
+   const l=Math.max(0,Math.min(signal.length-1,Math.floor(from/t.waveform_hop_seconds)));
+   const r=Math.max(l+1,Math.min(signal.length,Math.ceil(to/t.waveform_hop_seconds)));
+   let peak=0;for(let k=l;k<r;k++)peak=Math.max(peak,signal[k]);
+   const height=Math.max(1,Math.min(h-14,peak/max*(h-14)));
+   ctx.fillRect(x,(h-height)/2,1,height);
  }
- const start=chosen[side+'_start_seconds'],left=start/t.duration*w;
- const size=chosen.seconds/t.duration*w;
+ const start=chosen[side+'_start_seconds'];
+ const left=(start-view.left)/view.span*w;
+ const size=chosen.seconds/view.span*w;
  ctx.fillStyle='rgba(177,240,207,.19)';ctx.fillRect(left,0,size,h);
- ctx.strokeStyle='#b3f5d8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(left,0);ctx.lineTo(left,h);ctx.stroke();
+ ctx.strokeStyle='#b3f5d8';ctx.lineWidth=3;ctx.beginPath();
+ ctx.moveTo(left,0);ctx.lineTo(left,h);ctx.stroke();
  ctx.fillStyle='#dae0f3';ctx.font='13px system-ui';
- ctx.fillText(format(0),9,h-9);ctx.fillText(format(t.duration),w-65,h-9);
+ ctx.fillText(format(view.left),9,h-9);
+ ctx.fillText(format(view.left+view.span),w-75,h-9);
 }
 function refreshSide(side){
  const t=deck(side),time=chosen[side+'_start_seconds'];
  $('time-'+side).textContent=format(time);
  $('range-'+side).value=String(time);
+ const view=visibleWaveform(side),zoom=waveformZoom[side];
+ for(const [id,level] of [['all',1],['4',4],['16',16]])
+   $('zoom-'+id+'-'+side).setAttribute('aria-pressed',String(zoom===level));
+ $('zoom-status-'+side).textContent=zoom+'× · '+
+   format(view.left)+'–'+format(view.left+view.span);
  draw(side);
 }
 function refresh(){
@@ -626,7 +680,10 @@ $('cue-import').addEventListener('click',async()=>{
 for(const side of ['a','b']){
  const t=$('range-'+side);t.addEventListener('input',()=>setCue(side,Number(t.value)));
  const canvas=$('wave-'+side);
- function moveFromCanvas(fraction){setCue(side,fraction*deck(side).duration);}
+ function moveFromCanvas(fraction){
+  const view=visibleWaveform(side);
+  setCue(side,view.left+Math.max(0,Math.min(1,fraction))*view.span);
+ }
  canvas.addEventListener('click',e=>moveFromCanvas((e.clientX-canvas.getBoundingClientRect().left)/canvas.getBoundingClientRect().width));
  canvas.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setCue(side,chosen[side+'_start_seconds']+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?.1:60/deck(side).bpm),Boolean(e.shiftKey));}});
  for(const [name,beats] of [['prev',-1],['next',1],['barprev',-4],['barnext',4]]){
@@ -660,7 +717,7 @@ $('play-original-ab').addEventListener('click',async()=>{
   duetVolumes=[a.volume,b.volume];
   duetEnds=[saved.a+chosen.seconds,saved.b+chosen.seconds];
   a.currentTime=saved.a;b.currentTime=saved.b;
-  a.volume=.3;b.volume=.3;
+  a.volume=previewGain('a');b.volume=previewGain('b');
   duetActive=true;
   $('play-ab').disabled=true;
   $('play-original-ab').disabled=true;
@@ -689,7 +746,7 @@ $('play-ab').addEventListener('click',async()=>{
             chosen.b_start_seconds+chosen.seconds];
   a.currentTime=chosen.a_start_seconds;
   b.currentTime=chosen.b_start_seconds;
-  a.volume=.3;b.volume=.3;
+  a.volume=previewGain('a');b.volume=previewGain('b');
   duetActive=true;
   $('play-ab').disabled=true;$('stop-ab').disabled=false;
   $('ab-status').textContent='Huidige cues A + B: '+chosen.id+' · '+

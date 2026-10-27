@@ -110,6 +110,12 @@ werkelijke hoofdstuktijden. Alleen het bestaande privé-JSON is later weer
 terug te laden; TXT vervangt geen beveiligde notitieback-up of
 onafhankelijk luisteronderzoek.
 
+In de lokale visuele cue-editor zijn de twee **A+B-voorluistervolumes**
+nu afzonderlijk regelbaar (0–50%; standaard 30%). Daarmee kun je
+handmatig een binnenkomend of uitgaand nummer duidelijker horen tijdens
+het vergelijken van huidige en opgeslagen cues. De echte WAV,
+renderfamilies, originele rechten en cuekeuzes veranderen niet.
+
 De privé Full Set Player heeft ook een **automatische lijst van overgangen
 met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
 echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
@@ -811,6 +817,8 @@ renderen. Alle tijden zijn een PCM-framegebaseerde inschatting; echte
 muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige wijziging
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
+
+De offline A/B-cue-editor heeft nu ook **1×, 4× en 16× lokale waveformzoom per deck**, met een rond de handmatig gekozen cue gecentreerde tijdbalk. Inzoomen zelf verandert geen cues of bronbestanden; klikken in de zoomweergave kiest een echte absolute WAV-tijd.
 
 De offline A/B-cue-editor ondersteunt nu ook precieze **± 0,10 s**
 handmatige cue-aanpassingen op beide decks, via knoppen of Shift +
