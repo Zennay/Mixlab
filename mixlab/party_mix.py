@@ -20,13 +20,15 @@ from .set_player import publish_player
 
 def render_party_mix(manifest, session_directory, output_wav, transitions=(),
                      *, family=None, timeout_seconds=600, suggestions=False,
-                     preview=False):
+                     preview=False, verify_wavs=False):
     """Render the source Studio and chosen continuous set in one safe run.
 
     The expensive private Studio is deliberately retained if the final WAV
     fails: the caller can correct their selection and retry the export without
     re-importing private media. No preexisting files are modified.
     """
+    if verify_wavs and not preview:
+        raise ValueError("--verify-wavs requires --preview")
     source = Path(manifest).absolute()
     session_dir = _private_project_dir(session_directory, source)
     output = Path(output_wav).absolute()
@@ -66,6 +68,17 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
         if previous is not None and pair.get("a") != previous:
             raise ValueError("Selected pairs do not form an outgoing-to-incoming song route")
         previous = pair.get("b")
+    # All source tracks must appear exactly once, not just all pair IDs.
+    catalog = declared.get('tracks')
+    if not isinstance(catalog, list) or not 2 <= len(catalog) <= 11:
+        raise ValueError('A complete mix needs 2..11 registered source tracks')
+    ids = [t.get('id') for t in catalog if isinstance(t, dict)]
+    route_ids = [by_id[selected[0][0]]['a']] + [by_id[pid]['b'] for pid, _ in selected]
+    if (len(ids) != len(catalog) or
+            any(not isinstance(i, str) or not i for i in ids) or
+            len(ids) != len(set(ids)) or len(route_ids) != len(ids) or
+            len(set(route_ids)) != len(route_ids) or set(route_ids) != set(ids)):
+        raise ValueError('Complete playlist must use every declared track exactly once')
     # Cue overlap is a full-set failure, not merely a Studio validation.
     # Catch it now, before media import/real transition rendering starts.
     total_transition_seconds = 0.0
@@ -91,16 +104,18 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
         if not all(isinstance(t, dict) and 'first_downbeat_seconds' in t for t in tracks):
             raise ValueError('Suggestions require a confirmed first downbeat per track')
     if preview:
-        return dict(status='manual-plan-preview-only-no-files-created',
-                    source_tracks=len(selected) + 1, transition_count=len(selected),
-                    track_order=[transitions_plan[0]['from_track']] +
-                                [entry['to_track'] for entry in transitions_plan],
-                    transitions=transitions_plan,
-                    total_transition_seconds=round(total_transition_seconds, 4),
-                    complete_mix_duration='not-known-until-source-PCM-validation',
-                    audio_rendered=False, source_audio_validated=False,
-                    source_rights_verified=False, automatic_beatmatching=False,
-                    musical_quality_claim=False)
+        result = dict(status='manual-plan-preview-only-no-files-created',
+                      source_tracks=len(route_ids), transition_count=len(selected),
+                      track_order=route_ids, transitions=transitions_plan,
+                      total_transition_seconds=round(total_transition_seconds, 4),
+                      complete_mix_duration='not-known-until-source-PCM-validation',
+                      audio_rendered=False, source_audio_validated=False,
+                      source_rights_verified=False, automatic_beatmatching=False,
+                      musical_quality_claim=False)
+        if verify_wavs:
+            from .playlist_wav_preview import inspect_playlist
+            result.update(inspect_playlist(source, catalog, route_ids, transitions_plan))
+        return result
     # Full Studio must render every pair in order to satisfy user selections.
     studio_page = make_session(source, session_dir, suggestions=suggestions,
                                timeout_seconds=timeout_seconds)
@@ -137,12 +152,15 @@ def main():
                         help="Make independent manual-grid energy proposals without applying them")
     parser.add_argument("--preview", action="store_true",
                         help="Show the manual track route, cue times and styles without creating audio or files")
+    parser.add_argument("--verify-wavs", action="store_true",
+                        help="With --preview: check canonical PCM16 WAV hashes and calculate the exact full-set duration")
     args = parser.parse_args()
     try:
         result = render_party_mix(args.source_manifest, args.new_session_directory,
                                   args.new_output_wav, args.transition or (), family=args.family,
                                   timeout_seconds=args.timeout_seconds,
-                                  suggestions=args.suggestions, preview=args.preview)
+                                  suggestions=args.suggestions, preview=args.preview,
+                                  verify_wavs=args.verify_wavs)
     except (ValueError, TypeError, OSError, KeyError) as exc:
         parser.exit(2, f"MixLab party mix: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
