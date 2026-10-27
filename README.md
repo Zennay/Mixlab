@@ -80,7 +80,12 @@ opgegeven nummers moeten exact eenmaal in de route staan voordat er
 überhaupt een complete WAV wordt gepubliceerd.
 
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
-overgang en CUE-export. De complete set die je via `playlist_studio` of
+overgang en CUE-export. Je kunt nu **iedere werkelijk gerenderde overgang
+lokaal blijven herhalen** voor een handmatige beluistering: kies
+`Herhaal overgang` op het betreffende hoofdstuk, spring verder of kies
+`Stop herhalen` om af te sluiten. Eventmodus zet deze auditie-loop altijd
+uit; de daadwerkelijke set-WAV, private receipts en luisterstudie-evidence
+worden door deze afspeelknop niet veranderd. De complete set die je via `playlist_studio` of
 `party_mix` maakt, toont daarbij herkenbare lokale songbestandsnamen en
 song-A→song-B-overgangen in hoofdstukken en eventmodus. Dit zijn uitsluitend
 private weergavenamen; de WAV-SHA, de originele rechtenverklaring en de

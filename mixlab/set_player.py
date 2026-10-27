@@ -41,8 +41,14 @@ button:focus-visible{outline:3px solid #ccbcff;outline-offset:2px}button:hover{b
 #chapters{list-style:none;padding:0;margin:0}#chapters li{display:grid;
 grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1px solid #33374b;padding:13px 0}
 #chapters li span{overflow-wrap:anywhere}#event-title{overflow-wrap:anywhere}
+.chapter-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.chapter-actions button{padding:10px 12px}
+.chapter-actions button[aria-pressed=true]{background:#256153;border-color:#75e3bd}
+#transition-audition-status{color:#bee6d8;min-height:1.5em}
+
 #chapters li[aria-current=true]{background:#292641;border-radius:10px;padding-left:10px;padding-right:10px}
-@media(max-width:600px){#chapters li{grid-template-columns:65px 1fr;gap:8px}#chapters li button{grid-column:1/3}}
+@media(max-width:600px){#chapters li{grid-template-columns:65px 1fr;gap:8px}
+.chapter-actions{grid-column:1/3;justify-content:stretch}.chapter-actions button{flex:1}}
 .time{font-variant-numeric:tabular-nums;color:#c6c2dc}small{color:#9faac2}
 button:disabled{opacity:.42;cursor:not-allowed}
 #event-board{display:none}
@@ -91,7 +97,11 @@ aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
 <div class="controls"><button id="prev">◀ Vorige passage</button><button id="next">Volgende passage ▶</button></div>
 <p class="muted" id="meta"></p>
 </section>
-<section class="section"><h2>Interactieve tijdlijn</h2><ol id="chapters"></ol></section>
+<section class="section"><h2>Interactieve tijdlijn</h2>
+<p class="muted">Luister naar een overgang of herhaal precies dat fragment.
+Herhalen stopt zodra je naar een ander hoofdstuk springt of de eventmodus opent.</p>
+<p id="transition-audition-status" role="status" aria-live="polite">Geen overgang in herhaling.</p>
+<ol id="chapters"></ol></section>
 <section class="section"><h2>Neem je cuepunten mee</h2>
 <p class="muted">Bewaar de hoofdstukken als JSON (inclusief SHA-binding) of als
 standaard CUE-indeling voor lokale muziekspelers. Beide bestanden bevatten geen bronpaden.</p>
@@ -110,6 +120,9 @@ const eventPlay=document.getElementById("event-play");
 const eventExit=document.getElementById("event-exit");
 let eventMode=false;
 const chapterButtons=[];
+const loopButtons=[];
+let loopIndex=null;
+const auditionStatus=document.getElementById("transition-audition-status");
 audio.src="./"+encodeURIComponent(data.wav_name);
 function drawWaveform(){
   const width=Math.max(1,Math.round(waveform.clientWidth*(window.devicePixelRatio||1)));
@@ -135,13 +148,15 @@ function drawWaveform(){
 waveform.addEventListener("click",e=>{
   if(eventMode)return;
   const box=waveform.getBoundingClientRect();
-  if(box.width>0)audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
-    (e.clientX-box.left)/box.width*data.duration_seconds));
+  if(box.width>0){clearTransitionLoop();
+    audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
+      (e.clientX-box.left)/box.width*data.duration_seconds));}
 });
 waveform.addEventListener("keydown",e=>{
   if(eventMode)return;
   if(e.key!=="ArrowLeft" && e.key!=="ArrowRight")return;
   e.preventDefault();
+  clearTransitionLoop();
   audio.currentTime=Math.max(0,Math.min(data.duration_seconds,
     (audio.currentTime||0)+(e.key==="ArrowRight"?5:-5)));
 });
@@ -157,8 +172,41 @@ function format(t) {
     String(Math.floor(n%3600/60)).padStart(2,"0")+":"+
     String(n%60).padStart(2,"0");
 }
+function clearTransitionLoop(){
+  loopIndex=null;
+  loopButtons.forEach(({button,label})=>{
+    button.setAttribute("aria-pressed","false");
+    button.setAttribute("aria-label","Herhaal overgang: "+label);
+    button.textContent="Herhaal overgang";
+  });
+  auditionStatus.textContent="Geen overgang in herhaling.";
+}
+function toggleTransitionLoop(i){
+  if(eventMode)return; // a live set must never accidentally replay a section
+  if(loopIndex===i){clearTransitionLoop();return;}
+  const ch=data.chapters[i];
+  if(ch.kind!=="transition" || !Number.isFinite(ch.start_seconds) ||
+     !Number.isFinite(ch.duration_seconds) || ch.duration_seconds<=0)return;
+  clearTransitionLoop();
+  loopIndex=i;
+  const label=ch.display_name||ch.label;
+  loopButtons.forEach(({button,index})=>{
+    if(index===i){button.setAttribute("aria-pressed","true");
+      button.setAttribute("aria-label","Stop herhalen: "+label);
+      button.textContent="Stop herhalen";}
+  });
+  auditionStatus.textContent="Herhaalt: "+label;
+  audio.currentTime=ch.start_seconds;
+  audio.play().catch(()=>{
+    if(loopIndex===i){
+      clearTransitionLoop();
+      auditionStatus.textContent="Lokaal WAV-bestand kan niet worden afgespeeld.";
+    }
+  });
+}
 function jump(n){
   if(eventMode)return; // no accidental live-set seeks from chapter controls
+  clearTransitionLoop();
   audio.currentTime=data.chapters[n].start_seconds;
   audio.play().catch(()=>{now.textContent="Lokaal WAV-bestand kan niet worden afgespeeld.";});
 }
@@ -170,9 +218,20 @@ data.chapters.forEach((ch,i)=>{
   title.textContent=ch.kind==="transition"?
     "Overgang "+(ch.display_name||ch.label)+" · "+ch.family.replaceAll("_"," "):
     (ch.display_name||"Track "+ch.label);
+  const actions=document.createElement("div");actions.className="chapter-actions";
   const button=document.createElement("button");button.textContent="Luister vanaf hier";
   button.addEventListener("click",()=>jump(i));chapterButtons.push(button);
-  li.append(time,title,button);list.append(li);rows.push(li);
+  actions.append(button);
+  if(ch.kind==="transition"){
+    const loopButton=document.createElement("button");
+    loopButton.textContent="Herhaal overgang";
+    loopButton.setAttribute("aria-pressed","false");
+    loopButton.setAttribute("aria-label","Herhaal overgang: "+(ch.display_name||ch.label));
+    loopButton.addEventListener("click",()=>toggleTransitionLoop(i));
+    actions.append(loopButton);loopButtons.push({button:loopButton,index:i,
+      label:ch.display_name||ch.label});
+  }
+  li.append(time,title,actions);list.append(li);rows.push(li);
 });
 let current=0;
 function highlight(){
@@ -189,8 +248,35 @@ function highlight(){
     (data.chapters[current].kind==="transition"?"overgang":"track")+") · "+format(t);
   updateEventClock(t);
 }
-audio.addEventListener("timeupdate",highlight);
-audio.addEventListener("seeked",highlight);
+function enforceTransitionLoop(){
+  if(loopIndex===null || eventMode)return;
+  const chapter=data.chapters[loopIndex];
+  const start=chapter.start_seconds;
+  const end=Math.min(data.duration_seconds,start+chapter.duration_seconds);
+  // Loop only the already rendered, SHA-bound transition WAV segment.
+  // Browser timeupdate can be sparse, so seek when the segment is passed.
+  if(audio.currentTime>=end-.012 && !audio.seeking){
+    audio.currentTime=start;
+    if(audio.paused)audio.play().catch(()=>{clearTransitionLoop();});
+  }
+}
+audio.addEventListener("timeupdate",()=>{enforceTransitionLoop();highlight();});
+audio.addEventListener("seeked",()=>{
+  if(loopIndex!==null){
+    const part=data.chapters[loopIndex];
+    if(audio.currentTime<part.start_seconds-.03 ||
+       audio.currentTime>part.start_seconds+part.duration_seconds+.03)
+      clearTransitionLoop();
+  }
+  highlight();
+});
+audio.addEventListener("ended",()=>{
+  if(loopIndex!==null && !eventMode){
+    const part=data.chapters[loopIndex];
+    audio.currentTime=part.start_seconds;
+    audio.play().catch(()=>{clearTransitionLoop();});
+  }
+});
 audio.addEventListener("play",()=>{eventPlay.textContent="❚❚ Pauzeer";});
 audio.addEventListener("pause",()=>{eventPlay.textContent="▶ Hervat";});
 function updateEventClock(t){
@@ -206,6 +292,7 @@ function updateEventClock(t){
     "Geen verdere overgang · resterend tot einde "+format(seconds);
 }
 function enterEventMode(active){
+  if(active)clearTransitionLoop(); // entering live mode always cancels audition
   eventMode=active;
   document.body.classList.toggle("event-mode",active);
   audio.controls=!active;
@@ -215,6 +302,7 @@ function enterEventMode(active){
   document.getElementById("prev").disabled=disabled;
   document.getElementById("next").disabled=disabled;
   chapterButtons.forEach(button=>{button.disabled=disabled;});
+  loopButtons.forEach(({button})=>{button.disabled=disabled;});
   eventToggle.setAttribute("aria-pressed",String(active));
   eventToggle.textContent=active?"Verlaat eventmodus":"⛶ Eventmodus";
   if(active){
