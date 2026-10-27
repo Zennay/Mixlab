@@ -18,6 +18,7 @@ from .study import verify_study
 from ..cli import digest, dump, write_review
 from ..dsp import render
 from ..ingest import validate_library
+from ..loudness import match_group
 from ..models import Recipe
 
 
@@ -91,6 +92,23 @@ def build(manifest_path, study_path, destination, seed=None):
                 evidence.append({"pair": pair["id"], "study_pair": entry["pair_id"], "family": family,
                                  "recipe": asdict(recipe), "metrics": metrics,
                                  "source_hashes": [a["sha256"], b["sha256"]], "output_sha256": digest(path)})
+            # Both sides of the actual frozen A/B trial must be equally loud
+            # before any listener bytes or pack_id are published. Attenuate
+            # only: never boost or silently accept an undefined loudness.
+            matched = match_group(outputs, private)
+            for row in evidence[-2:]:
+                member = matched["members"][row["family"]]
+                outputs[row["family"]] = member["path"]
+                row["render_sha256"] = row["output_sha256"]
+                row["output_sha256"] = digest(member["path"])
+                row["loudness"] = {
+                    "method": matched["method"], "policy": matched["policy"],
+                    "target_lufs": matched["target_lufs"],
+                    "before_lufs": member["before"]["integrated_lufs"],
+                    "after_lufs": member["after"]["integrated_lufs"],
+                    "gain_db": member["gain_db"],
+                    "after_sample_peak_dbfs": member["after"]["sample_peak_dbfs"],
+                }
             trial = f"trial-{number:03d}"
             order = ["baseline", entry["candidate_family"]]
             if not baseline_first[number - 1]:
@@ -109,7 +127,9 @@ def build(manifest_path, study_path, destination, seed=None):
             "study_id": study["study_id"], "renders": evidence, "pack_id": pack_id,
             "randomization": {"seed": seed, "mode": "seeded-smoke" if seed is not None else "system-random",
                               "side_schedule": f"balanced overall and per family, max run {MAX_SIDE_RUN}"},
-            "limitations": ["not loudness-normalized", "manual beatgrid", "no listening-quality claim"]})
+            "loudness_matching": "bs1770-4-attenuate-to-quietest-per-frozen-pair",
+            "limitations": ["integrated loudness matched; not short-term or true-peak matched",
+                            "manual beatgrid", "no listening-quality claim"]})
         write_review(review / "index.html", cards, pack_id)
         dump(root / "receipt.json", {"schema_version": 1, "pack_id": pack_id, "trial_count": len(cards),
                                      "render_count": len(evidence), "status": "rendered-not-listener-validated",

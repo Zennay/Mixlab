@@ -45,8 +45,12 @@ The checker:
 
 Warning when the candidate's **strict >50%** plurality reverses on
 one reviewer omission or the share changes by at least **20 percentage
-points**; also warning when there are fewer than five decisive votes
-or an official audio-confound warning. The heuristic is conservative
+points**; also warning when there are fewer than five decisive votes.
+Official audio confounds remain separately reported in
+`official_audio_confounds_reported` and MUST be reviewed by the audio/M1
+quality gate, even when reviewer omission has no effect and this command
+returns 0. That exit code never certifies audio validity, real human identity,
+licensing, or musical preference. The heuristic is conservative
 and arbitrary, not a significance test, accusation of unreliable
 reviewers, assessment of independent personhood or a release rule.
 A fully unanimous **synthetic** study can be *stable* under omissions,

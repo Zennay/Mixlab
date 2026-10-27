@@ -173,8 +173,11 @@ def inspect_real_reviewer_influence(study_path, pack_path, expected_study_id, ra
         )
         # 20 percentage points is only a conservative reviewer-influence
         # heuristic, *not* a statistical threshold or proof of fake reviews.
-        review = (not enough or audio_confounds or
-                  plurality_flip is True or
+        # Reviewer influence is a voting-stability question, independent of
+        # audio validity. Keep official audio confounds visible in the report;
+        # the separate sound-quality/M1 gate must review them regardless of
+        # this screen's exit status (which is NEVER a release approval).
+        review = (not enough or plurality_flip is True or
                   (max_shift is not None and max_shift >= _SHIFT_REVIEW))
         return {
             "schema_version": 1,
