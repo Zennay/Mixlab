@@ -15,10 +15,24 @@ def clock(seconds):
     return f'{whole//60:02}:{whole%60:02}' + (f',{fraction}' if fraction else '')
 
 
-def render(plan):
+def local_song_title(source_path):
+    """Human-readable basename only; never render original directories."""
+    if not isinstance(source_path, str):
+        raise ValueError('Invalid music filename in private manifest')
+    name = Path(source_path).stem.strip()
+    # User-controlled private filenames can be unusually long or contain
+    # control characters. Bound the *display*, not the source manifest.
+    label = ' '.join(name.split())[:96]
+    return label or 'Naamloos nummer'
+
+
+def render(plan, display_names=None):
     route, pairs = plan['track_order'], plan['transitions']
     if not isinstance(route, list) or not isinstance(pairs, list) or not 2 <= len(route) <= 11 or len(pairs) != len(route)-1:
         raise ValueError('Invalid manual plan')
+    if display_names is not None and (not isinstance(display_names, dict) or
+            any(not isinstance(display_names.get(i), str) for i in route)):
+        raise ValueError('Missing display name for an original song')
     verified = plan.get('source_wav_hashes_and_headers_verified') is True
     duration = plan.get('complete_mix_duration')
     cards = [('Nummers', len(route)), ('Overgangen', len(pairs)),
@@ -39,9 +53,11 @@ def render(plan):
                           h(pair['duration_seconds'])+' sec.</p><p>Uitgaand '+
                           h(pair['outgoing_cue_seconds'])+' sec. · inkomend '+
                           h(pair['incoming_cue_seconds'])+' sec.</p></div></div>')
+        title = display_names[ident] if display_names is not None else ident
+        label = ('<small>Nummer '+str(i+1)+'</small><h3>'+h(title)+'</h3>' +
+                 ('<small class="identifier">'+h(ident)+'</small>' if title != ident else ''))
         items.append('<li><div class="song"><span class="no">'+str(i+1).zfill(2)+
-                     '</span><div><small>Nummer '+str(i+1)+'</small><h3>'+h(ident)+
-                     '</h3></div></div>'+transition+'</li>')
+                     '</span><div>'+label+'</div></div>'+transition+'</li>')
     note = ('De originele WAV-hashes en headers zijn gecontroleerd; de berekende '
             'mixtijd is nog geen gerenderde audio.' if verified else
             'Dit is alleen een handmatig mixplan. Bronhashes en volledige mixtijd '
@@ -54,7 +70,7 @@ def render(plan):
                '<section class="next"><h2>Klaar om te mixen?</h2><p>Controleer de handmatig gekozen nummers '
                'en overgangen. Gebruik daarna je oorspronkelijke opdracht zonder '
                '<code>--preview</code> en <code>--preview-html</code> om echte audio te maken.</p></section>'
-               '<footer>Geen bronbestanden of bronpaden in deze pagina. De lokale trackcodes zijn wel zichtbaar: houd het bestand privé. '
+               '<footer>Geen bronbestanden of volledige bronpaden in deze pagina. Lokale bestandsnamen en trackcodes kunnen herkenbaar zijn: houd dit overzicht privé. '
                'M1 blijft open; echte BPM, cues, muzieklicenties en kwaliteit vergen menselijke controle.</footer>')
     css = (':root{color-scheme:dark}*{box-sizing:border-box}'
            'body{font:16px/1.55 system-ui,sans-serif;color:#edf4fa;background:#101820;margin:0}'
@@ -72,6 +88,7 @@ def render(plan):
            '.join{display:flex;gap:20px;align-items:center;margin:8px 0 8px 28px;color:#cbd9e3}'
            '.arrow{font-size:28px;color:#96ddbe}.join p{font-size:13px;margin:1px 0;color:#afc3d0}'
            '.next{background:#1b2a35;border-radius:16px;padding:1px 20px 16px;margin-top:25px}'
+           '.identifier{display:block;font-size:12px;opacity:.72;letter-spacing:.02em}'
            'code{font:13px monospace;color:#a6ead6}footer{margin-top:36px;border-top:1px solid #3d5161;padding-top:20px}'
            '@media(max-width:520px){main{padding:24px 14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}')
     return ('<!doctype html><html lang="nl"><head><meta charset="utf-8">'
@@ -82,14 +99,14 @@ def render(plan):
             '<body><main>'+content+'</main></body></html>')
 
 
-def publish(plan, output_wav):
+def publish(plan, output_wav, *, display_names=None):
     target = Path(str(Path(output_wav).absolute()) + '.preview.html')
     if target.exists() or target.is_symlink() or not target.parent.is_dir():
         raise ValueError('New private preview path required')
     for parent in (target, *target.parents):
         if parent.is_symlink() or (parent / '.git').exists():
             raise ValueError('Private preview cannot be created in Git or symlink folders')
-    data = render(plan).encode('utf-8')
+    data = render(plan, display_names=display_names).encode('utf-8')
     if len(data) > 65536:
         raise ValueError('Private plan HTML exceeds 64 KiB')
     with target.open('xb') as out:

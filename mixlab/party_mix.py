@@ -118,8 +118,11 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
             from .playlist_wav_preview import inspect_playlist
             result.update(inspect_playlist(source, catalog, route_ids, transitions_plan))
         if preview_html:
-            from .playlist_preview_page import publish
-            result['preview_html'] = str(publish(result, output))
+            from .playlist_preview_page import publish, local_song_title
+            # Browser-only labels: never expose a source directory or change
+            # source IDs, the saved manifest, or the machine preview JSON.
+            names = {entry['id']: local_song_title(entry['path']) for entry in catalog}
+            result['preview_html'] = str(publish(result, output, display_names=names))
             result['status'] = 'private-offline-plan-page-created-no-audio'
         return result
     # Full Studio must render every pair in order to satisfy user selections.
