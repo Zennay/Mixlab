@@ -159,7 +159,8 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <div class="cue-history" role="group" aria-label="Cuewijzigingen beheren">
 <button id="undo" type="button" disabled>↶ Ongedaan maken</button>
 <button id="redo" type="button" disabled>↷ Opnieuw</button>
-<button id="restore-pair" type="button" disabled>Herstel dit paar</button></div></div>
+<button id="restore-pair" type="button" disabled>Herstel dit paar</button>
+<button id="restore-all" type="button" disabled>Herstel alle cues</button></div></div>
 <p id="history-status" role="status" aria-live="polite">Nog geen cuewijzigingen.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
@@ -278,6 +279,14 @@ function redoCueEdit(){
  const next=redoHistory.pop();
  undoHistory.push(snapshot(next.pairId));restoreSnapshot(next);
 }
+function restoreAllCues(){
+ if(!edited)return;
+ if(!window.confirm('Alle handmatige cuewijzigingen herstellen? Je kunt dit nog ongedaan maken.'))return;
+ rememberCueEdit();
+ pairs.forEach((p,i)=>{p.a_start_seconds=originalCueValues[i].a;
+   p.b_start_seconds=originalCueValues[i].b;});
+ refresh();
+}
 function restoreCurrentPair(){
  const original=originalCueValues.find(p=>p.id===chosen.id);
  if(chosen.a_start_seconds===original.a&&chosen.b_start_seconds===original.b)return;
@@ -292,6 +301,7 @@ function refreshHistoryStatus(){
  const saved=originalCueValues.find(p=>p.id===chosen.id);
  $('undo').disabled=!undoHistory.length;
  $('redo').disabled=!redoHistory.length;
+ $('restore-all').disabled=!edited;
  $('restore-pair').disabled=chosen.a_start_seconds===saved.a&&
    chosen.b_start_seconds===saved.b;
  $('history-status').textContent=changed+' van '+pairs.length+
@@ -415,6 +425,7 @@ pairSelect.addEventListener('change',()=>{
 $('undo').addEventListener('click',undoCueEdit);
 $('redo').addEventListener('click',redoCueEdit);
 $('restore-pair').addEventListener('click',restoreCurrentPair);
+$('restore-all').addEventListener('click',restoreAllCues);
 for(const side of ['a','b']){
  const t=$('range-'+side);t.addEventListener('input',()=>setCue(side,Number(t.value)));
  const canvas=$('wave-'+side);
