@@ -194,8 +194,10 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <p>Hoor beide originele WAV-bronnen tegelijk vanaf jouw handmatig gekozen
 startcues, op laag volume. Dit is alleen een ruwe timingcontrole;
 geen definitieve mix, crossfade, beatmatch of MixLab-DSP-render.</p>
-<div class="buttons"><button type="button" class="primary" id="play-ab">▶ Beluister A + B</button>
+<div class="buttons"><button type="button" class="primary" id="play-ab">▶ Huidige cues A + B</button>
+<button type="button" id="play-original-ab" disabled>▶ Opgeslagen cues A + B</button>
 <button type="button" id="stop-ab" disabled>■ Stop beide decks</button></div>
+<p id="cue-comparison" role="status" aria-live="polite">Nog geen cuewijzigingen in dit paar.</p>
 <p id="ab-status" role="status" aria-live="polite">Nog niet samen beluisterd.</p>
 </section>
 <section class="footer" aria-labelledby="timeline-title">
@@ -445,6 +447,16 @@ function refreshLiveTimeline(){
 }
 function refreshCueStatus(){
  refreshHistoryStatus();
+ const original=originalCueValues.find(c=>c.id===chosen.id);
+ const aDelta=chosen.a_start_seconds-original.a;
+ const bDelta=chosen.b_start_seconds-original.b;
+ const shifted=aDelta!==0 || bDelta!==0;
+ $('play-original-ab').disabled=!shifted || duetActive;
+ const signed=t=>(t>0?'+':'')+t.toFixed(2)+' s';
+ $('cue-comparison').textContent=shifted?
+   'Verschil met opgeslagen cues · A '+signed(aDelta)+' · B '+signed(bDelta)+
+   '. Vergelijk beide lokale bronfragmenten vóór het downloaden.':
+   'Dit paar gebruikt nog de opgeslagen cues; er is niets te vergelijken.';
  const issue=cueProblemDetail();
  const problem=(issue&&issue.message) || (!plannedSetTimeline()?
    'De opgegeven nummers vormen geen complete, renderbare mix. '+
@@ -491,6 +503,9 @@ function stopPlayback(){
   }
   duetVolumes=null;duetEnds=null;
   $('play-ab').disabled=false;
+  const saved=originalCueValues.find(c=>c.id===chosen.id);
+  $('play-original-ab').disabled=!saved || (
+    chosen.a_start_seconds===saved.a&&chosen.b_start_seconds===saved.b);
   $('stop-ab').disabled=true;
 }
 function draw(side){
@@ -614,6 +629,32 @@ for(const side of ['a','b']){
  audio.addEventListener('ended',()=>{if(duetActive)stopPlayback();});
  audio.addEventListener('ended',()=>{if(playing===audio)playing=null;});
 }
+$('play-original-ab').addEventListener('click',async()=>{
+  const saved=originalCueValues.find(c=>c.id===chosen.id);
+  if(!saved || (chosen.a_start_seconds===saved.a &&
+                chosen.b_start_seconds===saved.b))return;
+  stopPlayback();
+  const a=$('audio-a'),b=$('audio-b');
+  const attempt=++duetSerial;
+  duetVolumes=[a.volume,b.volume];
+  duetEnds=[saved.a+chosen.seconds,saved.b+chosen.seconds];
+  a.currentTime=saved.a;b.currentTime=saved.b;
+  a.volume=.3;b.volume=.3;
+  duetActive=true;
+  $('play-ab').disabled=true;
+  $('play-original-ab').disabled=true;
+  $('stop-ab').disabled=false;
+  $('ab-status').textContent='Opgeslagen cues A + B: '+chosen.id+
+    ' · '+chosen.seconds.toFixed(2)+' s. Alleen ruwe vergelijking.';
+  try{
+    await Promise.all([a.play(),b.play()]);
+  }catch(error){
+    if(duetActive && duetSerial===attempt){
+      stopPlayback();
+      $('ab-status').textContent='Kan de originele lokale cues niet afspelen.';
+    }
+  }
+});
 $('play-ab').addEventListener('click',async()=>{
   stopPlayback();
   if(cueProblem() || !plannedSetTimeline()){
@@ -630,7 +671,7 @@ $('play-ab').addEventListener('click',async()=>{
   a.volume=.3;b.volume=.3;
   duetActive=true;
   $('play-ab').disabled=true;$('stop-ab').disabled=false;
-  $('ab-status').textContent='A + B tegelijk: '+chosen.id+' · '+
+  $('ab-status').textContent='Huidige cues A + B: '+chosen.id+' · '+
     chosen.seconds.toFixed(2)+' s. Ruwe timingcontrole, geen DJ-render.';
   try{
     await Promise.all([a.play(),b.play()]);
