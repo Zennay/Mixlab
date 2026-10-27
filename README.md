@@ -742,7 +742,13 @@ playlistvolgorde en gekozen overgangsstijl, en wijzigt het bronmanifest niet.
 
 De originele offline **cue-editor toont nu Nederlandse bediening en
 herkenbare lokale songbestandsnamen** naast de oorspronkelijke, voor alle
-SHA-gebonden exports onveranderde track-ID's. Een handmatige wijziging
+SHA-gebonden exports onveranderde track-ID's. Tijdens handmatig verschuiven
+van cues laat de editor ook **direct de verwachte volledige DJ-settijdlijn**
+zien: solo- en overgangshoofdstukken, de totale duur en verschil met de
+vorige handmatige versie. Je kunt rechtstreeks op een voorgestelde
+overgang klikken om die verder te corrigeren, zonder een nieuwe mix te
+renderen. Alle tijden zijn een PCM-framegebaseerde inschatting; echte
+muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige wijziging
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
 

@@ -106,6 +106,18 @@ Ook `mixlab.cue_editor apply` weigert een tegenstrijdige handmatige
 selectie voordat een nieuw manifest wordt gemaakt: je oorspronkelijke
 WAV-bronnen, manifest en rechtenverklaringen veranderen niet.
 
+De visuele editor toont nu ook **live de geplande volledige mixtijd en
+hoofdstuktijdlijn** wanneer je een cue verschuift, inclusief hoeveel
+overgangen zijn aangepast en het verschil met de oorspronkelijk opgeslagen
+cues. Selecteer **Wijzig deze overgang** naast een berekend hoofdstuk
+om de betreffende A/B-cues verder te verfijnen. Dit is een
+PCM-framegebaseerde **voorspelling**, niet een al gemaakte WAV en geen
+muzikaal kwaliteitsbewijs. Een onmogelijke route of overlapping verwijdert
+de berekende tijdlijn en blijft geblokkeerd voor cuekeuze-export.
+Na `cue_editor apply` kun je het **nieuwe**, private manifest met
+`--resume --plan-html --plan-verify-wavs` opnieuw controleren en pas
+daarna werkelijk renderen.
+
 ## Direct een complete WAV uit de muziekwizard
 
 De Playlist Studio kan **in dezelfde eerste opdracht** ook meteen

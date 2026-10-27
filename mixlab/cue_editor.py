@@ -136,6 +136,14 @@ canvas{width:100%;height:152px;background:#10121b;border:1px solid #454a62;borde
 .row .time{font-variant-numeric:tabular-nums;min-width:75px;font-weight:700}
 .range{width:100%;accent-color:#bdabff}.buttons{display:flex;gap:8px;flex-wrap:wrap}
 audio{width:100%;margin-top:10px} .footer{margin-top:28px;padding:20px;background:#171a27;border:1px solid #3f4358;border-radius:16px}
+.timeline-summary{background:#211d35;border:1px solid #6a5d92;padding:14px;
+  margin:12px 0;border-radius:12px;font-variant-numeric:tabular-nums}
+#mix-timeline{list-style:none;padding:0;margin:14px 0;display:grid;gap:9px}
+#mix-timeline li{display:grid;grid-template-columns:125px minmax(0,1fr);
+  gap:16px;background:#212536;border:1px solid #3f4358;border-radius:10px;padding:11px 13px}
+#mix-timeline strong{display:block;overflow-wrap:anywhere}
+#mix-timeline small{color:#c8c2ec;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#mix-timeline li{grid-template-columns:1fr;gap:4px}}
 .primary{background:#c8b4ff;color:#131020;font-weight:800;border-color:#c8b4ff}
 code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.pair-info{width:100%;margin-left:0}}
@@ -159,6 +167,16 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="play-b">▶ Beluister B</button></div>
 <audio id="audio-b" controls preload="metadata"></audio></section>
 </div>
+<section class="footer" aria-labelledby="timeline-title">
+<h2 id="timeline-title">Waar vallen je overgangen in de complete mix?</h2>
+<p>Deze lokale indicatie wordt bij elke handmatige cuewijziging opnieuw
+berekend uit de oorspronkelijke PCM16-frametellingen en jouw BPM en
+cueposities. Er is nog geen volledige WAV gerenderd en de weergegeven
+tijden bewijzen niets over muzikale kwaliteit of daadwerkelijke rechten.</p>
+<p class="timeline-summary" id="mix-timing-summary" role="status" aria-live="polite">
+Nog geen geldige complete mixtijd berekend.</p>
+<ol id="mix-timeline" aria-label="Verwachte hoofdstukken van de complete set"></ol>
+</section>
 <div class="footer">
 <button class="primary" id="save">Download cuekeuzes (.json)</button>
 <p id="message" role="status" aria-live="polite">Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.</p>
@@ -188,12 +206,94 @@ function cueProblem(){
  }
  return null;
 }
+// Reconstruct the planned complete WAV's nonempty chapters using the
+// exact local manually selected PCM16 source frames. No audio is rendered.
+function plannedSetTimeline(){
+ if(cueProblem())return null;
+ const connected=[pairs[0].a,...pairs.map(p=>p.b)];
+ if(connected.length!==data.tracks.length ||
+    new Set(connected).size!==connected.length ||
+    data.tracks.some(t=>!connected.includes(t.id)))return null;
+ const rate=bank[connected[0]].sample_rate;
+ if(data.tracks.some(t=>t.sample_rate!==rate || t.channels<1))return null;
+ let total=0,previousEnd=0;const chapters=[];
+ function append(kind,id,frames,description){
+   if(frames<0)throw Error('Cue valt vóór een vorige overgang');
+   if(frames>0)chapters.push({kind,id,from:total,to:total+frames,
+     frames,description});
+   total+=frames;
+ }
+ for(const pair of pairs){
+   const length=Math.round(pair.beats*60/bank[pair.a].bpm*rate);
+   const outgoing=Math.round(pair.a_start_seconds*rate);
+   const incoming=Math.round(pair.b_start_seconds*rate);
+   if(length<2 || outgoing<previousEnd ||
+      outgoing+length>bank[pair.a].frame_count ||
+      incoming+length>bank[pair.b].frame_count)return null;
+   append('solo',pair.a,outgoing-previousEnd,bank[pair.a].display_name);
+   append('transition',pair.id,length,
+      bank[pair.a].display_name+' → '+bank[pair.b].display_name);
+   previousEnd=incoming+length;
+ }
+ const last=connected[connected.length-1];
+ const tail=bank[last].frame_count-previousEnd;
+ if(tail<0)return null;
+ append('solo',last,tail,bank[last].display_name);
+ if(total<2 || 44+total*4>512*1024*1024)return null;
+ return {rate,total,chapters};
+}
+const originalCueValues=pairs.map(p=>({id:p.id,a:p.a_start_seconds,b:p.b_start_seconds}));
+const originalTiming=plannedSetTimeline();
+function refreshLiveTimeline(){
+ const list=$('mix-timeline'),summary=$('mix-timing-summary');
+ list.replaceChildren();
+ const planned=plannedSetTimeline();
+ if(!planned){
+   summary.textContent='De complete mixtijd is nog niet berekenbaar. '+
+     'Controleer de doorlopende trackvolgorde, alle nummers en cueposities.';
+   return;
+ }
+ const edited=pairs.filter((p,i)=>p.a_start_seconds!==originalCueValues[i].a ||
+   p.b_start_seconds!==originalCueValues[i].b).length;
+ const diff=originalTiming?(planned.total-originalTiming.total)/planned.rate:null;
+ const comparison=diff===null?'geen geldige originele referentie':
+   Math.abs(diff)<.000001?'gelijke totale duur als originele cues':
+   (diff>0?'+':'')+diff.toFixed(2)+' s t.o.v. opgeslagen cues';
+ summary.textContent='Verwachte complete set: '+format(planned.total/planned.rate)+
+   ' · '+edited+' handmatig gewijzigde overgangen · '+comparison+
+   ' · '+planned.chapters.length+' niet-lege hoofdstukken.';
+ for(const chapter of planned.chapters){
+   const li=document.createElement('li');
+   const timing=document.createElement('small');
+   timing.textContent=format(chapter.from/planned.rate)+' – '+
+     format(chapter.to/planned.rate);
+   const body=document.createElement('div');
+   const title=document.createElement('strong');
+   title.textContent=chapter.description;
+   const detail=document.createElement('small');
+   detail.textContent=(chapter.kind==='transition'?'Overgang '+chapter.id:'Nummer '+chapter.id);
+   body.append(title,detail);
+   if(chapter.kind==='transition'){
+     const edit=document.createElement('button');
+     edit.textContent='Wijzig deze overgang';
+     edit.setAttribute('aria-label','Wijzig overgang: '+chapter.description);
+     edit.addEventListener('click',()=>{
+       pairSelect.value=chapter.id;
+       chosen=pairs.find(p=>p.id===chapter.id);
+       refresh();
+     });
+     body.append(edit);
+   }
+   li.append(timing,body);list.append(li);
+ }
+}
 function refreshCueStatus(){
  const problem=cueProblem();
  $('save').disabled=!!problem;
  $('message').textContent=problem?'Nog niet opslaan: '+problem:
    edited?'Cues klaar. Download je keuzes voordat je de pagina sluit.':
    'Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.';
+ refreshLiveTimeline();
 }
 function format(seconds){const m=Math.floor(seconds/60);const s=(seconds%60).toFixed(2).padStart(5,'0');return String(m)+':'+s;}
 function deck(side){return bank[chosen[side]];}
