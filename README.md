@@ -79,6 +79,14 @@ broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
 opgegeven nummers moeten exact eenmaal in de route staan voordat er
 überhaupt een complete WAV wordt gepubliceerd.
 
+Na het handmatig herhaald beluisteren van een overgang kun je nu in de
+volledig offline Full Set Player ook **‘Klinkt goed’ of ‘Wil aanpassen’**
+markeren en een korte creatieve notitie toevoegen. Download je persoonlijke
+overgangsnotities als apart privé-JSON met WAV-hash, exacte hoofdstuktijden
+en de geselecteerde paar-ID's. Niets wordt automatisch opgeslagen, geüpload
+of als onafhankelijk luisteronderzoek meegeteld; sla het JSON-bestand zelf
+op voordat je de pagina sluit.
+
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. Je kunt nu **iedere werkelijk gerenderde overgang
 lokaal blijven herhalen** voor een handmatige beluistering: kies

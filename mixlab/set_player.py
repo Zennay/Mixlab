@@ -45,6 +45,18 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 .chapter-actions button{padding:10px 12px}
 .chapter-actions button[aria-pressed=true]{background:#256153;border-color:#75e3bd}
 #transition-audition-status{color:#bee6d8;min-height:1.5em}
+#creative-reviews{display:grid;gap:12px;margin-top:15px}
+.review-row{display:grid;gap:10px;background:#151b29;border:1px solid #444961;
+  border-radius:13px;padding:16px}
+.review-row label{display:grid;gap:6px;font-weight:650}
+.review-row select,.review-row textarea{font:inherit;color:#fff;background:#262b3e;
+  border:1px solid #8e83c0;border-radius:9px;padding:10px;min-width:0;width:100%}
+.review-row textarea{resize:vertical;min-height:64px;max-height:180px}
+.review-row :is(select,textarea):focus-visible{outline:3px solid #cdbbff;outline-offset:2px}
+.review-name{overflow-wrap:anywhere;font-weight:750}
+.review-fields{display:grid;grid-template-columns:1fr 2fr;gap:12px}
+@media(max-width:650px){.review-fields{grid-template-columns:1fr}}
+
 
 #chapters li[aria-current=true]{background:#292641;border-radius:10px;padding-left:10px;padding-right:10px}
 @media(max-width:600px){#chapters li{grid-template-columns:65px 1fr;gap:8px}
@@ -102,6 +114,16 @@ aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
 Herhalen stopt zodra je naar een ander hoofdstuk springt of de eventmodus opent.</p>
 <p id="transition-audition-status" role="status" aria-live="polite">Geen overgang in herhaling.</p>
 <ol id="chapters"></ol></section>
+<section class="section"><h2>Je eigen overgangsnotities</h2>
+<p class="muted">Luister naar een overgang, kies of je die wilt houden of
+bijstellen, en noteer waarom. Dit zijn uitsluitend jouw creatieve aantekeningen,
+geen onafhankelijke blinde beoordeling of bewijs van muziekrechten.</p>
+<p class="muted">Notities blijven alleen in deze geopende pagina. Download je
+privé-JSON voordat je de pagina sluit of vernieuwt. Er is geen opslag of upload.</p>
+<div id="creative-reviews"></div>
+<p id="review-progress" role="status" aria-live="polite">Nog geen overgangsnotities.</p>
+<button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
+</section>
 <section class="section"><h2>Neem je cuepunten mee</h2>
 <p class="muted">Bewaar de hoofdstukken als JSON (inclusief SHA-binding) of als
 standaard CUE-indeling voor lokale muziekspelers. Beide bestanden bevatten geen bronpaden.</p>
@@ -120,6 +142,7 @@ const eventPlay=document.getElementById("event-play");
 const eventExit=document.getElementById("event-exit");
 let eventMode=false;
 const chapterButtons=[];
+const reviewRows=[];
 const loopButtons=[];
 let loopIndex=null;
 const auditionStatus=document.getElementById("transition-audition-status");
@@ -233,6 +256,46 @@ data.chapters.forEach((ch,i)=>{
   }
   li.append(time,title,actions);list.append(li);rows.push(li);
 });
+// Notes are deliberately page-memory-only; no implicit browser storage,
+// network, or automatic approval of the recorded listening decision.
+const reviewList=document.getElementById("creative-reviews");
+const reviewProgress=document.getElementById("review-progress");
+const exportReview=document.getElementById("download-review");
+for(const [chapterIndex,ch] of data.chapters.entries()){
+  if(ch.kind!=="transition")continue;
+  const row=document.createElement("div");row.className="review-row";
+  const title=document.createElement("div");title.className="review-name";
+  title.textContent=(ch.display_name||ch.label)+" · "+format(ch.start_seconds);
+  const fields=document.createElement("div");fields.className="review-fields";
+  const statusLabel=document.createElement("label");
+  statusLabel.textContent="Jouw keuze";
+  const status=document.createElement("select");status.value="unreviewed";
+  for(const [value,label] of [["unreviewed","Nog niet beoordeeld"],
+     ["keep","Klinkt goed"],["adjust","Wil aanpassen"]]){
+    const option=document.createElement("option");option.value=value;
+    option.textContent=label;status.append(option);
+  }
+  const noteLabel=document.createElement("label");noteLabel.textContent="Notitie (max. 280 tekens)";
+  const note=document.createElement("textarea");note.value="";
+  note.maxLength=280;note.rows=2;
+  note.placeholder="Wat wil je veranderen aan deze overgang?";
+  statusLabel.append(status);noteLabel.append(note);
+  fields.append(statusLabel,noteLabel);row.append(title,fields);
+  reviewList.append(row);
+  reviewRows.push({chapterIndex,ch,status,note});
+}
+function refreshReviewProgress(){
+  const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
+    note.value.trim()!=="").length;
+  exportReview.disabled=marked===0 || eventMode;
+  reviewProgress.textContent=marked+" van "+reviewRows.length+
+    " overgangen hebben een keuze of notitie. Download vóór je deze pagina sluit.";
+}
+reviewRows.forEach(({status,note})=>{
+  status.addEventListener("change",refreshReviewProgress);
+  note.addEventListener("input",refreshReviewProgress);
+});
+refreshReviewProgress();
 let current=0;
 function highlight(){
   const t=Number.isFinite(audio.currentTime)?audio.currentTime:0;
@@ -303,6 +366,10 @@ function enterEventMode(active){
   document.getElementById("next").disabled=disabled;
   chapterButtons.forEach(button=>{button.disabled=disabled;});
   loopButtons.forEach(({button})=>{button.disabled=disabled;});
+  reviewRows.forEach(({status,note})=>{
+    status.disabled=disabled;note.disabled=disabled;
+  });
+  refreshReviewProgress();
   eventToggle.setAttribute("aria-pressed",String(active));
   eventToggle.textContent=active?"Verlaat eventmodus":"⛶ Eventmodus";
   if(active){
@@ -333,6 +400,23 @@ document.getElementById("prev").addEventListener("click",()=>{
   else jump(Math.max(0,current-1));
 });
 document.getElementById("next").addEventListener("click",()=>jump(Math.min(rows.length-1,current+1)));
+function makePrivateCreativeNotes(){
+  return {schema_version:1,kind:"mixlab-private-creative-transition-notes",
+    purpose:"personal-dj-notes-not-blind-study-evidence",
+    wav_sha256:data.wav_sha256,duration_seconds:data.duration_seconds,
+    transitions:reviewRows.filter(({status,note})=>
+      status.value!=="unreviewed"||note.value.trim()!=="").map(({ch,status,note})=>({
+      pair_id:ch.label,display_name:ch.display_name||ch.label,
+      family:ch.family,start_seconds:ch.start_seconds,
+      duration_seconds:ch.duration_seconds,
+      decision:status.value, note:note.value.slice(0,280)
+    }))};
+}
+exportReview.addEventListener("click",()=>{
+  if(eventMode || exportReview.disabled)return;
+  save("mixlab-transition-notes.private.json",
+    JSON.stringify(makePrivateCreativeNotes(),null,2)+"\\n","application/json");
+});
 function save(filename,contents,mime){
   const url=URL.createObjectURL(new Blob([contents],{type:mime}));
   const a=document.createElement("a");a.href=url;a.download=filename;
