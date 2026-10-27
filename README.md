@@ -812,6 +812,8 @@ muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige w
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
 
+De offline A/B-cue-editor heeft nu ook **1×, 4× en 16× lokale waveformzoom per deck**, met een rond de handmatig gekozen cue gecentreerde tijdbalk. Inzoomen zelf verandert geen cues of bronbestanden; klikken in de zoomweergave kiest een echte absolute WAV-tijd.
+
 De offline A/B-cue-editor ondersteunt nu ook precieze **± 0,10 s**
 handmatige cue-aanpassingen op beide decks, via knoppen of Shift +
 pijltjestoetsen op de golfvorm. Die stappen omzeilen het optionele

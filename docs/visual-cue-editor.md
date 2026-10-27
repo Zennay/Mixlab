@@ -25,6 +25,7 @@ Open /private/imported-music/cue-editor.html locally with Firefox or Chromium.
 
 - The offline browser editor uses **Dutch labels** and shows the recognisable private source **filename without its extension** alongside each original technical track ID. You select pairs by song name, not by having to decode opaque `track-001` identifiers; labels are not authenticated metadata or rights proofs. Manual unsaved cue changes show a clear reminder to download the private JSON.
 - View both A and B audio-energy waveforms, independently edit their start times with a slider or click on the waveform, and see precise timestamps.
+- **Zoom each deck independently to 1×, 4× or 16× around its currently selected cue** using the new offline waveform controls. The selected viewport shows its original WAV start/end times; clicking its waveform maps the position back to the correct **absolute original-track timestamp**, preserving optional human BPM-grid snapping, 0.10s fine nudges and undo. Selecting a zoom level alone never changes a cue, manifest, source or editor history. Zoom is purely a waveform-navigation tool, not an automated beat/phrase detector. The entire original WAV remains private.
 - Preview only the currently selected transition-length excerpt on each deck. A second preview stops the first.
 - Nudge by one beat or four beats. Optionally snap to a **manually declared** first-downbeat and BPM grid (no automatic beat inference).
 - Switch between all registered pairs while keeping edits in memory.
