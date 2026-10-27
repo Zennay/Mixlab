@@ -722,6 +722,8 @@ python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /pri
   --transition pair-001:bass_swap --transition pair-002:echo_exit
 ```
 
+Het offline visuele mixplan kun je als A4 DJ-draaiboek afdrukken via Ctrl+P / Cmd+P. De nieuwe zwart-op-wit printweergave houdt de trackvolgorde, handmatige cues en geverifieerde tijdlijn leesbaar, zonder extra audiobestand of server.
+
 Met `--preview --verify-wavs --preview-html` toont MixLab nu ook
 **een statische, proportionele mixkaart** waarin alle solo's en overgangen
 de echte onderlinge duurverhouding uit PCM-frames krijgen. Je kunt met
