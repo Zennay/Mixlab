@@ -86,6 +86,12 @@ De begrensde eenmalige contextluistering stopt na het fragment of bij het
 wijzigen van die selectie, is beschikbaar bij hoofdstukken en de
 persoonlijke aanpassingslijst en wordt tijdens eventmodus geblokkeerd.
 
+De visuele originele WAV-cue-editor laat geen onvolledige playlist
+meer als bruikbare nieuwe cuekeuzes opslaan: alle geregistreerde nummers
+moeten exact één keer in de A→B-route staan. Ook de afzonderlijke
+`mixlab.cue_editor apply`-opdracht weigert het schrijven van een
+onrenderbaar nieuw manifest. De bestaande bronmuziek blijft intact.
+
 De privé Full Set Player heeft ook een **automatische lijst van overgangen
 met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
 echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met

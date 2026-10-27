@@ -114,6 +114,14 @@ om de betreffende A/B-cues verder te verfijnen. Dit is een
 PCM-framegebaseerde **voorspelling**, niet een al gemaakte WAV en geen
 muzikaal kwaliteitsbewijs. Een onmogelijke route of overlapping verwijdert
 de berekende tijdlijn en blijft geblokkeerd voor cuekeuze-export.
+Ook als het bronmanifest méér nummers bevat dan door de geregistreerde
+A→B-paren worden bezocht, blokkeert de editor nu expliciet **Download
+cuekeuzes**: alle originele nummers moeten exact één keer onderdeel van
+de volledige route zijn. Corrigeer ontbrekende of herhaalde paren in een
+nieuwe geldige bronplaylist voordat je weer cuekeuzes exporteert.
+`mixlab.cue_editor apply` weigert hetzelfde incomplete bronpad ook
+vóór het schrijven van een nieuw manifest. De originele WAVs, eerder
+opgeslagen cues en de bronrechten veranderen daarbij niet.
 Na `cue_editor apply` kun je het **nieuwe**, private manifest met
 `--resume --plan-html --plan-verify-wavs` opnieuw controleren en pas
 daarna werkelijk renderen.
