@@ -408,7 +408,9 @@ function refreshLiveTimeline(){
 }
 function refreshCueStatus(){
  refreshHistoryStatus();
- const problem=cueProblem();
+ const problem=cueProblem() || (!plannedSetTimeline()?
+   'De opgegeven nummers vormen geen complete, renderbare mix. '+
+   'Verbind alle bronnen precies eenmaal voordat je cuekeuzes bewaart.':null);
  $('save').disabled=!!problem;
  $('message').textContent=problem?'Nog niet opslaan: '+problem:
    edited?'Cues klaar. Download je keuzes voordat je de pagina sluit.':
@@ -625,6 +627,15 @@ def apply(source_manifest, selection_json, destination):
             if frames > meta["frame_count"]:
                 raise ValueError("Selected cue extends past the source audio")
             item[side + "_start_seconds"] = round(start, 6)
+    # The cue editor may display a partial library to inspect original
+    # waveforms, but an exported cue manifest must be a *complete* set.
+    # A valid A->B->C list can otherwise quietly omit song D.
+    route = [pairs[0]['a'], *(p['b'] for p in pairs)]
+    if (len(route) != len(_tracks) or len(set(route)) != len(route)
+            or set(route) != set(_tracks)):
+        raise ValueError(
+            'Een volledige mix moet elk geregistreerd nummer precies eenmaal bevatten; '
+            'vul eerst de ontbrekende overgang in het originele bronmanifest aan')
     # A cue is only useful if the complete saved A->B->C set remains
     # renderable. Prior import checks covered each pair independently,
     # allowing a later outgoing cue to overlap the preceding incoming one.
