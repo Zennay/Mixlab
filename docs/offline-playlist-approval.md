@@ -144,10 +144,17 @@ gerenderde \`bass_swap\` en \`echo_exit\` moet je de output
 nadien via de lokale WAV Set Player/Set Gallery beluisteren.
 Een onbekende stijl wordt geweigerd; combineer de in het formulier
 gekozen stijlen niet met een tweede tegenstrijdige \`--style\`
-opdracht. Zonder \`--full-set-wav\` wordt nu alleen het
-goedgekeurde bronmanifest/studio gemaakt; wie later met
-\`--resume\` rendert, kiest de per-paarstijlen bij die
-aparte renderstap opnieuw.
+opdracht. Een bewust gekozen \`echo_exit\`, \`hard_cut\`,
+\`bass_swap\` of \`baseline\` staat voortaan onder
+\`approved_family\` **bij exact het originele SHA-gebonden paar**
+in het private bronmanifest. Ook na \`--manifest-only --plan-html\`
+of een latere \`--resume --full-set-wav\` krijgen zowel het
+visuele mixplan als de officiële Instant Set exporter **dezelfde expliciet
+goedgekeurde stijl**. Een afwijkende \`--style PAIR:FAMILY\` wordt
+vóór dure import geweigerd; voor een andere stijl maak je een nieuwe
+privébrongoedkeuring en een nieuw bronmanifest. Paren waarvoor het formulier
+\`Use --family default\` koos, volgen wél je ingestelde
+\`--family\` en krijgen geen verzonnen expliciete goedkeuring.
 
 Klik **Export my private approved cues**. Dit downloadt een nieuw
 `mixlab-event-approved.private.json` met **geen audio**. Verplaats

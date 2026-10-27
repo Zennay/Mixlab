@@ -164,10 +164,15 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
         if approved is not None and approved["pairs"][i]["family"] is not None:
             if approval_styles is not None:
                 approval_styles.append(f"pair-{i+1:03d}:{approved['pairs'][i]['family']}")
-        pairs.append({"id": f"pair-{i+1:03d}",
-                      "a": catalog[i]["id"], "b": catalog[i+1]["id"],
-                      "bpm": catalog[i]["bpm"], "beats": beats,
-                      "a_start_seconds": a_start, "b_start_seconds": b_start})
+        row = {"id": f"pair-{i+1:03d}",
+               "a": catalog[i]["id"], "b": catalog[i+1]["id"],
+               "bpm": catalog[i]["bpm"], "beats": beats,
+               "a_start_seconds": a_start, "b_start_seconds": b_start}
+        # Preserve a specifically approved render style WITH the immutable
+        # manual cue pair, not in ephemeral CLI state lost on --resume.
+        if approved is not None and approved["pairs"][i]["family"] is not None:
+            row["approved_family"] = approved["pairs"][i]["family"]
+        pairs.append(row)
         previous_incoming_end = b_start + length_seconds
     spec = {"schema_version": 1, "purpose": "development-pilot"
             if partition == "development" else "frozen-evaluation-preparation",
@@ -226,10 +231,22 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         create_playlist_manifest(source, manifest, destination, read=read, write=write,
                                  beats=beats, partition=partition, journey_plan=journey_plan,
                                  approval_file=approval_file, approval_styles=approved_styles)
-    if full_set_wav is not None and approved_styles:
-        # These validated choices came from exactly the locally SHA-bound,
-        # explicitly approved cue form; the official renderer remains authoritative.
-        styles = tuple(approved_styles)
+    # Reject contradictory style overrides and invalid pinned decisions
+    # before expensive import and Studio rendering, also during --resume.
+    from .cueprep import _read_spec
+    from .studio import FAMILY_NAMES
+    pinned = {}
+    for pair in _read_spec(manifest).get('pairs', []):
+        locked = pair.get('approved_family')
+        if locked is not None:
+            if locked not in FAMILY_NAMES:
+                raise ValueError('Invalid source-bound approved transition style')
+            pinned[pair['id']] = locked
+    for value in styles:
+        if isinstance(value, str) and value.count(':') == 1:
+            pid, requested = value.split(':', 1)
+            if pid in pinned and pinned[pid] != requested:
+                raise ValueError('Cannot silently override a previously approved transition style')
     idea_beats = None
     if ideas:
         with manifest.open("r", encoding="utf-8") as reader:
@@ -265,9 +282,9 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
             try:
                 from .party_mix import render_party_mix
                 preview = render_party_mix(
-                    manifest, destination, suggested_wav, tuple(approved_styles),
-                    family=None if approved_styles else family, preview=True,
-                    verify_wavs=plan_verify_wavs, preview_html=True)
+                    manifest, destination, suggested_wav, family=family,
+                    preview=True, verify_wavs=plan_verify_wavs,
+                    preview_html=True)
             except (ValueError, TypeError, OSError, KeyError):
                 # Preserve the irreplaceable manually entered cues/rights
                 # even when this entirely optional companion cannot render.

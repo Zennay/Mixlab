@@ -70,6 +70,18 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
         if previous is not None and pair.get("a") != previous:
             raise ValueError("Selected pairs do not form an outgoing-to-incoming song route")
         previous = pair.get("b")
+    # The human-selected style lives with its exact source pair. A generic
+    # --family only fills unapproved pairs; explicit different pair choices
+    # must be reapproved rather than silently replacing that decision.
+    requested = []
+    for pid, choice in selected:
+        pinned = by_id[pid].get('approved_family')
+        if pinned is not None and pinned not in FAMILY_NAMES:
+            raise ValueError('Invalid source-bound approved transition family')
+        if pinned is not None and family is None and choice != pinned:
+            raise ValueError('Cannot silently override an approved transition style')
+        requested.append((pid, pinned if pinned is not None else choice))
+    selected = requested
     # All source tracks must appear exactly once, not just all pair IDs.
     catalog = declared.get('tracks')
     if not isinstance(catalog, list) or not 2 <= len(catalog) <= 11:
