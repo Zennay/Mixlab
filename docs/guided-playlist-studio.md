@@ -169,8 +169,14 @@ worden niet in de pagina geplaatst. Omdat bestandsnamen privé-informatie
 kunnen verraden, blijft de offline pagina uitsluitend lokaal (modus 0600).
 Er wordt nog géén sessiemap, Studio, mix-WAV of audio-speler gemaakt.
 De standaardinstelling toont de handmatig opgegeven familiekeuze
-(`bass_swap`), tenzij een volledig goedgekeurde lijst individuele
-stijlkeuzes uit het bestaande goedkeuringsformulier is meegegeven.
+(`bass_swap`), behalve bij overgangen waarvoor het officiële
+privégoedkeuringsformulier een specifieke stijl heeft vastgelegd. Die
+\`approved_family\` wordt **bij het exact SHA-gebonden paar in het
+bronmanifest** bewaard: zowel de visuele preview als een latere
+\`--resume --full-set-wav\` gebruiken die goedgekeurde stijl.
+Een afwijkende expliciete \`--style\` wordt vóór audio-import geweigerd.
+Als het formulier geen stijl vastlegde, blijft \`--family\` de
+handmatig gekozen standaard voor die overgang.
 
 Voor bestaande **originele lokale 44,1 kHz PCM16-WAVs** kun je bovendien
 `--plan-verify-wavs` toevoegen; dan worden de bron-SHA's en de WAV-headers

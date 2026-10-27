@@ -57,7 +57,12 @@ def _choose_transitions(session, family, overrides):
                 "Use the interactive Set Composer to choose a connected path.")
         if a in visited or a == b or b in visited:
             raise ValueError("Full automatic playlist export cannot revisit already played tracks")
-        selected = choices.get(pid, family)
+        pinned = pair.get("approved_family")
+        if pinned is not None and pinned not in FAMILY_NAMES:
+            raise ValueError("Invalid source-bound approved transition family")
+        if pid in choices and pinned is not None and choices[pid] != pinned:
+            raise ValueError("Cannot silently override a previously approved transition style")
+        selected = choices.get(pid, pinned if pinned is not None else family)
         if selected not in available[pid]["families"]:
             raise ValueError("Requested family has no real rendered audio for transition " + str(pid))
         result.append(str(pid) + ":" + selected)
