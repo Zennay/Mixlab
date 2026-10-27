@@ -92,6 +92,11 @@ De begrensde eenmalige contextluistering stopt na het fragment of bij het
 wijzigen van die selectie, is beschikbaar bij hoofdstukken en de
 persoonlijke aanpassingslijst en wordt tijdens eventmodus geblokkeerd.
 
+De originele PCM16-golfvormeditor weigert ook al vóór het bewerken
+**ontbrekende of strijdige handmatige overgangs-BPM**. Hiermee voorkomt
+MixLab een visueel plausibele maar later onrenderbare DJ-set; de echte
+handmatige BPM-verklaring blijft leidend, zonder automatische beatmatch.
+
 De visuele originele WAV-cue-editor laat geen onvolledige playlist
 meer als bruikbare nieuwe cuekeuzes opslaan: alle geregistreerde nummers
 moeten exact één keer in de A→B-route staan. Ook de afzonderlijke
