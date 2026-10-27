@@ -730,6 +730,12 @@ met de SHA-gebonden hoofdstukspeler worden vergeleken. Zonder originele
 PCM16-bronverificatie wordt geen gerenderde duur of precieze setpositie
 verzonnen.
 
+Heb je de handmatige playlist al bewaard? Je kunt die later ook **opnieuw
+als privé-visueel plan openen** met `--resume --plan-html` zonder nieuwe
+Studio of WAV. Voeg `--plan-verify-wavs` toe voor exacte SHA-gecontroleerde
+PCM16-bron-/hoofdstuktijden. MixLab hergebruikt de oorspronkelijke muziek,
+playlistvolgorde en gekozen overgangsstijl, en wijzigt het bronmanifest niet.
+
 De offline playlist-planpagina toont nu de **juiste volgende stap per productroute**: de wizard geeft `--resume --full-set-wav` in plaats van ongeldige previewinstructies, de directe partijmix vraagt alle previewvlaggen weg te halen. De wizard bewaart bovendien een expliciet gekozen standaard-`--family` in de private bronmanifest zodat later hervatten de oorspronkelijke handmatige stijl volgt. Expliciet goedgekeurde per-paarstijlen blijven beschermd.
 
 De visuele playlistpagina toont nu de herkenbare lokale bestandsnaam zonder extensie boven de oorspronkelijke technische track-ID, zodat de volgorde daadwerkelijk leesbaar is. De pagina blijft privé; bronmappen en audiobestanden worden niet toegevoegd.
