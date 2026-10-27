@@ -52,6 +52,12 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 .review-row select,.review-row textarea{font:inherit;color:#fff;background:#262b3e;
   border:1px solid #8e83c0;border-radius:9px;padding:10px;min-width:0;width:100%}
 .review-row textarea{resize:vertical;min-height:64px;max-height:180px}
+.review-import{display:grid;gap:8px;margin:16px 0;padding:14px;
+  background:#171f2e;border:1px solid #4d556c;border-radius:12px}
+.review-import label{font-weight:650}
+.review-import input{max-width:100%;font:inherit}
+.review-import button{justify-self:start}
+#review-import-status{min-height:1.5em;color:#bfe6d9}
 .review-row :is(select,textarea):focus-visible{outline:3px solid #cdbbff;outline-offset:2px}
 .review-name{overflow-wrap:anywhere;font-weight:750}
 .review-fields{display:grid;grid-template-columns:1fr 2fr;gap:12px}
@@ -119,7 +125,14 @@ Herhalen stopt zodra je naar een ander hoofdstuk springt of de eventmodus opent.
 bijstellen, en noteer waarom. Dit zijn uitsluitend jouw creatieve aantekeningen,
 geen onafhankelijke blinde beoordeling of bewijs van muziekrechten.</p>
 <p class="muted">Notities blijven alleen in deze geopende pagina. Download je
-privé-JSON voordat je de pagina sluit of vernieuwt. Er is geen opslag of upload.</p>
+privé-JSON voordat je de pagina sluit of vernieuwt. Er is geen opslag of upload.
+Heb je een eerdere privé-JSON bewaard? Laad die hier terug, uitsluitend
+voor exact dezelfde WAV en dezelfde overgangshoofdstukken.</p>
+<div class="review-import"><label for="review-import-file">Eerder bewaarde overgangsnotities
+(JSON, maximaal 64 KiB)</label><input id="review-import-file" type="file"
+accept=".json,application/json"><button id="review-import-button" type="button">
+Laad privé-overgangsnotities</button></div>
+<p id="review-import-status" role="status" aria-live="polite">Nog geen bestand geladen.</p>
 <div id="creative-reviews"></div>
 <p id="review-progress" role="status" aria-live="polite">Nog geen overgangsnotities.</p>
 <button id="download-review" type="button" disabled>Download privé-overgangsnotities JSON</button>
@@ -261,6 +274,10 @@ data.chapters.forEach((ch,i)=>{
 const reviewList=document.getElementById("creative-reviews");
 const reviewProgress=document.getElementById("review-progress");
 const exportReview=document.getElementById("download-review");
+const importFile=document.getElementById("review-import-file");
+const importButton=document.getElementById("review-import-button");
+const importStatus=document.getElementById("review-import-status");
+let importBusy=false;
 for(const [chapterIndex,ch] of data.chapters.entries()){
   if(ch.kind!=="transition")continue;
   const row=document.createElement("div");row.className="review-row";
@@ -288,12 +305,76 @@ function refreshReviewProgress(){
   const marked=reviewRows.filter(({status,note})=>status.value!=="unreviewed"||
     note.value.trim()!=="").length;
   exportReview.disabled=marked===0 || eventMode;
+  importButton.disabled=eventMode || importBusy;
+  importFile.disabled=eventMode || importBusy;
   reviewProgress.textContent=marked+" van "+reviewRows.length+
     " overgangen hebben een keuze of notitie. Download vóór je deze pagina sluit.";
+}
+function validateSavedNotes(saved){
+  if(!saved || saved.schema_version!==1 ||
+     saved.kind!=="mixlab-private-creative-transition-notes" ||
+     saved.purpose!=="personal-dj-notes-not-blind-study-evidence" ||
+     saved.wav_sha256!==data.wav_sha256 ||
+     saved.duration_seconds!==data.duration_seconds ||
+     !Array.isArray(saved.transitions) ||
+     saved.transitions.length<1 || saved.transitions.length>reviewRows.length)
+    throw Error("Ongeldige notities of een andere complete WAV.");
+  const byID=new Map(reviewRows.map(row=>[row.ch.label,row]));
+  const seen=new Set();const prepared=[];
+  for(const item of saved.transitions){
+    const row=item && byID.get(item.pair_id);
+    if(!row || seen.has(item.pair_id) ||
+       item.family!==row.ch.family ||
+       item.display_name!==(row.ch.display_name||row.ch.label) ||
+       item.start_seconds!==row.ch.start_seconds ||
+       item.duration_seconds!==row.ch.duration_seconds ||
+       !["keep","adjust","unreviewed"].includes(item.decision) ||
+       typeof item.note!=="string" || item.note.length>280 ||
+       (item.decision==="unreviewed" && !item.note.trim()))
+      throw Error("Notities komen niet overeen met de overgangshoofdstukken.");
+    seen.add(item.pair_id);prepared.push({row,item});
+  }
+  return prepared;
 }
 reviewRows.forEach(({status,note})=>{
   status.addEventListener("change",refreshReviewProgress);
   note.addEventListener("input",refreshReviewProgress);
+});
+importButton.addEventListener("click",async()=>{
+  if(eventMode || importBusy)return;
+  const file=importFile.files && importFile.files[0];
+  if(!file){importStatus.textContent="Kies eerst je eerdere privé-JSON.";return;}
+  if(!Number.isSafeInteger(file.size) || file.size<1 || file.size>65536){
+    importStatus.textContent="Het JSON-bestand moet kleiner dan 64 KiB zijn.";
+    return;
+  }
+  if(reviewRows.some(({status,note})=>status.value!=="unreviewed"||note.value.trim()) &&
+     !window.confirm("Dit vervangt je huidige overgangsnotities. Heb je ze al gedownload?")){
+    importStatus.textContent="Laden geannuleerd; huidige notities behouden.";
+    return;
+  }
+  const before=reviewRows.map(({status,note})=>[status.value,note.value]);
+  importBusy=true;refreshReviewProgress();
+  try{
+    const text=await file.text();
+    if(text.length>65536 || eventMode || importFile.files[0]!==file ||
+      reviewRows.some(({status,note},i)=>
+        status.value!==before[i][0] || note.value!==before[i][1]))
+      throw Error("De pagina is tijdens het laden gewijzigd.");
+    const prepared=validateSavedNotes(JSON.parse(text));
+    // Commit only after all entries were admitted; invalid files change nothing.
+    reviewRows.forEach(({status,note})=>{status.value="unreviewed";note.value="";});
+    prepared.forEach(({row,item})=>{
+      row.status.value=item.decision;row.note.value=item.note;
+    });
+    importStatus.textContent=prepared.length+
+      " privé-overgangsnotities geladen voor deze exacte WAV.";
+  }catch(error){
+    importStatus.textContent="Import geweigerd: "+(error instanceof SyntaxError?
+      "het bestand bevat geen geldige JSON.":error.message);
+  }finally{
+    importBusy=false;refreshReviewProgress();
+  }
 });
 refreshReviewProgress();
 let current=0;

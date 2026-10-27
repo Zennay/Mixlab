@@ -50,6 +50,21 @@ van de speler vastgelegde **WAV SHA-256**. Daardoor weet je bij welk
 compleet mixresultaat de opmerkingen horen. Het is geen hercontrole van
 een later gewijzigd WAV-bestand en geen onafhankelijke blinde beoordeling.
 
+**Eerder opgeslagen notities weer openen:** kies onder *Je eigen overgangsnotities*
+het lokaal bewaarde `mixlab-transition-notes.private.json` en klik
+**Laad privé-overgangsnotities**. De pagina herstelt je keuzes en tekst
+alleen als de oorspronkelijke WAV-SHA, de duur, het exacte overgangspaar,
+de werkelijke overgangsstijl en de hoofdstuktijden allemaal overeenkomen.
+Verkeerde of gewijzigde mixen worden geweigerd en de huidige aantekeningen
+blijven intact. Bestanden groter dan 64 KiB, ongeldige/gedupliceerde
+records en te lange notities worden geweigerd. Als je al nieuwere notities
+hebt ingevuld, vraagt MixLab eerst expliciet of die vervangen mogen
+worden; je kunt annuleren en je notities zelf eerst downloaden.
+Je oorspronkelijke WAV wordt bij import **niet opnieuw gehasht**: de controle
+betreft de SHA-binding die de speler bij het oorspronkelijke renderen
+heeft vastgelegd, geen latere onafhankelijke audio-audit. Ook import is
+onmogelijk in Eventmodus. Een bestand kiezen is géén upload.
+
 **Bewaar je JSON voordat je dit browservenster sluit of vernieuwt.**
 MixLab slaat deze aantekeningen niet automatisch op: geen browseropslag,
 geen achtergrondservice, geen netwerk, geen aanpassing van de SHA-gebonden
