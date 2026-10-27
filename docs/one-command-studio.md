@@ -163,8 +163,29 @@ python3 -m mixlab.party_mix \
 
 MixLab geeft de exacte route (track-ID's), overgangsstijlen, handmatig
 vastgelegde BPM, beginpunten, beattellingen en de totale **overgangsduur**
-als leesbare JSON terug. Het is géén voorspelling van de lengte van de
-complete set: die is pas na controle van de echte PCM-audio bekend.
+als leesbare JSON terug. Het standaardoverzicht is géén voorspelling van de lengte van de
+complete set; dat zou zonder broncontrole misleidend zijn. Voor **originele
+lokale 44,1 kHz PCM16-WAVs** is er optioneel een volledige tijdscontrole:
+
+```bash
+python3 -m mixlab.party_mix \
+  /private/songs/input.json \
+  /private/mixlab-sessie \
+  /private/volledige-set.wav \
+  --family bass_swap --preview --verify-wavs
+```
+
+Hiermee leest MixLab alléén de originele WAV-headers en de volledige bron-SHA256's,
+en controleert of alle handmatige beginpunten inclusief het einde van elke
+transitie **binnen de werkelijke lokale tracklengte** vallen. Het overzicht
+meldt het exact verwachte aantal PCM-frames, WAV-grootte en de mixtijd op
+basis van de bestaande 44,1 kHz stereo PCM16-renderer. De normale renderer
+controleert tijdens de latere echte import/export opnieuw alle bestanden.
+Er wordt geen muziek gedecodeerd, getranscodeerd, geüpload of als WAV
+geëxporteerd tijdens de preview. Voor MP3/FLAC en andere bronnen gebruik je
+de gewone `--preview`; voor die bronnen kan de exacte lengte **zonder
+daadwerkelijke audio-import niet eerlijk worden voorspeld**. Het vlaggetje
+`--verify-wavs` is uitsluitend geldig samen met `--preview`.
 Ook de bronhashes, audiokwaliteit en onafhankelijk geverifieerde
 muziekrechten worden in previewmodus **niet** gecontroleerd. De uiteindelijke
 render valideert die altijd opnieuw. Als een volgende uitgaande cue vóór
@@ -172,6 +193,11 @@ het einde van de vorige binnenkomende overgang ligt, weigert MixLab de
 playlist nu zowel bij preview als bij een normale opdracht **vóór het
 kostbare importeren/renderen**. Corrigeer je zelf opgegeven cues eerst in
 het private manifest en gebruik daarna dezelfde opdracht zonder `--preview`.
+
+Een complete playlist gebruikt bovendien **ieder in de broncatalogus
+opgegeven nummer precies één keer**. Extra vergeten nummers en routes die
+terugkeren naar een eerder nummer worden nu al vóór het renderen geweigerd;
+alleen alle paar-ID's aflopen was daarvoor onvoldoende.
 
 Een *complete* set moet nu **alle** in het bronmanifest geregistreerde paren bevatten, in hun exacte afspeelvolgorde. Een ontbrekende of omgewisselde overgang wordt **vóór** CPU-zwaar importeren/renderen geweigerd, zonder een nieuwe studiosessie of half eindbestand achter te laten. `--family` en `--transition` zijn onderling exclusief: geef nooit beide tegelijk. Automatische pairselectie betekent hier uitsluitend het toepassen van een gekozen **stijl** op de reeds door jou goedgekeurde overgangen, niet automatische BPM-, muziek- of rechtenanalyse.
 
