@@ -789,6 +789,12 @@ veranderen geen bestaande invoer. De bron-WAVs en originele manifesten
 blijven ongemoeid: de daadwerkelijke toepassing schrijft pas daarna een
 apart, nieuw bronmanifest. Geen upload of automatische browseropslag.
 
+Als handmatig verplaatste A/B-cuepunten twee overgangen laten overlappen,
+blokkeert de privé-editor het opslaan en biedt **Ga naar probleemovergang**.
+Daarmee opent de juiste Deck A-waveform en zie je de vroegste geldige
+uitgaande cuepositie op basis van echte bron-PCM-frames. Er verandert niets
+automatisch aan muziek, cues of rechten; de DJ beluistert en kiest zelf.
+
 De offline A/B-cue-editor heeft nu **Ongedaan maken, Opnieuw en Herstel dit paar** voor bewuste handmatige experimenten. Je kunt ook over meerdere overgangsparen terug en vooruit in je bewerkingen (maximaal 40 stappen): cuepunten, de verwachte volledige setlengte en de geldigheid van de nieuwe cuekeuzes bewegen mee. Herstel dit paar zet uitsluitend dat paar terug naar de originele broncues en is zelf ongedaan te maken. De geschiedenis wordt niet opgeslagen of geüpload: je kiest zelf wanneer je de definitieve cue-JSON downloadt en in een nieuw manifest toepast.
 
 Vanuit een **opgeslagen** handmatige playlist kun je met
