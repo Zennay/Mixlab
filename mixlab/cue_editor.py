@@ -128,6 +128,9 @@ select,input,button{font:inherit;color:#eef0f9;background:#25283a;border:1px sol
 button{cursor:pointer}button:hover{border-color:#bdabff}
 button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visible{outline:3px solid #bdabff;outline-offset:3px}
 .pair-info{margin-left:auto;color:#b4b8ca;padding-bottom:10px}
+.cue-history{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.cue-history button:disabled{opacity:.4;cursor:not-allowed}
+#history-status{color:#c3b5e9;margin:0 0 19px}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 .lane{border:1px solid #383e53;background:linear-gradient(135deg,#1e2030,#151720);border-radius:20px;padding:24px}
 h2{font-size:1.4rem;margin:10px 0} .summary{color:#adb4c7;font-size:.83rem;margin:0 0 20px}
@@ -152,7 +155,12 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <p class="lede">Herken je nummers, bekijk hun geluidsgolf en beluister de handmatig gekozen fragmenten. Verplaats zelf de cue waar het ene nummer uitgaat en het andere begint. De golfvorm is geen automatische beat- of muziekkwaliteitsanalyse.</p>
 <div class="toolbar"><label>Overgang tussen nummers<select id="pair"></select></label><label style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
 <input type="checkbox" id="snap">Afronden op de opgegeven beatgrid (indien bekend)</label>
-<div class="pair-info" id="pair-info"></div></div>
+<div class="pair-info" id="pair-info"></div>
+<div class="cue-history" role="group" aria-label="Cuewijzigingen beheren">
+<button id="undo" type="button" disabled>↶ Ongedaan maken</button>
+<button id="redo" type="button" disabled>↷ Opnieuw</button>
+<button id="restore-pair" type="button" disabled>Herstel dit paar</button></div></div>
+<p id="history-status" role="status" aria-live="polite">Nog geen cuewijzigingen.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
 <p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
@@ -243,7 +251,52 @@ function plannedSetTimeline(){
  return {rate,total,chapters};
 }
 const originalCueValues=pairs.map(p=>({id:p.id,a:p.a_start_seconds,b:p.b_start_seconds}));
+const undoHistory=[],redoHistory=[];
+function snapshot(forPair=chosen.id){
+ return {pairId:forPair,values:pairs.map(p=>[p.a_start_seconds,p.b_start_seconds])};
+}
+function rememberCueEdit(){
+ undoHistory.push(snapshot());
+ if(undoHistory.length>40)undoHistory.shift();
+ redoHistory.length=0;
+}
+function restoreSnapshot(record){
+ pairs.forEach((p,i)=>{
+  p.a_start_seconds=record.values[i][0];
+  p.b_start_seconds=record.values[i][1];
+ });
+ chosen=pairs.find(p=>p.id===record.pairId);
+ pairSelect.value=chosen.id;refresh();
+}
+function undoCueEdit(){
+ if(!undoHistory.length)return;
+ const prior=undoHistory.pop();
+ redoHistory.push(snapshot(prior.pairId));restoreSnapshot(prior);
+}
+function redoCueEdit(){
+ if(!redoHistory.length)return;
+ const next=redoHistory.pop();
+ undoHistory.push(snapshot(next.pairId));restoreSnapshot(next);
+}
+function restoreCurrentPair(){
+ const original=originalCueValues.find(p=>p.id===chosen.id);
+ if(chosen.a_start_seconds===original.a&&chosen.b_start_seconds===original.b)return;
+ rememberCueEdit();chosen.a_start_seconds=original.a;
+ chosen.b_start_seconds=original.b;refresh();
+}
 const originalTiming=plannedSetTimeline();
+function refreshHistoryStatus(){
+ const changed=originalCueValues.filter((c,i)=>
+   pairs[i].a_start_seconds!==c.a||pairs[i].b_start_seconds!==c.b).length;
+ edited=changed>0;
+ const saved=originalCueValues.find(p=>p.id===chosen.id);
+ $('undo').disabled=!undoHistory.length;
+ $('redo').disabled=!redoHistory.length;
+ $('restore-pair').disabled=chosen.a_start_seconds===saved.a&&
+   chosen.b_start_seconds===saved.b;
+ $('history-status').textContent=changed+' van '+pairs.length+
+   ' overgangen gewijzigd · '+undoHistory.length+' stappen terug beschikbaar.';
+}
 function refreshLiveTimeline(){
  const list=$('mix-timeline'),summary=$('mix-timing-summary');
  list.replaceChildren();
@@ -288,6 +341,7 @@ function refreshLiveTimeline(){
  }
 }
 function refreshCueStatus(){
+ refreshHistoryStatus();
  const problem=cueProblem();
  $('save').disabled=!!problem;
  $('message').textContent=problem?'Nog niet opslaan: '+problem:
@@ -308,7 +362,8 @@ function snapTime(value,side){
 function setCue(side,value){
  const key=side+'_start_seconds',next=snapTime(value,side);
  if(next!==chosen[key]){
-   chosen[key]=next;edited=true;
+   rememberCueEdit();
+   chosen[key]=next;
  }
  refreshSide(side);
  refreshCueStatus();
@@ -357,6 +412,9 @@ function refresh(){
 pairSelect.addEventListener('change',()=>{
  chosen=pairs.find(p=>p.id===pairSelect.value);refresh();
 });
+$('undo').addEventListener('click',undoCueEdit);
+$('redo').addEventListener('click',redoCueEdit);
+$('restore-pair').addEventListener('click',restoreCurrentPair);
 for(const side of ['a','b']){
  const t=$('range-'+side);t.addEventListener('input',()=>setCue(side,Number(t.value)));
  const canvas=$('wave-'+side);
