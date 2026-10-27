@@ -342,6 +342,16 @@ waveforms te tonen. In de Nederlandse cue-editor herken je bij het
 kiezen van een overgang en op beide decks voortaan de **lokale
 bestandsnaam zonder extensie**, naast de originele technische bron-ID.
 De zichtbare naam is geen onafhankelijk herkende artiest of echte tracktitel.
+Gebruik in beide decks de bestaande ± beat-/4-beatknoppen voor
+muzikale hoofdstappen. Voor fijnere **handmatig gehoorde** correcties
+zijn er nu ook **− 0,10 s / + 0,10 s**-knoppen en
+**Shift + ←/→** op de geselecteerde golfvorm. Deze kleine stappen omzeilen
+bewust het optionele beatgrid; de gewone beatknoppen blijven op de door jou
+verklaarde BPM rekenen. Elke fijne wijziging is afzonderlijk ongedaan te
+maken, wordt zichtbaar in de geplande volledige mixtijdlijn en kan alleen
+worden opgeslagen zolang de broncues een complete renderbare route vormen.
+De originele muziek, hashes en eerder opgeslagen manifesten wijzigen niet.
+
 Een gewijzigde cue krijgt direct de melding dat de keuzes nog gedownload
 moeten worden. Er wordt geen Studio, nieuwe muziek of WAV-export
 gepubliceerd. Kies handmatig A/B-cuepunten in de offline editor, download
