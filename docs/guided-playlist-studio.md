@@ -248,7 +248,7 @@ daadwerkelijk te mixen, gebruik dezelfde bronmanifest met `--resume` en
 HTML-bestanden worden nooit overschreven. Als alleen de optionele HTML faalt,
 blijft je handmatig ingevulde bronmanifest intact; de wizard geeft een
 expliciete waarschuwing, niet een verzonnen successtatus voor de pagina.
-`--plan-html` vereist `--manifest-only`; `--plan-verify-wavs` vereist beide.
+`--plan-html` vereist `--manifest-only` of `--resume`; `--plan-verify-wavs` en `--plan-cue-editor` vereisen `--plan-html`.
 
 Maak later met exact diezelfde bronmanifest een **nieuwe** sessie en de
 browsergebaseerde Studio. Alle hashes, rechtenverklaringen en handmatige
@@ -295,6 +295,44 @@ blijven gelden. Een gewijzigde WAV of ongeldige route doet de **expliciete
 heropenopdracht falen** in plaats van een lege pagina als succes te melden.
 Gebruik later een aparte `--resume --full-set-wav`-opdracht om werkelijk te
 renderen: combineer die niet met `--plan-html` of met `--ideas`.
+
+### Bestaande playlistcues visueel wijzigen zonder WAV-render
+
+Voeg bij het heropenen van je plan een **nieuwe private HTML-bestandsnaam**
+naast de originele WAV-bestanden toe:
+
+~~~bash
+python3 -m mixlab.playlist_studio /private/music \
+  /private/music/my-playlist.private.json /private/new-plan \
+  --resume --plan-html --plan-verify-wavs \
+  --plan-cue-editor /private/music/my-new-cue-editor.html
+~~~
+
+Het resultaat bevat `private_plan_html` **en** `private_cue_editor_html`.
+De editor leest de originele SHA-gecontroleerde **PCM16 WAVs** lokaal om
+waveforms te tonen. Er wordt geen Studio, nieuwe muziek of WAV-export
+gepubliceerd. Kies handmatig A/B-cuepunten in de offline editor, download
+`mixlab-cue-selections.json` en plaats dat JSON in je privémuziekmap.
+Verwerk die keuze uitsluitend naar een **nieuw** bronmanifest:
+
+~~~bash
+python3 -m mixlab.cue_editor apply \
+  /private/music/my-playlist.private.json \
+  /private/music/mixlab-cue-selections.json \
+  /private/music/my-playlist-revised.private.json
+~~~
+
+Open daarna het **nieuwe** manifest opnieuw met `--resume --plan-html
+--plan-verify-wavs` om de nieuwe duur en tijdlijn te controleren.
+Render pas met een aparte `--resume --full-set-wav`-opdracht. De editor
+kan een bestaande rechtenverklaring, SHA-hash, transitiestijl, frozen
+bronmanifest of audiobestand **niet stilzwijgend overschrijven**.
+De browserkeuze blijft handmatig; er is geen beat-/phrase-herkenning,
+automatische rechtencontrole of bewezen menselijke luisterkwaliteit.
+Een bestaande editor-HTML wordt geweigerd. Bij een nieuw manifest blijft
+de handmatig ingevulde broninformatie behouden als de optionele editor
+niet kan worden gemaakt; bij expliciet `--resume` is zo'n mislukte editor
+juist een fout, geen vals succes.
 
 ## Privacy, herstel en echte beperkingen
 
