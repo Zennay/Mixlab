@@ -79,14 +79,17 @@ def _section(pair, records):
         name = html.escape(family.replace("_", " ").title())
         src = html.escape(record["relative_path"], quote=True)
         cards.append(
-            '<article class="variant"><h3>' + name + '</h3>'
+            '<article class="variant" data-family="' + family + '"><h3>' + name + '</h3>'
             '<audio controls preload="none" src="' + src + '"></audio>'
+            '<button type="button" class="same-time">Vergelijk op dezelfde positie</button>'
             '<a class="save" download="' + safe + '-' + family + '.wav" href="' + src +
             '">Save this WAV</a></article>'
         )
     return ('<section class="pair" data-pair="' + safe +
             '"><header><p class="eyebrow">Transition pair</p><h2>' + safe +
             '</h2><p class="muted">All styles render the same manual BPM and beat duration.</p></header>'
+            '<p class="compare-status" role="status" aria-live="polite">'
+            'Kies een stijl om op dezelfde luisterpositie te vergelijken.</p>'
             '<div class="variants">' + "".join(cards) + '</div></section>')
 
 
@@ -108,6 +111,12 @@ h2{font-size:2rem;margin:0}h3{margin:0 0 22px;font-size:1.15rem;text-transform:c
 .variant{border:1px solid #313645;background:linear-gradient(135deg,#242538,#171920);
 border-radius:21px;padding:24px;min-height:188px}
 audio{width:100%;height:44px}.save{display:inline-block;color:#d6ccff;margin-top:16px;text-decoration:none;font-size:.92rem}
+.same-time{display:block;width:100%;margin-top:15px;padding:12px 14px;
+background:#342c50;color:#fff;border:1px solid #a99bd5;border-radius:11px;
+font:inherit;font-size:.88rem;font-weight:700;cursor:pointer}
+.same-time:hover{background:#51406c}.same-time:focus-visible{outline:3px solid #c4b5fd;outline-offset:3px}
+.same-time[aria-pressed=true]{background:#24594b;border-color:#9aefcf}
+.compare-status{min-height:1.5em;color:#c8c1f2;font-size:.9rem;margin:14px 0 4px}
 .save:focus-visible{outline:3px solid #c4b5fd;outline-offset:3px}
 footer{margin-top:72px;color:#8b92a5;font-size:.85rem}
 </style></head><body><main>
@@ -120,6 +129,49 @@ provenance remain on your computer.</p>
 Styles are labelled and no musical-preference or automatic-analysis claim is made.
 For a formal controlled A/B study, use the separate benchmark workflow.</div>
 ''' + cards + '''
+<script>
+// Private unblinded creative audition. Controls only already-rendered WAVs.
+const allPlayers=Array.from(document.querySelectorAll(".variant audio"));
+for(const pair of document.querySelectorAll("section.pair")){
+  const cards=Array.from(pair.querySelectorAll("article.variant"));
+  const status=pair.querySelector(".compare-status");
+  let selected=null;
+  function mark(audio){
+    selected=audio;
+    for(const card of cards){
+      const button=card.querySelector("button.same-time");
+      button.setAttribute("aria-pressed",String(card.querySelector("audio")===audio));
+    }
+    const card=audio.closest("article.variant");
+    status.textContent="Luistert naar "+card.querySelector("h3").textContent+
+      " op "+audio.currentTime.toFixed(2)+" seconden. Geen blinde beoordeling.";
+  }
+  for(const card of cards){
+    const audio=card.querySelector("audio");
+    const button=card.querySelector("button.same-time");
+    button.setAttribute("aria-pressed","false");
+    audio.addEventListener("play",()=>{
+      for(const other of allPlayers)if(other!==audio)other.pause();
+      mark(audio);
+    });
+    button.addEventListener("click",()=>{
+      // Switch to the identical relative moment in a different style.
+      const position=selected && Number.isFinite(selected.currentTime)?
+        selected.currentTime:0;
+      if(selected && selected!==audio)selected.pause();
+      const max=Number.isFinite(audio.duration)?Math.max(0,audio.duration-.01):position;
+      audio.currentTime=Math.min(max,Math.max(0,position));
+      mark(audio);
+      audio.play().catch(()=>{
+        if(selected===audio){
+          button.setAttribute("aria-pressed","false");
+          status.textContent="Dit lokaal opgeslagen WAV-fragment kan niet worden afgespeeld.";
+        }
+      });
+    });
+  }
+}
+</script>
 <footer>MixLab · Offline PCM16 audition · No analytics, uploads or external fonts</footer>
 </main></body></html>'''
     path.write_text(page, encoding="utf-8")

@@ -22,9 +22,21 @@ python3 -m mixlab.studio render /private/mixlab-cue-pack/library.json /private/t
 
 Open `/private/transition-studio/index.html` locally in your browser. Each
 track pair shows the already-supported equal-power baseline, bass swap,
-echo exit and hard cut with labelled audio controls. Click **Save this WAV**
-to save an individual result through the browser. No backend, cloud storage,
-JavaScript library, CDN, account or network is involved.
+echo exit and hard cut with labelled audio controls. Use **Vergelijk op
+dezelfde positie** beside any rendered style to jump to that style at the
+**exact same relative timestamp** as the previous style from the same pair.
+The earlier style is paused; the Studio also pauses every other player in
+this page when you start listening manually. This makes comparisons at
+identical manual cue positions easier without rendering anything again.
+The active style has a visible and screen-reader-readable pressed state.
+All four alternatives retain their original, user-declared cue, BPM and
+shared duration. The switch is ordinary browser playback (not sample-perfect
+synchronized professional DJ decks or independent blind listening).
+
+Click **Save this WAV** to save an individual result through the browser.
+No backend, cloud storage, JavaScript library, CDN, account or network is
+involved: only a short inline script controls the existing local audio
+players, without analytics or uploads.
 
 Render a single pair when the library is large or disk resources are tight:
 

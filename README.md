@@ -131,6 +131,13 @@ het HTML-bestand. MixLab weigert een afwijkende WAV-SHA, overgangsstijl
 of hoofdstuktijd en beschermt al ingevulde notities tegen stilzwijgend
 overschrijven. Er is geen account, server of automatische browseropslag.
 
+Ook in de aparte **Transition Studio** kun je nu met **Vergelijk op
+dezelfde positie** direct wisselen tussen de vier écht gerenderde
+bass_swap, echo_exit, hard_cut en baseline WAV-varianten, zonder telkens
+naar hetzelfde handmatig gekozen overgangsmoment te zoeken. De vorige
+variant pauzeert en slechts één lokale speler is tegelijk actief. Dit is
+creatief luisteren, geen onafhankelijk blind kwaliteitsonderzoek.
+
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. Je kunt nu **iedere werkelijk gerenderde overgang
 lokaal blijven herhalen** voor een handmatige beluistering: kies
