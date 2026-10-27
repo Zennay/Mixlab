@@ -19,7 +19,8 @@ from .set_player import publish_player
 
 
 def render_party_mix(manifest, session_directory, output_wav, transitions=(),
-                     *, family=None, timeout_seconds=600, suggestions=False):
+                     *, family=None, timeout_seconds=600, suggestions=False,
+                     preview=False):
     """Render the source Studio and chosen continuous set in one safe run.
 
     The expensive private Studio is deliberately retained if the final WAV
@@ -65,6 +66,41 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
         if previous is not None and pair.get("a") != previous:
             raise ValueError("Selected pairs do not form an outgoing-to-incoming song route")
         previous = pair.get("b")
+    # Cue overlap is a full-set failure, not merely a Studio validation.
+    # Catch it now, before media import/real transition rendering starts.
+    total_transition_seconds = 0.0
+    next_available = 0.0
+    manual_bpm = {t['id']: t['bpm'] for t in declared['tracks']}
+    transitions_plan = []
+    for index, (pid, style) in enumerate(selected, 1):
+        pair = by_id[pid]
+        bpm = manual_bpm[pair['a']]
+        duration = pair.get('beats', 8) * 60.0 / bpm
+        start = pair['a_start_seconds']
+        if index > 1 and start + 1e-8 < next_available:
+            raise ValueError('Outgoing cue overlaps the previous incoming transition; correct the manual cues')
+        next_available = pair['b_start_seconds'] + duration
+        total_transition_seconds += duration
+        transitions_plan.append(dict(pair=pid, from_track=pair['a'], to_track=pair['b'],
+                                     family=style, beats=pair.get('beats', 8),
+                                     bpm=bpm, duration_seconds=round(duration, 4),
+                                     outgoing_cue_seconds=start,
+                                     incoming_cue_seconds=pair['b_start_seconds']))
+    if suggestions:
+        tracks = declared.get('tracks', [])
+        if not all(isinstance(t, dict) and 'first_downbeat_seconds' in t for t in tracks):
+            raise ValueError('Suggestions require a confirmed first downbeat per track')
+    if preview:
+        return dict(status='manual-plan-preview-only-no-files-created',
+                    source_tracks=len(selected) + 1, transition_count=len(selected),
+                    track_order=[transitions_plan[0]['from_track']] +
+                                [entry['to_track'] for entry in transitions_plan],
+                    transitions=transitions_plan,
+                    total_transition_seconds=round(total_transition_seconds, 4),
+                    complete_mix_duration='not-known-until-source-PCM-validation',
+                    audio_rendered=False, source_audio_validated=False,
+                    source_rights_verified=False, automatic_beatmatching=False,
+                    musical_quality_claim=False)
     # Full Studio must render every pair in order to satisfy user selections.
     studio_page = make_session(source, session_dir, suggestions=suggestions,
                                timeout_seconds=timeout_seconds)
@@ -99,12 +135,14 @@ def main():
                         help="Allowed FFmpeg processing time per input track, 30..900 seconds")
     parser.add_argument("--suggestions", action="store_true",
                         help="Make independent manual-grid energy proposals without applying them")
+    parser.add_argument("--preview", action="store_true",
+                        help="Show the manual track route, cue times and styles without creating audio or files")
     args = parser.parse_args()
     try:
         result = render_party_mix(args.source_manifest, args.new_session_directory,
                                   args.new_output_wav, args.transition or (), family=args.family,
                                   timeout_seconds=args.timeout_seconds,
-                                  suggestions=args.suggestions)
+                                  suggestions=args.suggestions, preview=args.preview)
     except (ValueError, TypeError, OSError, KeyError) as exc:
         parser.exit(2, f"MixLab party mix: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))

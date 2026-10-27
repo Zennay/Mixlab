@@ -147,6 +147,32 @@ python3 -m mixlab.party_mix \
   --transition pair-002:echo_exit
 ```
 
+### Eerst bekijken, pas daarna renderen
+
+Met dezelfde opdracht en `--preview` kun je de volledige handmatig gekozen
+route controleren **zonder audiobronnen te importeren of bestanden aan te
+maken**:
+
+```bash
+python3 -m mixlab.party_mix \
+  /private/songs/input.json \
+  /private/mixlab-sessie \
+  /private/volledige-set.wav \
+  --family bass_swap --preview
+```
+
+MixLab geeft de exacte route (track-ID's), overgangsstijlen, handmatig
+vastgelegde BPM, beginpunten, beattellingen en de totale **overgangsduur**
+als leesbare JSON terug. Het is géén voorspelling van de lengte van de
+complete set: die is pas na controle van de echte PCM-audio bekend.
+Ook de bronhashes, audiokwaliteit en onafhankelijk geverifieerde
+muziekrechten worden in previewmodus **niet** gecontroleerd. De uiteindelijke
+render valideert die altijd opnieuw. Als een volgende uitgaande cue vóór
+het einde van de vorige binnenkomende overgang ligt, weigert MixLab de
+playlist nu zowel bij preview als bij een normale opdracht **vóór het
+kostbare importeren/renderen**. Corrigeer je zelf opgegeven cues eerst in
+het private manifest en gebruik daarna dezelfde opdracht zonder `--preview`.
+
 Een *complete* set moet nu **alle** in het bronmanifest geregistreerde paren bevatten, in hun exacte afspeelvolgorde. Een ontbrekende of omgewisselde overgang wordt **vóór** CPU-zwaar importeren/renderen geweigerd, zonder een nieuwe studiosessie of half eindbestand achter te laten. `--family` en `--transition` zijn onderling exclusief: geef nooit beide tegelijk. Automatische pairselectie betekent hier uitsluitend het toepassen van een gekozen **stijl** op de reeds door jou goedgekeurde overgangen, niet automatische BPM-, muziek- of rechtenanalyse.
 
 De bronbibliotheek en beide doelpaden moeten vooraf veilig gekozen zijn.
