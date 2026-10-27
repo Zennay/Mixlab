@@ -68,6 +68,12 @@ python3 -m mixlab.set_composer render \
   /private/mixlab-party.wav
 ~~~
 
+De begeleide `mixlab.playlist_studio --full-set-wav` weigert inmiddels ook
+vroegtijdig een al bestaande uitvoer-WAV, onvolledige trackroute of onmogelijke
+cues **vóór** dure Studio-import. Het uitvoerresultaat rapporteert afzonderlijk
+`complete_set_ready`; een mislukte gevraagde WAV levert een foutcode op terwijl
+een reeds succesvol gerenderde Studio behouden blijft.
+
 De afzonderlijke volledige `mixlab.instant_set`-export weigert nu ook een
 broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
 opgegeven nummers moeten exact eenmaal in de route staan voordat er

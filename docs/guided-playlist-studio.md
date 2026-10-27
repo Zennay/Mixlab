@@ -126,6 +126,25 @@ alleen in de lokale HTML/CUE/JSON; de echte WAV/bron-SHA-receipts veranderen nie
 De tweede overgang krijgt expliciet een eigen stijl; alle andere
 paren gebruiken `bass_swap`.
 
+**Een volledige WAV is pas geslaagd wanneer er echt een WAV is.**
+De wizard controleert nu vóór het zware importeren/renderen de nieuwe
+WAV-bestemming, de volledige brontrackvolgorde, de handmatige cue-overlap
+en de overgangskeuzes. Een bestaande WAV/receipt of een vergeten nummer
+wordt direct met exitcode 2 geweigerd: er wordt geen nieuwe Studiosessie,
+WAV of halfvolledige export gemaakt; het bronmanifest blijft bewaard.
+Dit voorkomt dat de gebruiker eerst minuten rekent voor een uitvoer die
+bij voorbaat niet kon slagen.
+
+Na het renderen geeft het JSON-resultaat onafhankelijk
+`complete_set_requested` en `complete_set_ready` terug, met fase
+`studio-and-complete-set`, `studio-only` of
+`studio-kept-complete-set-failed`. `ready: true` betekent op zichzelf
+alleen dat de Studio bestaat. Als onverwacht alleen de WAV-export faalt
+**nadat** Studio succesvol is gerenderd, bewaart MixLab die Studio voor
+hergebruik, meldt de fout expliciet en beëindigt de CLI met exitcode 2.
+Zo wordt de mislukte volledige set niet meer als geslaagde opdracht
+beschouwd. Privébronbestanden en bestaande outputs worden niet gewijzigd.
+
 Bij `--resume` mag je `--full-set-wav` ook gebruiken, zodat een
 eerder opgeslagen manifest later in één keer het complete resultaat
 oplevert. `--manifest-only` kan vanzelfsprekend geen WAV maken.

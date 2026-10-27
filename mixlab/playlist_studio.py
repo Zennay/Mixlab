@@ -318,6 +318,32 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 write('Private playlist page ready. No session or audio rendered.')
         write("Manifest saved. Render later with the same command and --resume.")
         return response
+    # The guided one-command WAV is an explicit user request. Refuse an
+    # impossible output path/short playlist/bad cue BEFORE decoding songs or
+    # rendering every Studio audition. This only previews manual choices;
+    # the canonical exporter still revalidates PCM and source hashes.
+    if full_set_wav is not None:
+        from .party_mix import render_party_mix
+        declared = _read_spec(manifest)
+        pairs = declared.get('pairs')
+        if not isinstance(pairs, list):
+            raise ValueError('Expected the original complete manual pair route')
+        selections = {}
+        for choice in styles:
+            if not isinstance(choice, str) or choice.count(':') != 1:
+                raise ValueError('Use --style PAIR_ID:FAMILY')
+            pid, requested = choice.split(':', 1)
+            if pid in selections:
+                raise ValueError('Duplicate pair style selection')
+            selections[pid] = requested
+        if set(selections) - {p.get('id') for p in pairs if isinstance(p, dict)}:
+            raise ValueError('Selected style is not for a registered source pair')
+        full_route = [
+            str(pair['id']) + ':' + selections.get(
+                pair['id'], pair.get('approved_family') or effective_family)
+            for pair in pairs]
+        render_party_mix(manifest, destination, full_set_wav,
+                         transitions=full_route, preview=True)
     # Existing session admission and hash policies remain authoritative. It
     # also cleans up its own fresh output folder on decoding/render errors.
     studio = make_session(manifest, destination, timeout_seconds=timeout_seconds)
@@ -373,6 +399,11 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                "set_composer": str(composer) if composer else None,
                "transition_idea_board": str(idea_page) if idea_page else None,
                "instant_complete_set": instant_set,
+               "complete_set_requested": full_set_wav is not None,
+               "complete_set_ready": instant_set is not None,
+               "stage": ("studio-and-complete-set" if instant_set is not None
+                         else "studio-kept-complete-set-failed" if full_set_wav is not None
+                         else "studio-only"),
                "tracks": len(summary["tracks"]), "transition_pairs": len(summary["pairs"]),
                "warnings": warnings, "offline": True,
                "automatic_tempo_matching": False, "music_preference_proven": False}
@@ -431,6 +462,9 @@ def main():
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
+    if args.full_set_wav is not None and not result["complete_set_ready"]:
+        parser.exit(2, "MixLab Playlist Studio: complete WAV export failed; "
+                       "the original private Studio remains available.\n")
 
 
 if __name__ == "__main__":
