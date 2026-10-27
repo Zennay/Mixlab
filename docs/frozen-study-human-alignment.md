@@ -1,0 +1,14 @@
+# Frozen M1 study → human-confirmed render manifest
+
+This is an **offline, private M1 preparation step**, not automatic BPM/downbeat/cue recognition, a music licence, or musical-quality evidence. The original audio and the original library/study remain unchanged. Do not add private worksheets, hashes or generated manifests to Git or CI artifacts.
+
+## Existing end-to-end workflow
+
+1. Create a rights-declared local PCM16 library and an explicit development/evaluation split. Generate candidates using `python3 -m mixlab.evaluation.candidates SOURCE_LIBRARY.json SPLIT.json CANDIDATES.json [--manual-keys KEYS.json] [--measure-keys]`.
+2. Freeze once before listening: `python3 -m mixlab.evaluation.study freeze CANDIDATES.json FROZEN_STUDY.json --pairs 5`. Verify using `python3 -m mixlab.evaluation.study verify FROZEN_STUDY.json`.
+3. Run `python3 -m mixlab.study_alignment prepare SOURCE_LIBRARY.json FROZEN_STUDY.json PRIVATE_CUES.json` (all paths local/private, outside Git). This writes an **unapproved** worksheet for the study's exact outgoing/incoming source IDs and SHA-256 values, including pairs the study selected in the reverse order. Nothing renders.
+4. After actually checking the original audio yourself, edit **each** `pairs[]` entry in `PRIVATE_CUES.json`: set `beats` (integer 1–64), `a_start` and `b_start` (seconds from the beginning of the corresponding *original* track), and only then set `human_cues_confirmed: true` and `permission_for_private_render_confirmed: true`. Confirm legal use independently: a checkbox is a human assertion, **not proof of a licence**.
+5. Run `python3 -m mixlab.study_alignment apply SOURCE_LIBRARY.json FROZEN_STUDY.json PRIVATE_CUES.json /private/music/NEW_LIBRARY.json`. The new library must be a `.json` sibling of the original manifest, because source paths are relative. The tool requires every pair's original IDs, source SHA-256 values, frozen study ID, source-manifest hash and manual approvals. It validates the **complete** resulting library and audio bounds before exclusively publishing the new manifest. The original remains untouched. Invalid/partial inputs never publish a destination.
+6. Render the already frozen candidate-vs-baseline pairs with `python3 -m mixlab.evaluation.study_pack NEW_LIBRARY.json FROZEN_STUDY.json /private/new-blind-pack`. The existing renderer verifies source SHA-256, equal BPM, cues and study selection; loudness matching is applied before listener WAVs are published. No autoupload, user-rating generation, or source-rights verification occurs.
+
+The exported manifest is still **not** an independent listening result. M1 needs permitted real music, musical reference validation, and at least three independent blinded listeners; all missing evidence must remain visible. `--measure-keys` results are labelled measured-heuristic and must be independently confirmed prior to a real evaluation.
