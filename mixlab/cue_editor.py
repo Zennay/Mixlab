@@ -170,18 +170,18 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 </div>
 <p id="cue-import-status" role="status" aria-live="polite">Nog geen cuekeuzes geladen.</p>
 <p class="lede">Fijn afstellen: gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
-<div class="grid">
+<div class="cue-history" role="group" aria-label="Context rond broncue"><label for="context-seconds">Originele muziek vóór en ná de cue<select id="context-seconds"><option value="2" selected>2 seconden</option><option value="8">8 seconden</option><option value="16">16 seconden</option></select></label><p class="lede">Deck A en B worden afzonderlijk beluisterd. Dit is nog geen gemixte overgang.</p></div><p id="source-preview-status" role="status" aria-live="polite">Geen bronfragment aan het afspelen.</p><div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
 <p class="summary" id="info-a"></p><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-a"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-a" aria-label="Tijdstip uitgaande cue"></div>
-<div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="fineprev-a" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-a" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-a">▶ Beluister A</button></div>
+<div class="buttons"><button id="prev-a">− beat</button><button id="next-a">+ beat</button><button id="barprev-a">− 4 beats</button><button id="barnext-a">+ 4 beats</button><button id="fineprev-a" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-a" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-a">▶ Beluister A</button><button id="context-a" type="button">▶ A met context</button></div>
 <audio id="audio-a" controls preload="metadata"></audio></section>
 <section class="lane"><small>INKOMEND / DECK B</small><h2 id="name-b"></h2>
 <p class="summary" id="info-b"></p><canvas id="wave-b" width="950" height="152" tabindex="0" role="button" aria-label="Kies inkomende cuepositie op de golfvorm"></canvas>
 <div class="row"><span>Startcue</span><span class="time" id="time-b"></span>
 <input class="range" type="range" min="0" step="0.01" id="range-b" aria-label="Tijdstip inkomende cue"></div>
-<div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="fineprev-b" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-b" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-b">▶ Beluister B</button></div>
+<div class="buttons"><button id="prev-b">− beat</button><button id="next-b">+ beat</button><button id="barprev-b">− 4 beats</button><button id="barnext-b">+ 4 beats</button><button id="fineprev-b" title="100 milliseconden terug, zonder beatgrid">− 0,10 s</button><button id="finenext-b" title="100 milliseconden vooruit, zonder beatgrid">+ 0,10 s</button><button id="play-b">▶ Beluister B</button><button id="context-b" type="button">▶ B met context</button></div>
 <audio id="audio-b" controls preload="metadata"></audio></section>
 </div>
 <section class="footer" aria-labelledby="timeline-title">
@@ -437,7 +437,25 @@ function setCue(side,value,fine=false){
  refreshSide(side);
  refreshCueStatus();
 }
-function stopPlayback(){if(playing){playing.pause();playing=null;}}
+function stopPlayback(){
+ if(playing){playing.pause();playing=null;}
+ $('source-preview-status').textContent='Geen bronfragment aan het afspelen.';
+}
+function listenSource(side,context){
+ stopPlayback();
+ const a=$('audio-'+side),track=deck(side),cue=chosen[side+'_start_seconds'];
+ const chosenLength=Number($('context-seconds').value);
+ const surround=context&&[2,8,16].includes(chosenLength)?chosenLength:0;
+ const start=Math.max(0,cue-surround);
+ stopAt=Math.min(track.duration,cue+chosen.seconds+surround);
+ if(!(stopAt>start))return;
+ a.currentTime=start;playing=a;
+ $('source-preview-status').textContent='Deck '+side.toUpperCase()+' · '+format(start)+'–'+format(stopAt)+' · originele bron, niet gemixt';
+ a.play().catch(()=>{
+   if(playing===a){stopPlayback();
+     $('message').textContent='Browser kan deze privé-WAV niet afspelen.';}
+ });
+}
 function draw(side){
  const t=deck(side),canvas=$('wave-'+side),ctx=canvas.getContext('2d');
  const w=canvas.width,h=canvas.height,signal=t.waveform;
@@ -536,15 +554,13 @@ for(const side of ['a','b']){
  for(const [name,amount] of [['fineprev',-.1],['finenext',.1]]){
   $(name+'-'+side).addEventListener('click',()=>setCue(side,chosen[side+'_start_seconds']+amount,true));
  }
- $('play-'+side).addEventListener('click',async()=>{
-   stopPlayback();const a=$('audio-'+side);
-   try{a.currentTime=chosen[side+'_start_seconds'];stopAt=chosen[side+'_start_seconds']+chosen.seconds;playing=a;await a.play();}
-   catch(err){$('message').textContent='Browser kan deze privé-WAV niet afspelen. Open de HTML naast je originele muziekbestanden en controleer de bestandsrechten.';}
- });
+ $('play-'+side).addEventListener('click',()=>listenSource(side,false));
+ $('context-'+side).addEventListener('click',()=>listenSource(side,true));
  const audio=$('audio-'+side);
- audio.addEventListener('timeupdate',()=>{if(playing===audio&&audio.currentTime>=stopAt){stopPlayback();}});
- audio.addEventListener('ended',()=>{if(playing===audio)playing=null;});
+ audio.addEventListener('timeupdate',()=>{if(playing===audio&&audio.currentTime>=stopAt-.012)stopPlayback();});
+ audio.addEventListener('ended',()=>{if(playing===audio)stopPlayback();});
 }
+$('context-seconds').addEventListener('change',stopPlayback);
 $('snap').addEventListener('change',()=>{for(const side of ['a','b'])refreshSide(side);});
 $('save').addEventListener('click',()=>{
  if(cueProblem()){
