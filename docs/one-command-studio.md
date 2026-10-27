@@ -126,10 +126,17 @@ crossfade. Blind luisteren en rechtenbewijzen blijven afzonderlijke gates.
 
 ## Nieuwe route: één opdracht tot een complete WAV-set
 
-Wil je de hele keten automatisch *uitvoeren*, zonder zelf eerst de Studio
-en daarna de losse set-export CLI te starten? Gebruik de nieuwe lokale
-`mixlab.party_mix` opdracht met **expliciet handmatig geselecteerde** paren
-en stijlen:
+Wil je de hele keten in één keer uitvoeren zonder eerst de Studio en daarna de losse set-export CLI te starten? Voor een playlist met 2–11 nummers is **één stijlkeuze genoeg**; de al door jou handmatig vastgelegde trackvolgorde en beide cuepunten per paar blijven ongewijzigd:
+
+```bash
+python3 -m mixlab.party_mix \
+  /private/songs/input.json \
+  /private/mixlab-sessie \
+  /private/volledige-set.wav \
+  --family bass_swap
+```
+
+Voor meer creatieve controle kun je in plaats van `--family` elk paar in de oorspronkelijke playlistvolgorde een eigen overgangsstijl geven:
 
 ```bash
 python3 -m mixlab.party_mix \
@@ -139,6 +146,8 @@ python3 -m mixlab.party_mix \
   --transition pair-001:bass_swap \
   --transition pair-002:echo_exit
 ```
+
+Een *complete* set moet nu **alle** in het bronmanifest geregistreerde paren bevatten, in hun exacte afspeelvolgorde. Een ontbrekende of omgewisselde overgang wordt **vóór** CPU-zwaar importeren/renderen geweigerd, zonder een nieuwe studiosessie of half eindbestand achter te laten. `--family` en `--transition` zijn onderling exclusief: geef nooit beide tegelijk. Automatische pairselectie betekent hier uitsluitend het toepassen van een gekozen **stijl** op de reeds door jou goedgekeurde overgangen, niet automatische BPM-, muziek- of rechtenanalyse.
 
 De bronbibliotheek en beide doelpaden moeten vooraf veilig gekozen zijn.
 De sessiemap en WAV **mogen niet bestaan**; bestaande resultaten worden
@@ -153,7 +162,4 @@ die **nieuwe eigen private Studio-map** bestaan, zodat je de fout kunt
 corrigeren en alleen de set-export opnieuw kunt uitvoeren. Originele
 muziek en bestaande exports blijven onaangetast.
 
-Dit is geen automatische DJ-routeplanning: de gebruiker kiest de
-specifieke paren en overgangsstijlen vooraf. Vereist een reeds
-geïnstalleerde lokale FFmpeg, en mist nog menselijk luisterbewijs op
-echte tracks.
+Dit is geen automatische DJ-routeplanning: de volgorde, de BPM, de cues en de rechten blijven expliciet door de gebruiker gekozen en gecontroleerd. Voor correcte reeds aanwezige 44,1 kHz PCM16-WAV is geen FFmpeg nodig; voor MP3/FLAC/M4A of niet-canonieke WAVs is reeds geïnstalleerde FFmpeg vereist. Muzikale kwaliteitsvoorkeur met echte tracks en echte luisteraars blijft onbewezen.
