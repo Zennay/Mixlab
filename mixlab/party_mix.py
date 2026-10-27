@@ -149,7 +149,10 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
     # Once the canonical mix and receipt have been published, the browser
     # player is optional. Preserve the complete WAV even if HTML fails.
     try:
-        response["offline_player"] = str(publish_player(session_dir, result))
+        from .playlist_preview_page import local_song_title
+        names = {entry['id']: local_song_title(entry['path']) for entry in catalog}
+        response["offline_player"] = str(publish_player(
+            session_dir, result, display_names=names))
     except (OSError, ValueError, TypeError, KeyError, wave.Error):
         # A player error may contain a private path; return a bounded message.
         response["player_warning"] = "Complete WAV is ready; optional local player unavailable"

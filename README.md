@@ -69,7 +69,11 @@ python3 -m mixlab.set_composer render \
 ~~~
 
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
-overgang en CUE-export. Je kunt
+overgang en CUE-export. De complete set die je via `playlist_studio` of
+`party_mix` maakt, toont daarbij herkenbare lokale songbestandsnamen en
+song-A→song-B-overgangen in hoofdstukken en eventmodus. Dit zijn uitsluitend
+private weergavenamen; de WAV-SHA, de originele rechtenverklaring en de
+DSP-route blijven ongewijzigd. Je kunt
 de via het lokale goedkeuringsformulier gekozen **expliciete overgangsstijlen nu brongebonden in het private paar** bewaren, zodat de preview en een latere `--resume --full-set-wav` dezelfde goedgekeurde DSP-stijlen hanteren; strijdige overrides worden vóór import geweigerd. Je kunt ook de handmatige invoer vooraf vastleggen met `--manifest-only --plan-html`, waardoor ook de lokale privé-HTML-speelvolgorde verschijnt zonder audio te renderen. Voeg voor canonieke 44,1 kHz PCM16 WAVs `--plan-verify-wavs` toe voor de SHA-gecontroleerde voorspelde mixtijd; hervat later via `--resume --full-set-wav` op een nieuwe bestemming. Je kunt ook alleen de handmatige invoer vooraf vastleggen met `--manifest-only` en later
 zonder opnieuw typen renderen met `--resume`.
 

@@ -20,6 +20,10 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
 - één doorlopende speler met alle nummers en goedgekeurde overgangen;
 - een **klikbare visuele golfvorm** van de complete set, met overgangsmarkeringen, playhead en toetsenbordnavigatie via links/rechts (stappen van vijf seconden);
 - hoofdstukken die rechtstreeks naar elke solo-sectie of transitie springen;
+- bij volledige exports uit **Playlist Studio** en **party_mix** ook herkenbare
+  lokale songnamen (bestandsnaam zonder extensie) en overgangslabels
+  **nummer A → nummer B**, in de afspeellijst, eventmodus en privé-CUE/JSON;
+  de oorspronkelijke brongebonden technische ID's blijven bewaard;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
@@ -85,8 +89,17 @@ De speler verwerkt uitsluitend een **eerder werkelijk geëxporteerde**
 oorspronkelijke sessie/Studio SHA-bindingen, controleert de WAV-SHA en
 het PCM16-formaat, reconstrueert exact dezelfde handmatige route met de
 canonieke `set_export`-logica en bindt de hoofdstukken aan de echte frameposities.
-De chapter-JSON bevat alleen track-/pair-IDs, posities en output-hash; geen
-bronlocaties, metadata van commerciële tracks, lyrics of audio-data.
+De chapter-JSON bevat originele track-/pair-IDs, posities en de exacte
+WAV-outputhash; bij een export rechtstreeks vanuit Playlist Studio of
+party_mix staan **ook de herleidbare lokale bestandsnamen zonder extensie**
+in de privéhoofdstukken (en CUE-sheet). Geen volledige bronpaden,
+commerciële metadataservice, lyrics of originele losse audiobestanden.
+Dit is alleen een weergavenaam uit de broncatalogus, geen automatisch
+herkende titel, rechtencontrole of artiestmetadata. Deel deze HTML-/CUE-/
+JSON-bestanden dus niet zonder de mogelijke privacy-inhoud te controleren.
+Een losse oude sessie waarbij je `python3 -m mixlab.set_player` uitvoert,
+behoudt veilige technische ID's wanneer originele lokale bestandsnamen niet
+meer in de sessie beschikbaar zijn.
 
 Deze creatieve player doet geen netwerkverzoeken, telemetrie, modelaanroepen of
 muziekupload. Omdat alle audio lokaal blijft, moet ook de HTML-pagina privé
