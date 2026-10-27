@@ -29,6 +29,7 @@ Open /private/imported-music/cue-editor.html locally with Firefox or Chromium.
 - Nudge by one beat or four beats. Optionally snap to a **manually declared** first-downbeat and BPM grid (no automatic beat inference).
 - Switch between all registered pairs while keeping edits in memory.
 - Download a small cue-selection JSON containing only pair IDs, cue seconds and source manifest SHA256. It does not contain audio data or full source paths.
+- If a later outgoing cue starts **before** the preceding incoming transition has finished on the same song, the editor immediately explains which pair is conflicting and disables the download button. Move that cue later until it fits. Cue boundaries are checked using the original SHA-verified audio sample rate, not guessed musical phrase lengths. This does not automatically choose better cues.
 
 ### Save your chosen cues without overwriting anything
 
@@ -38,7 +39,7 @@ Move the downloaded selection JSON to your private library or reference its Down
 python3 -m mixlab.cue_editor apply /private/imported-music/source_manifest.json /private/mixlab-cue-selections.json /private/imported-music/approved-cues.json
 ~~~
 
-Apply revalidates the registered WAV source hashes and formats, requires exact source manifest SHA, checks that each declared pair appears exactly once, and rejects cues that exceed a source file's frame budget. It never rewrites the original manifest or media, nor changes an existing frozen evaluation pack.
+Apply revalidates the registered WAV source hashes and formats, requires exact source manifest SHA, checks that each declared pair appears exactly once, and rejects cues that exceed a source file's frame budget. It also checks that connected transitions are in the right order and that each new outgoing cue starts **on or after the previous incoming transition ends**. Invalid selections fail before a new manifest is written; the originals and the user's downloaded JSON are preserved. It never rewrites the original manifest or media, nor changes an existing frozen evaluation pack.
 
 Now compile the approved excerpts and render the actual transition candidates:
 

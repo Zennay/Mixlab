@@ -173,7 +173,28 @@ const pairs=data.pairs;
 const $=id=>document.getElementById(id);
 const pairSelect=$('pair');
 for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
-let chosen=pairs[0],playing=null,stopAt=0;
+let chosen=pairs[0],playing=null,stopAt=0,edited=false;
+function cueProblem(){
+ for(let i=1;i<pairs.length;i++){
+   const previous=pairs[i-1],current=pairs[i];
+   if(previous.b!==current.a)
+     return 'De overgangsparen vormen geen doorlopende afspeelvolgorde.';
+   const rate=bank[current.a].sample_rate;
+   const priorEnd=Math.round(previous.b_start_seconds*rate)+
+     Math.round(previous.beats*60/bank[previous.a].bpm*rate);
+   if(Math.round(current.a_start_seconds*rate)<priorEnd)
+     return current.id+' begint vóór de vorige inkomende overgang eindigt. '+
+       'Verplaats de uitgaande cue naar een later tijdstip.';
+ }
+ return null;
+}
+function refreshCueStatus(){
+ const problem=cueProblem();
+ $('save').disabled=!!problem;
+ $('message').textContent=problem?'Nog niet opslaan: '+problem:
+   edited?'Cues klaar. Download je keuzes voordat je de pagina sluit.':
+   'Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.';
+}
 function format(seconds){const m=Math.floor(seconds/60);const s=(seconds%60).toFixed(2).padStart(5,'0');return String(m)+':'+s;}
 function deck(side){return bank[chosen[side]];}
 function maxStart(side){return Math.max(0,deck(side).duration-chosen.seconds);}
@@ -187,10 +208,10 @@ function snapTime(value,side){
 function setCue(side,value){
  const key=side+'_start_seconds',next=snapTime(value,side);
  if(next!==chosen[key]){
-   chosen[key]=next;
-   $('message').textContent='Cue aangepast. Download je keuzes voordat je deze pagina sluit.';
+   chosen[key]=next;edited=true;
  }
  refreshSide(side);
+ refreshCueStatus();
 }
 function stopPlayback(){if(playing){playing.pause();playing=null;}}
 function draw(side){
@@ -231,6 +252,7 @@ function refresh(){
   const audio=$('audio-'+side);audio.pause();audio.removeAttribute('src');audio.src=encodeURI(t.path);audio.load();
   refreshSide(side);
  }
+ refreshCueStatus();
 }
 pairSelect.addEventListener('change',()=>{
  chosen=pairs.find(p=>p.id===pairSelect.value);refresh();
@@ -255,6 +277,9 @@ for(const side of ['a','b']){
 }
 $('snap').addEventListener('change',()=>{for(const side of ['a','b'])refreshSide(side);});
 $('save').addEventListener('click',()=>{
+ if(cueProblem()){
+   refreshCueStatus();return; // Never export a knowingly unrenderable set.
+ }
  const record={schema_version:1,kind:'manual-cue-overrides',manifest_sha256:data.manifest_sha256,
    pairs:pairs.map(p=>({id:p.id,a_start_seconds:p.a_start_seconds,b_start_seconds:p.b_start_seconds}))};
  const blob=new Blob([JSON.stringify(record,null,2)+'\n'],{type:'application/json'});
@@ -336,6 +361,29 @@ def apply(source_manifest, selection_json, destination):
             if frames > meta["frame_count"]:
                 raise ValueError("Selected cue extends past the source audio")
             item[side + "_start_seconds"] = round(start, 6)
+    # A cue is only useful if the complete saved A->B->C set remains
+    # renderable. Prior import checks covered each pair independently,
+    # allowing a later outgoing cue to overlap the preceding incoming one.
+    # Enforce the same PCM frame boundaries as the full-set exporter BEFORE
+    # creating a new source manifest; original audio and choices stay intact.
+    previous = None
+    for pair in original["pairs"]:
+        if previous is not None:
+            if pair["a"] != previous["b"]:
+                raise ValueError("Overgangsparen vormen geen doorlopende afspeelvolgorde")
+            track = _tracks[pair["a"]]
+            rate = track["sample_rate"]
+            prev_beats = previous.get("beats", 8)
+            prev_bpm = _tracks[previous["a"]]["bpm"]
+            prior_end = round(previous["b_start_seconds"] * rate) + round(
+                prev_beats * 60 / prev_bpm * rate)
+            start_frame = round(pair["a_start_seconds"] * rate)
+            if start_frame < prior_end:
+                raise ValueError(
+                    "Uitgaande cue van " + pair["id"] +
+                    " overlapt de vorige inkomende overgang; "
+                    "schuif de cue later voordat je opslaat")
+        previous = pair
     raw = (json.dumps(original, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
     try:
         with destination.open("xb") as output:
