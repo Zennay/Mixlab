@@ -678,6 +678,8 @@ python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /pri
 
 Een snellere volledige route is `python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /private/full-set.wav --family bass_swap`: alle geregistreerde paren behouden hun reeds handmatig geverifieerde afspeelvolgorde, BPM en cues. `--family` of `--transition` zijn alternatieven. Bij expliciete paren worden ontbrekende of omgegooide playlistovergangen nog vóór het renderen geweigerd.
 
+Bij succesvolle export wordt naast de echte `full-set.wav` ook automatisch `full-set.wav.player.html` gemaakt. Open die privépagina lokaal voor volledige audiopreview, golfvorm, hoofdstukken en CUE-export. Als alleen de speler faalt, blijven WAV en brongebonden receipt geldig en geeft MixLab een `player_warning` terug.
+
 De volgorde van de paren is expliciet en moet één doorlopende route vormen;
 er wordt geen maat, BPM of muziekrecht automatisch geraden. Bekijk
 [de complete set-handleiding](docs/continuous-set-export.md) en

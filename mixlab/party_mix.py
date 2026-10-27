@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import wave
 from pathlib import Path
 
 from .cueprep import _read_spec
 from .session import _manual_cues_present, _private_project_dir, make_session
 from .set_export import _unique_pairs, _valid_destination, export_set
 from .studio import FAMILY_NAMES
+from .set_player import publish_player
 
 
 def render_party_mix(manifest, session_directory, output_wav, transitions=(),
@@ -67,11 +69,19 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
     studio_page = make_session(source, session_dir, suggestions=suggestions,
                                timeout_seconds=timeout_seconds)
     result = export_set(session_dir, output, [f"{p}:{family}" for p, family in selected])
-    return {"status": "continuous-private-set-created", "studio": str(studio_page),
-            "continuous_wav": str(result),
-            "private_receipt": str(result) + ".receipt.private.json",
-            "transition_count": len(selected), "automatic_beatmatching": False,
-            "musical_quality_claim": False}
+    response = {"status": "continuous-private-set-created", "studio": str(studio_page),
+                "continuous_wav": str(result),
+                "private_receipt": str(result) + ".receipt.private.json",
+                "transition_count": len(selected), "offline_player": None,
+                "automatic_beatmatching": False, "musical_quality_claim": False}
+    # Once the canonical mix and receipt have been published, the browser
+    # player is optional. Preserve the complete WAV even if HTML fails.
+    try:
+        response["offline_player"] = str(publish_player(session_dir, result))
+    except (OSError, ValueError, TypeError, KeyError, wave.Error):
+        # A player error may contain a private path; return a bounded message.
+        response["player_warning"] = "Complete WAV is ready; optional local player unavailable"
+    return response
 
 
 def main():
