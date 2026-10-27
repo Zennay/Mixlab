@@ -20,7 +20,7 @@ from .set_player import publish_player
 
 def render_party_mix(manifest, session_directory, output_wav, transitions=(),
                      *, family=None, timeout_seconds=600, suggestions=False,
-                     preview=False, verify_wavs=False):
+                     preview=False, verify_wavs=False, preview_html=False):
     """Render the source Studio and chosen continuous set in one safe run.
 
     The expensive private Studio is deliberately retained if the final WAV
@@ -29,6 +29,8 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
     """
     if verify_wavs and not preview:
         raise ValueError("--verify-wavs requires --preview")
+    if preview_html and not preview:
+        raise ValueError("--preview-html requires --preview")
     source = Path(manifest).absolute()
     session_dir = _private_project_dir(session_directory, source)
     output = Path(output_wav).absolute()
@@ -115,6 +117,10 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
         if verify_wavs:
             from .playlist_wav_preview import inspect_playlist
             result.update(inspect_playlist(source, catalog, route_ids, transitions_plan))
+        if preview_html:
+            from .playlist_preview_page import publish
+            result['preview_html'] = str(publish(result, output))
+            result['status'] = 'private-offline-plan-page-created-no-audio'
         return result
     # Full Studio must render every pair in order to satisfy user selections.
     studio_page = make_session(source, session_dir, suggestions=suggestions,
@@ -154,13 +160,16 @@ def main():
                         help="Show the manual track route, cue times and styles without creating audio or files")
     parser.add_argument("--verify-wavs", action="store_true",
                         help="With --preview: check canonical PCM16 WAV hashes and calculate the exact full-set duration")
+    parser.add_argument("--preview-html", action="store_true",
+                        help="With --preview: write a private standalone tracklist page beside the planned output WAV")
     args = parser.parse_args()
     try:
         result = render_party_mix(args.source_manifest, args.new_session_directory,
                                   args.new_output_wav, args.transition or (), family=args.family,
                                   timeout_seconds=args.timeout_seconds,
                                   suggestions=args.suggestions, preview=args.preview,
-                                  verify_wavs=args.verify_wavs)
+                                  verify_wavs=args.verify_wavs,
+                                  preview_html=args.preview_html)
     except (ValueError, TypeError, OSError, KeyError) as exc:
         parser.exit(2, f"MixLab party mix: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))

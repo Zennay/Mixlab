@@ -676,6 +676,8 @@ python3 -m mixlab.party_mix /private/music/project.json /private/new-studio /pri
   --transition pair-001:bass_swap --transition pair-002:echo_exit
 ```
 
+Gebruik `--preview --preview-html` op `mixlab.party_mix` voor een responsive, standalone en privé lokaal tracklijstoverzicht (zonder audiobestanden); voeg optioneel `--verify-wavs` toe voor de gecontroleerde verwachte mixtijd. De HTML wordt alleen op expliciet verzoek nieuw aangemaakt naast de geplande WAV; een normale `--preview` blijft volledig bestandsloos.
+
 Voeg voor originele 44,1 kHz PCM16-WAVs `--preview --verify-wavs` toe om alleen lokaal de bronhashes/WAV-headers te controleren en vóór het renderen het exacte aantal frames, de mixtijd en verwachte bestandsgrootte te zien. Een complete mix moet nu alle gedeclareerde nummers precies één keer gebruiken; een vergeten track of herhaalde track wordt geweigerd. Bronrechten en luisterkwaliteit worden niet automatisch vastgesteld.
 
 Voeg `--preview` toe aan dezelfde `mixlab.party_mix`-opdracht om vóór audiobewerking de handmatige trackvolgorde, stijlen en cuepunten te zien. Er wordt dan **geen** muziek geladen of bestand gepubliceerd. Bij echte rendering worden overlappende cues voortaan al vóór de zware import geweigerd.
