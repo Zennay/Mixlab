@@ -30,15 +30,19 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
   herkenbare aan/uitstatus. Een ander overgangssegment kiezen, handmatig
   springen of in de golfvorm zoeken stopt de vorige loop;
 - **Luister met context** naast elk gerenderd overgangshoofdstuk:
-  beluister dezelfde reeds voltooide WAV vanaf maximaal **2 seconden vóór**
-  de overgang tot maximaal **2 seconden erna**. De browser stopt de
-  contextluistering vanzelf na het fragment (op de gebruikelijke
-  `timeupdate`-gebeurtenissen, dus niet sample-nauwkeurig).
-  Geen herhaalmodus en geen wijzigingen aan het eigenlijke WAV-bestand.
-  Contextluisteren is ook beschikbaar vanuit de privé-aanpassingslijst;
-  overschakelen naar exact overgangsherhalen stopt de contextmodus.
-  Handmatig buiten het fragment springen of eventmodus openen stopt de
-  contextluistering onmiddellijk; eventmodus blokkeert de bediening;
+  kies boven de tijdlijn **2, 8 of 16 seconden** oorspronkelijke muziek
+  **vóór én ná** die overgang. MixLab speelt vervolgens eenmalig dezelfde
+  complete WAV af binnen de echte WAV-grenzen. De standaard is 2 seconden;
+  langere opties helpen een volledige muzikale frase te beoordelen.
+  De browser pauzeert na het fragment op de gebruikelijke
+  `timeupdate`-gebeurtenissen: **niet sample-nauwkeurig**.
+  Een andere contextlengte kiezen stopt de huidige contextluisterbeurt;
+  klik opnieuw op een overgang om met de nieuwe lengte te luisteren.
+  Er is geen nieuwe render, automatische BPM-/phrase-analyse of wijziging
+  aan het oorspronkelijke WAV-bestand. Dit werkt ook vanuit de
+  privé-aanpassingslijst; exact overgangsherhalen annuleert context.
+  Handmatig buiten het fragment springen of eventmodus openen stopt context;
+  eventmodus blokkeert ook de selector;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.

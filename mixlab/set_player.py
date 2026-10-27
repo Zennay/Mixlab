@@ -45,6 +45,11 @@ grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1
 .chapter-actions button{padding:10px 12px}
 .chapter-actions button[aria-pressed=true]{background:#256153;border-color:#75e3bd}
 #transition-audition-status{color:#bee6d8;min-height:1.5em}
+.context-setting{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+font-weight:650;margin:12px 0 18px}
+.context-setting select{font:inherit;background:#262b3e;color:#fff;
+border:1px solid #9f91d5;border-radius:9px;padding:10px 12px}
+.context-setting select:focus-visible{outline:3px solid #cdbbff;outline-offset:2px}
 #creative-reviews{display:grid;gap:12px;margin-top:15px}
 .review-row{display:grid;gap:10px;background:#151b29;border:1px solid #444961;
   border-radius:13px;padding:16px}
@@ -125,10 +130,14 @@ aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
 <p class="muted" id="meta"></p>
 </section>
 <section class="section"><h2>Interactieve tijdlijn</h2>
-<p class="muted">Herhaal de overgang zelf, of kies <strong>Luister met context</strong>
-om twee seconden vóór en ná de overgang mee te horen. De contextluistering
-stopt automatisch na dat fragment, zonder de originele WAV te veranderen.
+<p class="muted">Herhaal de overgang zelf of kies <strong>Luister met context</strong>
+om de nummers vóór en ná de overgang te horen. De contextluistering
+stopt na het fragment, zonder de originele WAV te veranderen.
 Eventmodus schakelt deze auditieknoppen uit.</p>
+<label class="context-setting" for="context-seconds">Muziek vóór en ná de overgang
+<select id="context-seconds"><option value="2" selected>2 seconden</option>
+<option value="8">8 seconden</option><option value="16">16 seconden</option></select>
+</label>
 <p id="transition-audition-status" role="status" aria-live="polite">Geen overgang in herhaling.</p>
 <ol id="chapters"></ol></section>
 <section class="section"><h2>Je eigen overgangsnotities</h2>
@@ -178,6 +187,7 @@ const chapterButtons=[];
 const reviewRows=[];
 const loopButtons=[];
 const contextButtons=[];
+const contextSeconds=document.getElementById("context-seconds");
 let contextAudition=null;
 let loopIndex=null;
 const auditionStatus=document.getElementById("transition-audition-status");
@@ -249,6 +259,17 @@ function clearContextAudition(){
   if(loopIndex===null)
     auditionStatus.textContent="Geen overgang in herhaling.";
 }
+function selectedContextSeconds(){
+  const seconds=Number(contextSeconds.value);
+  // Accept only explicit operator choices, never a free-text duration.
+  return [2,8,16].includes(seconds)?seconds:2;
+}
+contextSeconds.addEventListener("change",()=>{
+  if(contextAudition){
+    audio.pause();clearContextAudition();
+    auditionStatus.textContent="Contextlengte gewijzigd. Kies opnieuw een overgang.";
+  }
+});
 function listenWithContext(i){
   if(eventMode)return;
   if(contextAudition && contextAudition.index===i){
@@ -259,10 +280,12 @@ function listenWithContext(i){
      !Number.isFinite(chapter.duration_seconds) || chapter.duration_seconds<=0)return;
   clearTransitionLoop();
   clearContextAudition();
-  // The same completed PCM WAV; no new audio file, rendering or source paths.
-  const start=Math.max(0,chapter.start_seconds-2);
+  // Audition only the already rendered PCM WAV; clip at actual boundaries.
+  // Changing the explicit selector never changes the SHA-bound receipt.
+  const seconds=selectedContextSeconds();
+  const start=Math.max(0,chapter.start_seconds-seconds);
   const end=Math.min(data.duration_seconds,
-    chapter.start_seconds+chapter.duration_seconds+2);
+    chapter.start_seconds+chapter.duration_seconds+seconds);
   contextAudition={index:i,start,end};
   const label=chapter.display_name||chapter.label;
   contextButtons.forEach(({button,index})=>{
@@ -592,6 +615,7 @@ function enterEventMode(active){
   chapterButtons.forEach(button=>{button.disabled=disabled;});
   loopButtons.forEach(({button})=>{button.disabled=disabled;});
   contextButtons.forEach(({button})=>{button.disabled=disabled;});
+  contextSeconds.disabled=disabled;
   reviewRows.forEach(({status,note})=>{
     status.disabled=disabled;note.disabled=disabled;
   });
