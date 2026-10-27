@@ -98,6 +98,14 @@ De originele track- en sessiebestanden blijven ongewijzigd.
 worden de eerder gecontroleerde downbeats uit je bestaande manifest
 opnieuw gebruikt; er wordt niets stilzwijgend geïnterpreteerd.
 
+Wanneer je in de privé waveform-cue-editor een cue verschuift, mag de
+volgende uitgaande cue niet vóór het einde van de vorige inkomende overgang
+beginnen. De editor meldt zo'n conflict **direct** en laat de cuekeuzes
+pas downloaden nadat ze weer op geldige sampleframes aansluiten.
+Ook `mixlab.cue_editor apply` weigert een tegenstrijdige handmatige
+selectie voordat een nieuw manifest wordt gemaakt: je oorspronkelijke
+WAV-bronnen, manifest en rechtenverklaringen veranderen niet.
+
 ## Direct een complete WAV uit de muziekwizard
 
 De Playlist Studio kan **in dezelfde eerste opdracht** ook meteen
