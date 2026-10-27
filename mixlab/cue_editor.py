@@ -150,6 +150,10 @@ canvas{width:100%;height:152px;background:#10121b;border:1px solid #454a62;borde
 .row .time{font-variant-numeric:tabular-nums;min-width:75px;font-weight:700}
 .range{width:100%;accent-color:#bdabff}.buttons{display:flex;gap:8px;flex-wrap:wrap}
 audio{width:100%;margin-top:10px} .footer{margin-top:28px;padding:20px;background:#171a27;border:1px solid #3f4358;border-radius:16px}
+.duet-balance{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0}
+.duet-balance label{flex:1;min-width:180px}
+.duet-balance output{font-variant-numeric:tabular-nums;color:#d9c8ff;font-weight:750}
+.duet-balance input{width:100%;accent-color:#bdabff}
 .timeline-summary{background:#211d35;border:1px solid #6a5d92;padding:14px;
   margin:12px 0;border-radius:12px;font-variant-numeric:tabular-nums}
 #mix-timeline{list-style:none;padding:0;margin:14px 0;display:grid;gap:9px}
@@ -199,6 +203,15 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 <p>Hoor beide originele WAV-bronnen tegelijk vanaf jouw handmatig gekozen
 startcues, op laag volume. Dit is alleen een ruwe timingcontrole;
 geen definitieve mix, crossfade, beatmatch of MixLab-DSP-render.</p>
+<div class="duet-balance" role="group" aria-label="Luisterbalans voor de twee originele decks">
+<label for="duet-volume-a">Deck A · <output id="duet-value-a">30%</output>
+<input id="duet-volume-a" type="range" min="0" max="50" step="5" value="30"
+aria-label="Luistervolume uitgaand deck A, procent"></label>
+<label for="duet-volume-b">Deck B · <output id="duet-value-b">30%</output>
+<input id="duet-volume-b" type="range" min="0" max="50" step="5" value="30"
+aria-label="Luistervolume inkomend deck B, procent"></label></div>
+<p>Pas alleen het lokale A+B-voorluistervolume aan. Je originele WAV's,
+handmatige cuekeuzes en de definitieve MixLab-mix worden niet aangepast.</p>
 <div class="buttons"><button type="button" class="primary" id="play-ab">▶ Huidige cues A + B</button>
 <button type="button" id="play-original-ab" disabled>▶ Opgeslagen cues A + B</button>
 <button type="button" id="stop-ab" disabled>■ Stop beide decks</button></div>
@@ -236,6 +249,17 @@ const pairSelect=$('pair');
 for(const p of pairs){const option=document.createElement('option');option.value=p.id;option.textContent=bank[p.a].display_name+' → '+bank[p.b].display_name+' · '+p.id;pairSelect.append(option);}
 let chosen=pairs[0],playing=null,stopAt=0,edited=false;
 let duetActive=false,duetSerial=0,duetVolumes=null,duetEnds=null;
+function previewGain(side){
+  const value=Number($("duet-volume-"+side).value);
+  return Number.isFinite(value)?Math.max(0,Math.min(.5,value/100)):.3;
+}
+for(const side of ["a","b"]){
+  $("duet-volume-"+side).addEventListener("input",()=>{
+    const gain=previewGain(side);
+    $("duet-value-"+side).textContent=Math.round(gain*100)+"%";
+    if(duetActive)$("audio-"+side).volume=gain;
+  });
+}
 function cueProblemDetail(){
  for(let i=1;i<pairs.length;i++){
    const previous=pairs[i-1],current=pairs[i];
@@ -660,7 +684,7 @@ $('play-original-ab').addEventListener('click',async()=>{
   duetVolumes=[a.volume,b.volume];
   duetEnds=[saved.a+chosen.seconds,saved.b+chosen.seconds];
   a.currentTime=saved.a;b.currentTime=saved.b;
-  a.volume=.3;b.volume=.3;
+  a.volume=previewGain('a');b.volume=previewGain('b');
   duetActive=true;
   $('play-ab').disabled=true;
   $('play-original-ab').disabled=true;
@@ -689,7 +713,7 @@ $('play-ab').addEventListener('click',async()=>{
             chosen.b_start_seconds+chosen.seconds];
   a.currentTime=chosen.a_start_seconds;
   b.currentTime=chosen.b_start_seconds;
-  a.volume=.3;b.volume=.3;
+  a.volume=previewGain('a');b.volume=previewGain('b');
   duetActive=true;
   $('play-ab').disabled=true;$('stop-ab').disabled=false;
   $('ab-status').textContent='Huidige cues A + B: '+chosen.id+' · '+

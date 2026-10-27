@@ -371,6 +371,15 @@ nieuw privébronmanifest; dit is geen automatische tempo- of beatmatching. In de
 kiezen van een overgang en op beide decks voortaan de **lokale
 bestandsnaam zonder extensie**, naast de originele technische bron-ID.
 De zichtbare naam is geen onafhankelijk herkende artiest of echte tracktitel.
+Bij **Voorluisteren: cue A + B tegelijk** kun je nu het luistervolume van
+**Deck A en Deck B afzonderlijk tussen 0% en 50%** instellen, standaard
+30% per deck. Zo hoor je of het vertrekkende of binnenkomende nummer
+je handmatig gekozen cue overstemt. De schuiven werken onmiddellijk
+terwijl de twee originele WAV-bronnen afspelen, óók bij de vergelijking
+met de opgeslagen cues. Het volume van afzonderlijk beluisterde decks
+wordt na stoppen hersteld: dit is geen definitieve mix, crossfade,
+automatische gain-matching of wijziging aan de echte WAV/Studio.
+
 Gebruik in beide decks de bestaande ± beat-/4-beatknoppen voor
 muzikale hoofdstappen. Voor fijnere **handmatig gehoorde** correcties
 zijn er nu ook **− 0,10 s / + 0,10 s**-knoppen en

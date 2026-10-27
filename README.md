@@ -110,6 +110,12 @@ werkelijke hoofdstuktijden. Alleen het bestaande privé-JSON is later weer
 terug te laden; TXT vervangt geen beveiligde notitieback-up of
 onafhankelijk luisteronderzoek.
 
+In de lokale visuele cue-editor zijn de twee **A+B-voorluistervolumes**
+nu afzonderlijk regelbaar (0–50%; standaard 30%). Daarmee kun je
+handmatig een binnenkomend of uitgaand nummer duidelijker horen tijdens
+het vergelijken van huidige en opgeslagen cues. De echte WAV,
+renderfamilies, originele rechten en cuekeuzes veranderen niet.
+
 De privé Full Set Player heeft ook een **automatische lijst van overgangen
 met de persoonlijke keuze ‘Wil aanpassen’**. Je ziet je notitie bij het
 echte WAV-hoofdstuk en kunt iedere overgang opnieuw herhalen of met
