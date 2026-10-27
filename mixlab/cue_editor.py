@@ -221,6 +221,7 @@ Nog geen geldige complete mixtijd berekend.</p>
 <div id="cue-problem-navigation" class="problem-navigation" hidden>
 <p id="cue-problem-guidance" role="status" aria-live="polite"></p>
 <button id="jump-to-problem" type="button">Ga naar probleemovergang</button>
+<button id="use-safe-cue" type="button" disabled>Gebruik veilige startcue</button>
 </div>
 <p class="warning">Download eerst je cuekeuzes als privé-JSON. Zet dat bestand in je privé muziekmap en gebruik <code>python3 -m mixlab.cue_editor apply OUD_MANIFEST.json CUEKEUZES.json NIEUW_MANIFEST.json --plan-html --plan-verify-wavs</code> om een <strong>nieuw</strong> bronmanifest met die cues te maken. Het oude manifest, de bron-WAVs en rechtenverklaringen blijven ongewijzigd. Die opdracht maakt ook een nieuwe, lokale, gecontroleerde HTML-tijdlijn zonder audio te renderen. Je kunt het nieuwe manifest zo controleren voordat je met <code>--resume --full-set-wav</code> de echte WAV rendert.</p>
 </div></main>
@@ -255,6 +256,7 @@ function cueProblemDetail(){
      const max=Math.max(0,bank[current.a].duration-current.seconds);
      const achievable=earliest<=max;
      return {pairId:current.id,
+       suggestedStart:achievable?earliest:null,
        message:current.id+' begint vóór de vorige inkomende overgang eindigt.',
        guidance:achievable?
          'Ga naar '+current.id+' (Deck A). Vroegste geldige startcue: '+
@@ -472,6 +474,7 @@ function refreshCueStatus(){
    'Je muziek blijft privé. Wijzigingen worden pas bewaard wanneer je de cuekeuzes downloadt.';
  $('cue-problem-navigation').hidden=!issue;
  $('jump-to-problem').disabled=!issue;
+ $('use-safe-cue').disabled=!(issue && typeof issue.suggestedStart==='number');
  $('cue-problem-guidance').textContent=issue?issue.guidance:'';
  refreshLiveTimeline();
 }
@@ -562,6 +565,19 @@ $('jump-to-problem').addEventListener('click',()=>{
  const target=pairs.find(p=>p.id===issue.pairId);
  if(!target)return;
  chosen=target;pairSelect.value=target.id;refresh();
+ $('wave-a').focus();
+});
+$('use-safe-cue').addEventListener('click',()=>{
+ // Explicit DJ choice only: never silently alter manually approved cues.
+ const issue=cueProblemDetail();
+ if(!issue || typeof issue.suggestedStart!=='number')return;
+ const target=pairs.find(p=>p.id===issue.pairId);
+ if(!target || !Number.isFinite(issue.suggestedStart))return;
+ chosen=target;pairSelect.value=target.id;
+ refresh();
+ // Apply exact already-admitted hundredth, bypass optional musical beat snap.
+ // setCue() uses existing reversible history and recalculates the timeline.
+ setCue('a',issue.suggestedStart,true);
  $('wave-a').focus();
 });
 $('undo').addEventListener('click',undoCueEdit);

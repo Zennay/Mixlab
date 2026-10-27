@@ -375,10 +375,15 @@ worden opgeslagen zolang de broncues een complete renderbare route vormen.
 Als twee opeenvolgende transities overlappen, verschijnt nu **Ga naar
 probleemovergang** met het vroegst geldige handmatige Deck A-cuepunt,
 berekend op de gecontroleerde PCM-frametelling. De knop brengt je naar
-precies die overgang; MixLab verplaatst de cue niet automatisch. Als
-geen uitgaande positie meer past, moet je de eerdere inkomende cue
-handmatig aanpassen of de playlist opnieuw samenstellen. Herstel met
-Undo/Redo wordt onmiddellijk opnieuw op geldigheid beoordeeld.
+precies die overgang. Met de **aparte knop Gebruik veilige startcue**
+kun je dat vroegst geldige Deck A-tijdstip daarna **zelf expliciet** kiezen,
+zonder dat een optioneel beatgrid de exacte PCM-framegrens verandert.
+De actie staat in de bestaande Undo/Redo-geschiedenis. Er verandert niets
+zonder die bewuste klik; luister na de correctie zelf of de overgang
+muzikaal klopt. Als geen uitgaande positie meer past, is **Gebruik veilige
+startcue** uitgeschakeld: dan moet je de eerdere inkomende cue handmatig
+aanpassen of de playlist opnieuw samenstellen. Herstel met Undo/Redo
+wordt onmiddellijk opnieuw op geldigheid beoordeeld.
 De originele muziek, hashes en eerder opgeslagen manifesten wijzigen niet.
 
 Een gewijzigde cue krijgt direct de melding dat de keuzes nog gedownload
