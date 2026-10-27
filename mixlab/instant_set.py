@@ -28,6 +28,23 @@ def _choose_transitions(session, family, overrides):
     registered = source.get("pairs")
     if not isinstance(registered, list) or not 1 <= len(registered) <= 10:
         raise ValueError("A full DJ set requires 1..10 registered transition pairs")
+    # A complete set is a route through *every* registered source song.
+    # The pair list alone is insufficient: a valid Studio may deliberately
+    # contain an unpaired song, and must never label a shorter WAV "full".
+    original_tracks = source.get("tracks")
+    if not isinstance(original_tracks, list) or not 2 <= len(original_tracks) <= 11:
+        raise ValueError("A complete set needs 2..11 declared source tracks")
+    source_ids = [t.get("id") for t in original_tracks if isinstance(t, dict)]
+    route = [registered[0].get("a") if isinstance(registered[0], dict) else None]
+    route.extend(p.get("b") if isinstance(p, dict) else None for p in registered)
+    if (len(source_ids) != len(original_tracks) or
+            any(not isinstance(t, str) or not t for t in source_ids) or
+            len(set(source_ids)) != len(source_ids) or
+            len(route) != len(source_ids) or
+            any(not isinstance(t, str) or not t for t in route) or
+            len(set(route)) != len(route) or
+            set(route) != set(source_ids)):
+        raise ValueError("Complete playlist must include every declared source track exactly once")
     available = {p["id"]: p for p in catalog["pairs"]}
     # Do not silently produce a short mix if a Studio was rendered for
     # only one of several registered pairs.

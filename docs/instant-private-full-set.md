@@ -17,7 +17,14 @@ python3 -m mixlab.instant_set \
 De officiële, eerder gemergede set-exporter verwerkt **alle
 geregistreerde paren in hun oorspronkelijke afspeelvolgorde**. De app
 eist een aaneengesloten playlist met 1–10 overgangen (2–11 nummers),
-controlleert dat iedere gewenste transitiestijl al écht is gerenderd,
+**én dat ieder in het echte SHA-gebonden bronmanifest geregistreerde nummer
+exact eenmaal in de doorlopende route voorkomt**. Alleen alle
+transitieparen doorlopen is niet genoeg: een vergeten vierde nummer bij
+slechts twee overgangen wordt vóór het maken van de WAV geweigerd, zonder
+half WAV-bestand of misleidend 'complete set'-receipt. Corrigeer de
+handmatig vastgelegde route en maak een nieuwe sessie voordat je opnieuw
+exporteert. Bestaande privémuziek en een al ingerichte Studio blijven intact.
+MixLab controleert daarnaast dat iedere gewenste transitiestijl al écht is gerenderd,
 controleert alle Studio-, bron- en audio-SHA's, en publiceert één
 volledige WAV inclusief privé-exportreceipt. Als beschikbare bijlage
 wordt `mixlab-complete-set.wav.player.html` gemaakt, met klikbare

@@ -68,6 +68,11 @@ python3 -m mixlab.set_composer render \
   /private/mixlab-party.wav
 ~~~
 
+De afzonderlijke volledige `mixlab.instant_set`-export weigert nu ook een
+broncatalogus met vergeten nummers: alle in het SHA-gebonden manifest
+opgegeven nummers moeten exact eenmaal in de route staan voordat er
+überhaupt een complete WAV wordt gepubliceerd.
+
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. De complete set die je via `playlist_studio` of
 `party_mix` maakt, toont daarbij herkenbare lokale songbestandsnamen en
