@@ -362,6 +362,12 @@ de offline editor mag je de volgorde daarna alsnog bewust aanpassen.
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
 cues visueel laten goedkeuren en een volledige mix exporteren.
+Bij een handmatig gewijzigd cuepaar kun je in de offline privé-editor nu
+**Huidige cues A + B** én **Opgeslagen cues A + B** direct voor/na
+beluisteren. Dat gebeurt op de originele, lokaal gehashte audiobronnen,
+zonder de wijziging terug te draaien of een nieuwe WAV te renderen.
+Dit is een ruwe timingvergelijking, geen MixLab-DSP-crossfade of
+onafhankelijke luisterstudie.
 Gecomprimeerde audio vereist bestaande FFmpeg/FFprobe; 44,1 kHz PCM16-WAV
 werkt ook direct met de Python-standaardbibliotheek.
 

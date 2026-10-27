@@ -106,9 +106,16 @@ Ook `mixlab.cue_editor apply` weigert een tegenstrijdige handmatige
 selectie voordat een nieuw manifest wordt gemaakt: je oorspronkelijke
 WAV-bronnen, manifest en rechtenverklaringen veranderen niet.
 
-De editor heeft ook **Beluister A + B**: speel beide originele lokale
+De editor heeft ook **Huidige cues A + B**: speel beide originele lokale
 WAV-decks tegelijk vanaf de handmatig ingestelde A- en B-startcues,
-met een begrensde overgangsduur en beperkt volume. **Stop beide decks**,
+met een begrensde overgangsduur en beperkt volume. Zodra je bij een paar
+iets verandert, kun je met **Opgeslagen cues A + B** rechtstreeks dezelfde
+twee originele bronfragmenten vergelijken vanaf de **eerder vastgelegde**
+startcues. Er verschijnt ook het exacte verschil per deck (bijvoorbeeld
+A +0,10 s, B 0,00 s). De vergelijkingsknop is uitgeschakeld zolang er
+niets aan dat paar is veranderd. Origineel beluisteren herstelt of
+overschrijft je huidige cuewijzigingen **niet**; export, Undo/Redo en
+gecontroleerde source-SHA blijven ongewijzigd. **Stop beide decks**,
 een andere cue of een andere overgang beëindigt de voorluistering.
 Dit is uitsluitend een grove timinghulp, niet de gerenderde crossfade,
 bass-swap, echo-exit of een sample-nauwkeurige BPM-/beatmatch.
