@@ -754,6 +754,8 @@ muzikale kwaliteit of rechten worden daardoor niet gevalideerd. Een handmatige w
 laat expliciet zien dat je eerst de nieuwe privé-cuekeuzes moet downloaden.
 Dit is geen automatisch herkende songtitel of rechtenbewijs.
 
+De offline A/B-cue-editor heeft nu **Ongedaan maken, Opnieuw en Herstel dit paar** voor bewuste handmatige experimenten. Je kunt ook over meerdere overgangsparen terug en vooruit in je bewerkingen (maximaal 40 stappen): cuepunten, de verwachte volledige setlengte en de geldigheid van de nieuwe cuekeuzes bewegen mee. Herstel dit paar zet uitsluitend dat paar terug naar de originele broncues en is zelf ongedaan te maken. De geschiedenis wordt niet opgeslagen of geüpload: je kiest zelf wanneer je de definitieve cue-JSON downloadt en in een nieuw manifest toepast.
+
 Vanuit een **opgeslagen** handmatige playlist kun je met
 `--resume --plan-html --plan-cue-editor /private/music/new-editor.html`
 nu ook de bestaande offline visuele cue-editor starten, zonder Studio-
