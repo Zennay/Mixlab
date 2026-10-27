@@ -201,7 +201,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                           resume=False, manifest_only=False, ideas=False,
                           full_set_wav=None, family=None, styles=(),
                           delivery=None, bitrate_kbps=192, journey_plan=None,
-                          approval_file=None, plan_html=False, plan_verify_wavs=False):
+                          approval_file=None, plan_html=False, plan_verify_wavs=False,
+                          plan_cue_editor=None):
     """Run the complete local product workflow after explicit human annotation."""
     if approval_file is not None and journey_plan is None:
         raise ValueError("--approval-file needs the original --journey-plan")
@@ -219,6 +220,8 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
         raise ValueError("Review a saved plan separately from WAV rendering or imported audio ideas")
     if plan_verify_wavs and not plan_html:
         raise ValueError("--plan-verify-wavs requires --plan-html")
+    if plan_cue_editor is not None and not plan_html:
+        raise ValueError("--plan-cue-editor requires --plan-html")
     if manifest_only and ideas:
         raise ValueError("--ideas needs imported private audio; it cannot run with --manifest-only")
     if manifest_only and full_set_wav is not None:
@@ -296,6 +299,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                               else "manual-playlist-manifest"),
                     "private_source_manifest": str(manifest), "session_directory": None,
                     "private_plan_html": None, "planned_complete_wav": None,
+                    "private_cue_editor_html": None,
                     "offline": True, "automatic_tempo_matching": False,
                     "music_preference_proven": False}
         if plan_html:
@@ -324,6 +328,22 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 response['planned_mix_seconds'] = (
                     preview['complete_mix_duration'] if plan_verify_wavs else None)
                 write('Private playlist page ready. No session or audio rendered.')
+        if plan_cue_editor is not None:
+            # Existing source-bound private waveform editor: choose fresh A/B
+            # cues visually and export a new manifest, never alter the original.
+            # This reads only local original PCM16 WAVs, not Studio excerpts.
+            try:
+                from .cue_editor import prepare as prepare_private_cue_editor
+                editor = prepare_private_cue_editor(manifest, plan_cue_editor)
+            except (ValueError, TypeError, OSError, KeyError):
+                if resume:
+                    raise  # An explicitly requested resumed editor is required.
+                response.setdefault('warnings', []).append(
+                    'Private manifest preserved; optional original-WAV cue editor '
+                    'unavailable. Use 44.1 kHz PCM16 sources and a fresh local HTML path.')
+            else:
+                response['private_cue_editor_html'] = str(editor)
+                write('Offline manual cue editor ready. No Studio or WAV rendered.')
         write("Saved playlist reopened without audio or source changes." if resume
               else "Manifest saved. Render later with the same command and --resume.")
         return response
@@ -441,6 +461,8 @@ def main():
                         help="With --manifest-only or --resume: create a private visual plan without rendering audio")
     parser.add_argument("--plan-verify-wavs", action="store_true",
                         help="With --plan-html: verify original PCM16 WAVs and show the expected mix length")
+    parser.add_argument("--plan-cue-editor", metavar="NEW_LOCAL_HTML",
+                        help="With --plan-html: prepare the existing offline manual cue editor beside the original PCM16 WAV manifest")
     parser.add_argument("--resume", action="store_true",
                         help="Render a new private session from an existing unchanged source manifest")
     parser.add_argument("--ideas", action="store_true",
@@ -467,7 +489,8 @@ def main():
             family=args.family, styles=args.style,
             delivery=args.delivery, bitrate_kbps=args.bitrate_kbps,
             journey_plan=args.journey_plan, approval_file=args.approval_file,
-            plan_html=args.plan_html, plan_verify_wavs=args.plan_verify_wavs)
+            plan_html=args.plan_html, plan_verify_wavs=args.plan_verify_wavs,
+            plan_cue_editor=args.plan_cue_editor)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
     print(json.dumps(result, ensure_ascii=False))
