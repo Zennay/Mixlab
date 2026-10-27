@@ -24,6 +24,11 @@ Deze opdracht rendert de complete WAV en publiceert optioneel automatisch
   lokale songnamen (bestandsnaam zonder extensie) en overgangslabels
   **nummer A → nummer B**, in de afspeellijst, eventmodus en privé-CUE/JSON;
   de oorspronkelijke brongebonden technische ID's blijven bewaard;
+- per gerenderde overgang een **Herhaal overgang**-knop: beluister zonder
+  nieuwe WAV of Studio exact het overgangssegment steeds opnieuw. De knop
+  schakelt naar **Stop herhalen** met een zichtbare en voor schermlezers
+  herkenbare aan/uitstatus. Een ander overgangssegment kiezen, handmatig
+  springen of in de golfvorm zoeken stopt de vorige loop;
 - knop voor vorige/volgende passage en actieve hoofdstukmarkering;
 - download een lokale JSON-hoofdstukkenlijst gebonden aan de WAV-SHA;
 - download een standaard `.cue` voor muziekspelers die CUE-sheets ondersteunen.
@@ -48,8 +53,10 @@ In deze modus zie je:
   afspelen/pauzeren zolang je niet op een invoerveld of knop staat.
 - De al beschikbare golfvorm als visuele feedback. Om per ongeluk
   overslaan tijdens een feest te voorkomen, zijn waveform-klik,
-  hoofdstuk-springknoppen, vorige/volgende en de standaard
-  browsertijdlijn **tijdelijk uitgeschakeld**.
+  hoofdstuk-springknoppen, vorige/volgende, de nieuwe overgang-herhaalknoppen
+  en de standaard browsertijdlijn **tijdelijk uitgeschakeld**. Een actieve
+  herhaling wordt bij het openen van eventmodus **altijd gestopt**, zodat
+  de DJ-set normaal kan doorlopen.
 - Optioneel schermvullende presentatie als de browser die toestaat.
   Met **Verlaat eventmodus** kun je altijd terug naar de normale
   bewerkings-/luisterweergave; de set blijft afspelen.
