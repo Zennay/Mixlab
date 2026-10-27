@@ -335,10 +335,15 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
             # Explicit family selection, canonical WAV exporter, real PCM
             # chapter player; never masquerade a suggested style as AI ranking.
             from .instant_set import render_instant_set
+            from .playlist_preview_page import local_song_title
+            original = _read_spec(manifest)
+            names = {entry['id']: local_song_title(entry['path'])
+                     for entry in original['tracks']}
             instant_set = render_instant_set(destination, full_set_wav,
-                                              family=family, styles=styles,
-                                              delivery=delivery,
-                                              bitrate_kbps=bitrate_kbps)
+                                             family=family, styles=styles,
+                                             delivery=delivery,
+                                             bitrate_kbps=bitrate_kbps,
+                                             display_names=names)
         except (ValueError, OSError, TypeError, KeyError) as exc:
             warnings.append("Private Studio exists, but optional complete-set WAV failed: " + str(exc))
     with manifest.open("r", encoding="utf-8") as reader:

@@ -18,6 +18,7 @@ import wave
 from .ingest import digest
 from .set_composer import _parse_json, _secure_file, _session_catalog
 from .set_export import MAX_PAIRS, MAX_SET_BYTES, _admit, _unique_pairs
+from .cueprep import _read_spec
 
 PAGE = """<!doctype html>
 <html lang="nl"><head><meta charset="utf-8">
@@ -39,6 +40,7 @@ button:focus-visible{outline:3px solid #ccbcff;outline-offset:2px}button:hover{b
 .controls{display:flex;gap:9px;flex-wrap:wrap}.controls button{flex:1}
 #chapters{list-style:none;padding:0;margin:0}#chapters li{display:grid;
 grid-template-columns:105px 1fr auto;gap:18px;align-items:center;border-bottom:1px solid #33374b;padding:13px 0}
+#chapters li span{overflow-wrap:anywhere}#event-title{overflow-wrap:anywhere}
 #chapters li[aria-current=true]{background:#292641;border-radius:10px;padding-left:10px;padding-right:10px}
 @media(max-width:600px){#chapters li{grid-template-columns:65px 1fr;gap:8px}#chapters li button{grid-column:1/3}}
 .time{font-variant-numeric:tabular-nums;color:#c6c2dc}small{color:#9faac2}
@@ -166,7 +168,8 @@ data.chapters.forEach((ch,i)=>{
   time.className="time";time.textContent=format(ch.start_seconds);
   const title=document.createElement("span");
   title.textContent=ch.kind==="transition"?
-    "Overgang "+ch.label+" · "+ch.family.replaceAll("_"," "):"Track "+ch.label;
+    "Overgang "+(ch.display_name||ch.label)+" · "+ch.family.replaceAll("_"," "):
+    (ch.display_name||"Track "+ch.label);
   const button=document.createElement("button");button.textContent="Luister vanaf hier";
   button.addEventListener("click",()=>jump(i));chapterButtons.push(button);
   li.append(time,title,button);list.append(li);rows.push(li);
@@ -182,7 +185,7 @@ function highlight(){
   rows.forEach((li,i)=>li.setAttribute("aria-current",String(i===current)));
   waveform.setAttribute("aria-valuenow",String(Math.floor(t)));
   drawWaveform();
-  now.textContent="Nu: "+data.chapters[current].label+" ("+
+  now.textContent="Nu: "+(data.chapters[current].display_name||data.chapters[current].label)+" ("+
     (data.chapters[current].kind==="transition"?"overgang":"track")+") · "+format(t);
   updateEventClock(t);
 }
@@ -193,12 +196,13 @@ audio.addEventListener("pause",()=>{eventPlay.textContent="▶ Hervat";});
 function updateEventClock(t){
   const chapter=data.chapters[current];
   document.getElementById("event-title").textContent=
-    (chapter.kind==="transition"?"Overgang ":"Track ")+chapter.label;
+    (chapter.kind==="transition"?"Overgang ":"Track ")+
+    (chapter.display_name||chapter.label);
   const upcoming=data.chapters.find(ch=>ch.kind==="transition" && ch.start_seconds>t+.05);
   const seconds=Math.max(0,(upcoming?upcoming.start_seconds:data.duration_seconds)-t);
   document.getElementById("event-countdown").textContent=format(seconds);
   document.getElementById("event-next").textContent=upcoming?
-    "Volgende overgang: "+upcoming.label+" over "+format(seconds):
+    "Volgende overgang: "+(upcoming.display_name||upcoming.label)+" over "+format(seconds):
     "Geen verdere overgang · resterend tot einde "+format(seconds);
 }
 function enterEventMode(active){
@@ -262,7 +266,7 @@ document.getElementById("download-cue").addEventListener("click",()=>{
     const ss=Math.floor(frames/75)%60;
     const ff=frames%75;
     lines.push("  TRACK "+String(i+1).padStart(2,"0")+" AUDIO");
-    lines.push('    TITLE "'+escape(ch.label+(ch.family?" - "+ch.family:""))+'"');
+    lines.push('    TITLE "'+escape((ch.display_name||ch.label)+(ch.family?" - "+ch.family:""))+'"');
     lines.push("    INDEX 01 "+String(mm).padStart(2,"0")+":"+
       String(ss).padStart(2,"0")+":"+String(ff).padStart(2,"0"));
   });
@@ -384,9 +388,39 @@ def build_chapters(session_dir, wav_path):
             "chapters": chapters}
 
 
-def publish_player(session_dir, complete_wav):
+def publish_player(session_dir, complete_wav, *, display_names=None):
     wav_path = Path(complete_wav).absolute()
     metadata = build_chapters(session_dir, wav_path)
+    if display_names is not None:
+        if not isinstance(display_names, dict):
+            raise ValueError("Private player labels must be an ID-to-name mapping")
+        # Compare labels to the actual, already verified imported Studio
+        # catalog (not only nonzero solo chapters; a zero-length solo is
+        # possible between two valid human-specified transitions).
+        normalized = _read_spec(Path(session_dir).absolute() / 'sources' / 'source_manifest.json')
+        tracks = normalized.get('tracks')
+        pairs = normalized.get('pairs')
+        if not isinstance(tracks, list) or not isinstance(pairs, list):
+            raise ValueError("Missing source-bound session labels")
+        track_ids = [item.get('id') for item in tracks]
+        by_pair = {item.get('id'): item for item in pairs}
+        if (len(set(track_ids)) != len(tracks) or len(by_pair) != len(pairs) or
+                set(display_names) != set(track_ids) or any(
+                not isinstance(name, str) or not name or len(name) > 96 or
+                any(ord(c) < 32 or ord(c) == 127 for c in name)
+                for name in display_names.values())):
+            raise ValueError("Private player names must match actual SHA-bound track IDs")
+        for chapter in metadata['chapters']:
+            if chapter['kind'] == 'solo':
+                chapter['display_name'] = display_names[chapter['label']]
+            elif chapter['kind'] == 'transition':
+                pair = by_pair.get(chapter['label'])
+                if not pair or pair.get('a') not in display_names or pair.get('b') not in display_names:
+                    raise ValueError("Transition names are not tied to a verified source pair")
+                chapter['display_name'] = (display_names[pair['a']] + ' → ' +
+                                           display_names[pair['b']])
+    # Names only enter this opt-in offline chapter page. They never change
+    # the canonical WAV receipt, chapter times, or blind study artifacts.
     page = wav_path.with_name(wav_path.name + ".player.html")
     if page.exists() or page.is_symlink():
         raise ValueError("The offline player page already exists")

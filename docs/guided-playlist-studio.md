@@ -118,6 +118,11 @@ python3 -m mixlab.playlist_studio \
 Hiermee maak je de echte lokale Studio, de visuele cue-editor, Set
 Composer, alle reeds gerenderde A/B-overgangen en één continue
 `party-ready.wav` met chaptered `party-ready.wav.player.html`.
+De **echte afspeelspeler** gebruikt nu, net als de visuele planpreview,
+herkenbare lokale bestandsnamen zonder extensie voor hoofdstukken en
+songnaam A → songnaam B voor transities. Ook eventmodus en privé-
+hoofdstukexports tonen die labels. Ze zijn herleidbaar en blijven daarom
+alleen in de lokale HTML/CUE/JSON; de echte WAV/bron-SHA-receipts veranderen niet.
 De tweede overgang krijgt expliciet een eigen stijl; alle andere
 paren gebruiken `bass_swap`.
 

@@ -74,7 +74,7 @@ def _choose_transitions(session, family, overrides):
 
 
 def render_instant_set(session, new_wav, *, family="bass_swap", styles=(),
-                       delivery=None, bitrate_kbps=192):
+                       delivery=None, bitrate_kbps=192, display_names=None):
     """Render a complete user-selected family pattern from official audio."""
     root, selected = _choose_transitions(session, family, styles)
     wav = export_set(root, new_wav, selected)
@@ -87,7 +87,7 @@ def render_instant_set(session, new_wav, *, family="bass_swap", styles=(),
     # Publication of the real full-set WAV is durable; a browser failure
     # must not remove it or disguise that it was successfully exported.
     try:
-        response["offline_player"] = str(publish_player(root, wav))
+        response["offline_player"] = str(publish_player(root, wav, display_names=display_names))
     except (OSError, ValueError, KeyError, TypeError, wave.Error) as exc:
         response["player_warning"] = "Completed WAV exists; optional HTML player unavailable: " + str(exc)
     if delivery is not None:
