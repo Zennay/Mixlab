@@ -511,6 +511,7 @@ function refreshCueStatus(){
    'Verschil met opgeslagen cues · A '+signed(aDelta)+' · B '+signed(bDelta)+
    '. Vergelijk beide lokale bronfragmenten vóór het downloaden.':
    'Dit paar gebruikt nog de opgeslagen cues; er is niets te vergelijken.';
+ refreshDownloadStatus();
  const issue=cueProblemDetail();
  const problem=(issue&&issue.message) || (!plannedSetTimeline()?
    'De opgegeven nummers vormen geen complete, renderbare mix. '+
