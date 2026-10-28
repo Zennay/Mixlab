@@ -205,6 +205,7 @@ interactieve golfvorm, hoofdstukken per overgang en CUE-export. Je kunt
 De offline speler heeft een interactieve golfvorm, hoofdstukken per
 overgang en CUE-export. Je kunt
 de handmatige invoer vooraf vastleggen met `--manifest-only` en later
+de via het lokale goedkeuringsformulier gekozen **expliciete overgangsstijlen nu brongebonden in het private paar** bewaren, zodat de preview en een latere `--resume --full-set-wav` dezelfde goedgekeurde DSP-stijlen hanteren; strijdige overrides worden vóór import geweigerd. Je kunt ook de handmatige invoer vooraf vastleggen met `--manifest-only --plan-html`, waardoor ook de lokale privé-HTML-speelvolgorde verschijnt zonder audio te renderen. Voeg voor canonieke 44,1 kHz PCM16 WAVs `--plan-verify-wavs` toe voor de SHA-gecontroleerde voorspelde mixtijd; hervat later via `--resume --full-set-wav` op een nieuwe bestemming. Je kunt ook alleen de handmatige invoer vooraf vastleggen met `--manifest-only` en later
 zonder opnieuw typen renderen met `--resume`.
 
 Wil je creatieve cuevoorstellen op basis van een **handmatig bevestigd**
