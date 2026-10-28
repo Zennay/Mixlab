@@ -429,8 +429,14 @@ Ook later kun je het **nieuwe** manifest apart openen met
   /private/music/my-playlist-revised.private.json
 ~~~
 
-Open daarna het **nieuwe** manifest opnieuw met `--resume --plan-html
---plan-verify-wavs` om de nieuwe duur en tijdlijn te controleren.
+Deze ene opdracht past de handmatige cues toe op een **nieuw**, onveranderlijk
+bronmanifest en maakt meteen de **nieuwe privé-HTML-planpagina** buiten je
+muziekmap, met SHA-gecontroleerde precieze mixtijd en hoofdstukken. Hij
+maakt nog geen Studio of WAV. Een reeds bestaande HTML/WAV of een ongeldige
+cuekeuze wordt geweigerd zonder je originele manifest te wijzigen.
+De oorspronkelijke `cue_editor apply` zonder opties blijft bestaan.
+Ook later kun je het **nieuwe** manifest apart openen met
+`--resume --plan-html --plan-verify-wavs` om opnieuw te controleren.
 Render pas met een aparte `--resume --full-set-wav`-opdracht. De editor
 kan een bestaande rechtenverklaring, SHA-hash, transitiestijl, frozen
 bronmanifest of audiobestand **niet stilzwijgend overschrijven**.
