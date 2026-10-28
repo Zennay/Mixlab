@@ -384,6 +384,9 @@ Gebruik in beide decks de bestaande ± beat-/4-beatknoppen voor
 muzikale hoofdstappen. Voor fijnere **handmatig gehoorde** correcties
 zijn er nu ook **1× / 4× / 16× golfvormzoom rond iedere afzonderlijke A/B-startcue**, zodat je op de ingezoomde golfvorm precies de juiste positie in het originele WAV-bestand aanklikt. Alleen een zoomstand kiezen verandert de cues niet. Daarnaast
 zijn er **− 0,10 s / + 0,10 s**-knoppen en
+Gebruik in beide decks de bestaande ± beat-/4-beatknoppen voor
+muzikale hoofdstappen. Voor fijnere **handmatig gehoorde** correcties
+zijn er nu ook **− 0,10 s / + 0,10 s**-knoppen en
 **Shift + ←/→** op de geselecteerde golfvorm. Deze kleine stappen omzeilen
 bewust het optionele beatgrid; de gewone beatknoppen blijven op de door jou
 verklaarde BPM rekenen. Elke fijne wijziging is afzonderlijk ongedaan te

@@ -187,6 +187,7 @@ code{font-size:.87em}p{line-height:1.6}.warning{color:#e8c6a6}
 </div>
 <p id="cue-import-status" role="status" aria-live="polite">Nog geen cuekeuzes geladen.</p>
 <p class="lede">Fijn afstellen: kies per deck 1×, 4× of 16× golfvormzoom rond je eigen cue. Klikken op de ingezoomde golfvorm kiest de juiste absolute positie; zoom verandert geen cue. Gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
+<p class="lede">Fijn afstellen: gebruik ± 0,10 s naast elk deck of Shift + ←/→ op de geselecteerde golfvorm. Deze kleine stappen omzeilen bewust het optionele beatgrid; de standaard beatknoppen blijven op je opgegeven BPM werken.</p>
 <div class="grid">
 <section class="lane"><small>UITGAAND / DECK A</small><h2 id="name-a"></h2>
 <p class="summary" id="info-a"></p><div class="zoom-controls" role="group" aria-label="Golfvormzoom deck A"><button type="button" id="zoom-all-a" aria-pressed="true">Heel nummer · 1×</button><button type="button" id="zoom-4-a" aria-pressed="false">4×</button><button type="button" id="zoom-16-a" aria-pressed="false">16×</button><span id="zoom-status-a" role="status">Overzicht volledige track</span></div><canvas id="wave-a" width="950" height="152" tabindex="0" role="button" aria-label="Kies uitgaande cuepositie op de golfvorm"></canvas>
