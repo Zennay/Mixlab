@@ -405,6 +405,7 @@ De originele muziek, hashes en eerder opgeslagen manifesten wijzigen niet.
 
 Een gewijzigde cue krijgt direct de melding dat de keuzes nog gedownload
 moeten worden. Er wordt geen Studio, nieuwe muziek of WAV-export
+waveforms te tonen. Er wordt geen Studio, nieuwe muziek of WAV-export
 gepubliceerd. Kies handmatig A/B-cuepunten in de offline editor, download
 `mixlab-cue-selections.json` en plaats dat JSON in je privémuziekmap.
 Verwerk die keuze uitsluitend naar een **nieuw** bronmanifest:
@@ -425,6 +426,11 @@ cuekeuze wordt geweigerd zonder je originele manifest te wijzigen.
 De oorspronkelijke `cue_editor apply` zonder opties blijft bestaan.
 Ook later kun je het **nieuwe** manifest apart openen met
 `--resume --plan-html --plan-verify-wavs` om opnieuw te controleren.
+  /private/music/my-playlist-revised.private.json
+~~~
+
+Open daarna het **nieuwe** manifest opnieuw met `--resume --plan-html
+--plan-verify-wavs` om de nieuwe duur en tijdlijn te controleren.
 Render pas met een aparte `--resume --full-set-wav`-opdracht. De editor
 kan een bestaande rechtenverklaring, SHA-hash, transitiestijl, frozen
 bronmanifest of audiobestand **niet stilzwijgend overschrijven**.

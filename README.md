@@ -952,6 +952,15 @@ zonder Studio of WAV te renderen. Het oorspronkelijke bronmanifest,
 audio en goedgekeurde stijlen worden niet overschreven. Alleen voor originele
 SHA-gecontroleerde PCM16-WAVs; dit is geen automatische beatdetectie.
 
+Vanuit een **opgeslagen** handmatige playlist kun je met
+`--resume --plan-html --plan-cue-editor /private/music/new-editor.html`
+nu ook de bestaande offline visuele cue-editor starten, zonder Studio-
+of WAV-rendering. Daarmee pas je A/B-cues bewust aan via de lokale
+waveforms en exporteer je de selectie naar een **nieuw** SHA-gebonden
+manifest met `mixlab.cue_editor apply`; de oorspronkelijke bronmetadata,
+audio en goedgekeurde stijlen worden niet overschreven. Alleen voor originele
+SHA-gecontroleerde PCM16-WAVs; dit is geen automatische beatdetectie.
+
 De offline playlist-planpagina toont nu de **juiste volgende stap per productroute**: de wizard geeft `--resume --full-set-wav` in plaats van ongeldige previewinstructies, de directe partijmix vraagt alle previewvlaggen weg te halen. De wizard bewaart bovendien een expliciet gekozen standaard-`--family` in de private bronmanifest zodat later hervatten de oorspronkelijke handmatige stijl volgt. Expliciet goedgekeurde per-paarstijlen blijven beschermd.
 
 De visuele playlistpagina toont nu de herkenbare lokale bestandsnaam zonder extensie boven de oorspronkelijke technische track-ID, zodat de volgorde daadwerkelijk leesbaar is. De pagina blijft privé; bronmappen en audiobestanden worden niet toegevoegd.
