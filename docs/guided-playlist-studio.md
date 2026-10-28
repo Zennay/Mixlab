@@ -449,6 +449,10 @@ Een bestaande editor-HTML wordt geweigerd. Bij een nieuw manifest blijft
 de handmatig ingevulde broninformatie behouden als de optionele editor
 niet kan worden gemaakt; bij expliciet `--resume` is zo'n mislukte editor
 juist een fout, geen vals succes.
+blijven gelden. Een gewijzigde WAV of ongeldige route doet de **expliciete
+heropenopdracht falen** in plaats van een lege pagina als succes te melden.
+Gebruik later een aparte `--resume --full-set-wav`-opdracht om werkelijk te
+renderen: combineer die niet met `--plan-html` of met `--ideas`.
 
 ## Privacy, herstel en echte beperkingen
 
