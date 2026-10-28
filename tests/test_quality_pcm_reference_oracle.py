@@ -204,9 +204,10 @@ class PcmNumericalOracleTests(unittest.TestCase):
                rate: int, window_ms: int):
         raw = _write(path, frames, rate)
         reference = _independent_oracle(frames, rate, window_ms)
+        # _scan_wav_with_digest geeft later 12 waarden terug; deze test gebruikt de eerste 5
         actual, digest, windows, swapped, inverted = _scan_wav_with_digest(
             path, window_ms=window_ms
-        )
+        )[:5]
         independent_windows = reference.pop("_windows")
         for field, expected in reference.items():
             with self.subTest(field=field):
