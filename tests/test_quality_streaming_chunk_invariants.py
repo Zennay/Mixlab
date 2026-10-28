@@ -215,7 +215,7 @@ class StreamingChunkInvariants(unittest.TestCase):
                     frames[offset] = (-32768,) * channels
                     sample = self.root / f"min-{channels}-{offset}.wav"
                     _write(sample, channels, frames)
-                    metrics, digest, _, swapped, inverted = _scan_wav_with_digest(sample)
+                    metrics, digest, _, swapped, inverted = _scan_wav_with_digest(sample)[:5]
                     self.assertEqual(metrics["frames"], FRAMES)
                     self.assertEqual(len(digest), 32)
                     self.assertIsNone(inverted)
