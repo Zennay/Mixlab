@@ -154,6 +154,16 @@ def _unique_public_json_object(pairs: list[tuple[str, object]]) -> dict:
     return parsed
 
 
+def _unique_public_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Do not interpret a receipt whose duplicated JSON keys are ambiguous."""
+    parsed = {}
+    for key, value in pairs:
+        if key in parsed:
+            raise ValueError("Public pack receipt contains duplicate JSON keys")
+        parsed[key] = value
+    return parsed
+
+
 def _read_public_receipt_id(directory: Path, trial_count: int) -> str:
     """Read only the canonical sibling receipt, never the private answer key.
 
