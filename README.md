@@ -146,6 +146,12 @@ controleer het bestand en bevestig pas daarna 'Ik heb mijn JSON opgeslagen'.**
 Alleen klikken op Download schakelt de waarschuwing niet uit; nieuwe
 wijzigingen zetten hem opnieuw aan. De browser kan de waarschuwing bij
 sluiten onderdrukken. Er blijft geen automatische opslag of upload bestaan.
+De offline handmatige cue-editor beschermt niet-gedownloade A/B-cuewijzigingen
+nu met een zichtbare status en de gebruikelijke browserwaarschuwing bij
+sluiten of vernieuwen. Een nieuw cue-JSON-downloadmoment, undo/redo en
+het terugladen van de eerder gedownloade keuzes werken de status bij;
+controleer zelf of de download werkelijk is opgeslagen. Geen server of
+automatische browseropslag.
 
 Na het handmatig herhaald beluisteren van een overgang kun je nu in de
 volledig offline Full Set Player ook **‘Klinkt goed’ of ‘Wil aanpassen’**

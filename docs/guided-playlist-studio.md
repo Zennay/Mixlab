@@ -409,6 +409,19 @@ De originele muziek, hashes en eerder opgeslagen manifesten wijzigen niet.
 Een gewijzigde cue krijgt direct de melding dat de keuzes nog gedownload
 moeten worden. Er wordt geen Studio, nieuwe muziek of WAV-export
 waveforms te tonen. Er wordt geen Studio, nieuwe muziek of WAV-export
+moeten worden. De editor vraagt de browser bovendien een **waarschuwing bij
+sluiten, vernieuwen of verlaten** te tonen zolang de actuele cuekeuzes nog
+niet als privé-JSON zijn gedownload. De browser bepaalt zelf of en hoe die
+standaardwaarschuwing getoond wordt. Zodra de actuele keuzes zijn gedownload
+verdwijnt de waarschuwing; bij een volgende wijziging komt ze terug.
+Ook na undo/redo of het terugladen van eerder gedownloade, hashgebonden
+cuekeuzes wordt opnieuw met de laatst gedownloade versie vergeleken.
+De downloadknop start een lokale bestandsoverdracht; **controleer zelf of
+je browser het bestand echt op schijf heeft bewaard**. Er wordt niets
+automatisch opgeslagen in browseropslag of online; sluit de editor pas
+als het JSON-bestand is veiliggesteld. Ongeldige of overlappende handmatige
+cues blijven terecht ongeschikt voor export en krijgen óók een waarschuwing
+bij verlaten. Er wordt geen Studio, nieuwe muziek of WAV-export
 gepubliceerd. Kies handmatig A/B-cuepunten in de offline editor, download
 `mixlab-cue-selections.json` en plaats dat JSON in je privémuziekmap.
 Verwerk die keuze uitsluitend naar een **nieuw** bronmanifest:
