@@ -1,0 +1,41 @@
+name: ML-07 stereo pan-balance confound
+
+on:
+  pull_request:
+    paths:
+      - 'mixlab/quality/pan_balance.py'
+      - 'tests/test_quality_pan_balance.py'
+      - 'docs/quality-pan-balance.md'
+      - '.github/workflows/ml07-pan-balance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-pan-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        python-version: ['3.13', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # pinned v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Exact SHA, syntax and private A/B synthetic regression
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python --version
+          python -m compileall -q mixlab/quality/pan_balance.py tests/test_quality_pan_balance.py
+          ulimit -v 196608
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_pan_balance.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
