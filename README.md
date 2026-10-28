@@ -684,6 +684,8 @@ geen echte podiumtijden, luisterpreferentie of muziekrechten.
 
 
 
+
+
 ### Nieuw: een volledig evenement bedienen met meerdere echte DJ-sets
 
 Met **Show Conductor** combineer je nu 2–6 onafhankelijke, reeds afgeronde,
