@@ -727,6 +727,30 @@ alleen de exact opnieuw gegenereerde, opgeschoonde officiële HTML-spelers;
 gewijzigde HTML uit een ZIP wordt niet vertrouwd. Geen automatische
 muziektoestemming of internetverbinding.
 
+### Één echt showbestand uit meerdere goedgekeurde privé-sets
+
+Na het plannen in **Show Conductor** kan MixLab nu ook **één nieuwe,
+werkelijk gerenderde PCM16-show-WAV** maken uit 2–6 eerdere complete
+MixLab-sets en door jou gekozen echte digitale stilte tussen de sets.
+Geen browser- of realtime mix: alle oorspronkelijke complete WAVs worden
+opnieuw op SHA/receipt en bronidentiteit gecontroleerd en onveranderd
+in begrensde blokken gekopieerd. De 768 MiB-outputgrens beschermt opslag.
+
+~~~bash
+python3 -m mixlab.show_master \
+  /private/event-ops/mixlab-show-conductor.private.json \
+  /private/new-real-show \
+  /private/dinner/studio-session /private/dinner/final-set.wav \
+  /private/dance/studio-session /private/dance/final-set.wav
+~~~
+
+Na getypte `yes` komt er een nieuwe besloten outputmap met echte `show.wav`,
+volledige SHA-/frames-receipt en een lokale hoofdstuk-/pauzespeler.
+De bronnen worden nooit aangepast of automatisch gepubliceerd. Pauzes
+zijn letterlijke stilte, geen automatisch gemixte overgangen; bij
+flexibele evenementen gebruik je de handmatige Show Conductor.
+[Complete Show Master](docs/private-complete-show-master.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
