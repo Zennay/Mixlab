@@ -65,6 +65,12 @@ om precies die tweede overgang expliciet een andere renderstijl te geven.
 Wil je de stijlkeuze juist eerst handmatig beluisteren? Open dan
 **/private/mixlab-playlist-01/set-composer/index.html**, kies je route,
 download `mixlab-set-plan.private.json` en render die later afzonderlijk:
+  /private/mixlab-playlist-01 --beats 16
+~~~
+
+Open **/private/mixlab-playlist-01/set-composer/index.html**.
+Beluister de reeds gerenderde overgangen, bouw je route en download
+`mixlab-set-plan.private.json`. Render daarna één complete WAV:
 
 ~~~bash
 python3 -m mixlab.set_composer render \
@@ -182,6 +188,9 @@ song-A→song-B-overgangen in hoofdstukken en eventmodus. Dit zijn uitsluitend
 private weergavenamen; de WAV-SHA, de originele rechtenverklaring en de
 DSP-route blijven ongewijzigd. Je kunt
 de via het lokale goedkeuringsformulier gekozen **expliciete overgangsstijlen nu brongebonden in het private paar** bewaren, zodat de preview en een latere `--resume --full-set-wav` dezelfde goedgekeurde DSP-stijlen hanteren; strijdige overrides worden vóór import geweigerd. Je kunt ook de handmatige invoer vooraf vastleggen met `--manifest-only --plan-html`, waardoor ook de lokale privé-HTML-speelvolgorde verschijnt zonder audio te renderen. Voeg voor canonieke 44,1 kHz PCM16 WAVs `--plan-verify-wavs` toe voor de SHA-gecontroleerde voorspelde mixtijd; hervat later via `--resume --full-set-wav` op een nieuwe bestemming. Je kunt ook alleen de handmatige invoer vooraf vastleggen met `--manifest-only` en later
+Daar verschijnt ook **/private/mixlab-party.wav.player.html** met een
+interactieve golfvorm, hoofdstukken per overgang en CUE-export. Je kunt
+de handmatige invoer vooraf vastleggen met `--manifest-only` en later
 zonder opnieuw typen renderen met `--resume`.
 
 Wil je creatieve cuevoorstellen op basis van een **handmatig bevestigd**
@@ -415,6 +424,9 @@ zonder de wijziging terug te draaien of een nieuwe WAV te renderen.
 Dit is een ruwe timingvergelijking, geen MixLab-DSP-crossfade of
 onafhankelijke luisterstudie.
 ### Eigen muziek: van nummers naar echte DJ-overgang
+[Transition Idea Board](docs/transition-idea-board.md).
+
+### Alternatief: visuele cue-editor voor één zelfgekozen overgang
 
 MixLab kan privé en lokaal eigen toegestane MP3/FLAC/M4A/WAV verwerken,
 cues visueel laten goedkeuren en een volledige mix exporteren.
