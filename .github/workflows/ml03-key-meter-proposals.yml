@@ -8,6 +8,10 @@ on:
       - "mixlab/analysis/tonal.py"
       - "mixlab/analysis/meter.py"
       - "mixlab/analysis/benchmark.py"
+      - "mixlab/analysis/kick.py"
+      - "tests/test_analysis_kick.py"
+      - "mixlab/analysis/alignment.py"
+      - "tests/test_analysis_alignment_kicks.py"
       - "mixlab/analysis/source_receipt.py"
       - "mixlab/analysis/preview.py"
       - "mixlab/analysis/playlist_preview.py"
@@ -55,6 +59,6 @@ jobs:
       - name: Compile analysis modules
         run: python3 -m compileall -q mixlab/analysis tests/test_analysis_tonal_meter.py tests/test_analysis_benchmark.py
       - name: Synthetic key, downbeat and phrase regressions with time and RSS
-        run: /usr/bin/time -v python3 -m unittest -v tests.test_analysis_tonal_meter tests.test_analysis_benchmark
+        run: /usr/bin/time -v python3 -m unittest -v tests.test_analysis_tonal_meter tests.test_analysis_benchmark tests.test_analysis_kick tests.test_analysis_alignment_kicks
       - name: Recheck complete offline synthetic suite
         run: python3 -m unittest discover -s tests -p "test_*.py" -v

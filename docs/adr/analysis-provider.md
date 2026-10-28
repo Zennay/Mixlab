@@ -331,3 +331,14 @@ The manual-reference benchmark rejects symlinked reference files and symlinked i
 ### 23 October · Prevent duplicate-source benchmark weighting
 
 The manual-reference benchmark admits one item per unique content checksum. Reusing identical PCM bytes under different annotation IDs would otherwise count the same recording more than once and distort aggregate beat/downbeat/key scores. Duplicate IDs and duplicate source checksums are rejected before analysis; synthetic or duplicate rows are not evidence of independent permitted tracks.
+
+## Addendum — kick-driven beatgrid for real club music, 27 October 2026
+
+On 40 real Creative Commons dance excerpts, `energy-onset-v2` answered only 2 (see `docs/real-cc-pilot-evidence.md`). `mixlab/analysis/kick.py` adds `KickGridProvider` (`kick-grid-v1`), a stdlib provider for four-on-the-floor music:
+1. Two one-pole low-pass stages (~120 Hz) and a 10 ms envelope follower (longer than one bass cycle) are sampled every 5 ms.
+2. The rectified log-energy rise over 10 ms, floored relative to the peak so near-silent frames cannot dominate, gives the kick onset strength.
+3. Autocorrelation at one, two and four beats scores the periods inside the tempo range (default 100–140 BPM, at most one octave, so no octave guess is made).
+4. The three strongest period peaks are each refined by comb phase and a least-squares fit `t_n = t0 + n·period` over matched kick peaks, with outliers dropped; the fit with the smallest residual wins.
+5. It abstains below 60 % kick coverage or above a 15 ms residual.
+
+On real audio it answered 26/40, and both excerpts of a track agreed within 0.2 % in 22/22 cases. These are self-consistency results, not accuracy against human annotations. It stays `measured-heuristic`.
