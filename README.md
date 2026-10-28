@@ -790,6 +790,27 @@ zijn letterlijke stilte, geen automatisch gemixte overgangen; bij
 flexibele evenementen gebruik je de handmatige Show Conductor.
 [Complete Show Master](docs/private-complete-show-master.md).
 
+### Privé-showmaster meenemen als MP3/FLAC of USB-ZIP
+
+Een al afzonderlijk goedgekeurde **echte `show.wav`** kan nu optioneel via
+lokaal geïnstalleerde FFmpeg/FFprobe naar een private MP3 of FLAC, of met
+een apart getypte `yes` als brongebonden ZIP worden geëxporteerd:
+
+~~~bash
+python3 -m mixlab.show_delivery encode /private/new-real-show/show.wav --format mp3
+python3 -m mixlab.show_delivery pack /private/new-real-show/show.wav --include-encoded
+~~~
+
+Zowel de originele volledige WAV als optionele compressie worden opnieuw op
+SHA, receipt, frames en herkomst gecontroleerd. **De lokale originele show-
+receipt en HTML bevatten privénotities**: de ZIP exporteert daarom
+uitsluitend een nieuw gegenereerde, **opgeschoonde** receipt en offline speler
+zonder DJ-notities, eventfoldernamen of de privé-aanvangstijd. Het echte
+WAV-bestand blijft onveranderd, brontracks worden niet meegeleverd en er
+wordt niets geüpload. Zonder `--include-encoded` bevat de ZIP alleen
+originele show-WAV plus opgeschoonde metadata/speler.
+[Portable Complete Show](docs/portable-complete-show-delivery.md).
+
 ## Implemented
 
 - Canonical Track, Segment, Recipe and TransitionCandidate records.
