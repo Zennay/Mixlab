@@ -1,0 +1,43 @@
+name: ML-07 relative mono A-B quality validation
+on:
+  pull_request:
+    paths:
+      - 'mixlab/quality/relative_mono.py'
+      - 'tests/test_quality_relative_mono.py'
+      - 'docs/quality-relative-mono.md'
+      - '.github/workflows/ml07-relative-mono.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  relative-mono-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.13', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned checkout v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # pinned setup-python v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Assert exact source and syntax
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python -m compileall -q mixlab/quality/relative_mono.py tests/test_quality_relative_mono.py
+      - name: Synthetic A/B, canonical quality, CLI privacy
+        run: |
+          set -euo pipefail
+          ulimit -v 196608
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_relative_mono.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality.py'
+          /usr/bin/time -v python -m unittest discover -v -s tests -p 'test_quality_cli_privacy.py'
