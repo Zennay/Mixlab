@@ -86,7 +86,10 @@ class PilotEndToEnd(unittest.TestCase):
             self.assertTrue(all(abs(t["stretch_ratio"] - 1) <= .03 for t in report["tracks"]))
             self.assertEqual(verify_study_pack(out / "pack", out / "study.json"), report["study_id"])
             inspect_review_pack(out / "pack" / "review", require_generated_html=True, require_receipt=True)
+            self.assertTrue(all("kick_alignment" in p and "kick_alignment_before" in p for p in report["pairs"]))
             manifest = json.loads((out / "library-aligned.json").read_text())
+            self.assertTrue(all(set(p) == {"id", "a", "b", "a_start", "b_start", "bpm", "beats"}
+                                for p in manifest["pairs"]))
             self.assertTrue(all("not human-verified" in t["provenance"] for t in manifest["tracks"]))
 
 

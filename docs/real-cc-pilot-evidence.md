@@ -36,6 +36,29 @@ There is no human-verified reference: these are self-consistency results, **not 
 
 ## What remains open
 - **Human ratings:** the blind pack has been handed to the project owner. At least three distinct listeners are needed before any preference claim, and `milestone_pass` stays false until then.
-- Loudness is still common gain, not LUFS-matched.
+- Loudness: both sides of every trial are matched on integrated BS.1770-4 loudness by `study_pack` (correction: an earlier draft of this note wrongly said common gain). Short-term loudness during the transition is not matched.
 - Tempo, alignment and keys are machine proposals; no human verified them.
 - The kick grid needs evaluation against human beat annotations (`python3 -m mixlab.analysis.benchmark`) before it is called accurate.
+
+## Pilot v2 — measured kick alignment, 28 October 2026
+
+`mixlab/analysis/alignment.py` cross-correlates the raw low-band kick onsets of segment A and segment B over the exact rendered window, independent of any fitted grid.
+- Synthetic validation (permanent test): known offsets of 0, 20 and 60 ms and half a beat are recovered within 6 ms and classified aligned / flam / flam / off-beat. Kick-grid analysis of the render itself does not detect these offsets.
+- On pilot v1 it flagged one probable off-beat lock and an 85 ms flam on one track, which appeared consistently in both of that track's pairs.
+- Over longer windows the residual tempo mismatch after conform (up to 0.15 %) made the measurement window-dependent.
+
+The pilot now:
+- **conforms tempo in two passes**: residual error after conform has a median of **0.007 %** and a maximum of 0.17 %, over 50 tracks;
+- **checks every frozen pair** and nudges B by the measured lag only on clear evidence (sharpness ≥ 0.2, a flam or off-beat).
+
+The v2 study (`study_id bb08c473…`, 36 evaluation and 14 development tracks, 8 pairs) came out as:
+- 5 pairs aligned directly;
+- 1 flam of 85 ms nudged to aligned;
+- 1 nudged pair left ambiguous;
+- 1 possible off-beat lock with low certainty (0.17), not changed.
+
+The frozen pairs are kept, and the two flagged pairs are recorded in the private report. All gates pass:
+- `verify_study_pack`, ML-07 binding and review preflight;
+- integrated loudness matched, with the largest applied attenuation 0.24 dB.
+
+This is a measured alignment proxy, not a listening result.

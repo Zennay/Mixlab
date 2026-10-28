@@ -19,6 +19,7 @@ import math
 from pathlib import Path
 import subprocess
 from ..analysis import EnergyOnsetProvider
+from ..analysis.alignment import kick_offset
 from ..analysis.kick import KickGridProvider
 from ..analysis.meter import AccentMeterProvider
 from ..cli import digest, dump
@@ -32,6 +33,9 @@ RECHECK_TOLERANCE = .005
 CONFORMED_SECONDS = 44
 TRANSITION_BEATS = 16
 MAX_TRACKS = 50
+PAIR_FIELDS = ("id", "a", "b", "a_start", "b_start", "bpm", "beats")
+SECOND_PASS_TOLERANCE = .0003
+NUDGE_MIN_SHARPNESS = .2
 
 
 def fold(bpm):
@@ -92,6 +96,15 @@ def prepare(library, destination, pairs=8, seed=20261027, evaluation_share=.7):
         wav = root / "conformed" / f"{record['id']}.wav"
         conform(excerpt, wav, ratio)
         grid = measure(wav)
+        if grid.bpm is not None and grid.provider == "kick-grid" and \
+                abs(grid.bpm - target) > target * SECOND_PASS_TOLERANCE:
+            # Second pass from the original excerpt: correct the residual tempo
+            # error so pairs do not drift apart during the transition.
+            ratio = ratio * target / grid.bpm
+            if abs(ratio - 1) <= MAX_STRETCH:
+                wav.unlink()
+                conform(excerpt, wav, ratio)
+                grid = measure(wav)
         if grid.bpm is None or abs(fold(grid.bpm) - target) > target * RECHECK_TOLERANCE:
             report["excluded"].append({"id": record["id"], "reason": "conformed tempo did not re-measure",
                                        "remeasured_bpm": grid.bpm})
@@ -104,6 +117,7 @@ def prepare(library, destination, pairs=8, seed=20261027, evaluation_share=.7):
                           for n in range(int((CONFORMED_SECONDS - beats[0]) / period)))
         bars = meter.analyze(wav, list(beats))
         tracks.append(dict(record=record, wav=wav, measured_bpm=measured.bpm, folded_bpm=round(folded, 3),
+                           remeasured_bpm=grid.bpm,
                            tempo_provider=measured.provider,
                            target=target, ratio=round(ratio, 6), beats=beats,
                            downbeats=bars.downbeats_seconds, tempo_confidence=measured.tempo_confidence))
@@ -120,7 +134,7 @@ def prepare(library, destination, pairs=8, seed=20261027, evaluation_share=.7):
         tracks = [t for t in tracks if id(t) in kept]
     report["tracks"] = [{"id": t["record"]["id"], "measured_bpm": t["measured_bpm"],
                          "folded_bpm": t["folded_bpm"], "target_bpm": t["target"], "stretch_ratio": t["ratio"],
-                         "tempo_provider": t["tempo_provider"],
+                         "tempo_provider": t["tempo_provider"], "remeasured_bpm": t["remeasured_bpm"],
                          "tempo_confidence": t["tempo_confidence"],
                          "downbeats_found": bool(t["downbeats"])} for t in tracks]
     manifest_tracks = [{
@@ -174,22 +188,37 @@ def prepare(library, destination, pairs=8, seed=20261027, evaluation_share=.7):
         a_start, b_start = _nearest(a_points, 20.), _nearest(b_points, 2.)
         if a_start is None or b_start is None:
             raise ValueError(f"No beat-aligned window for {entry['pair_id']}")
+        # Independent check: cross-correlate the raw kick onsets of both
+        # segments over the window a listener hears; nudge B only on clear evidence.
+        span_seconds = TRANSITION_BEATS * 60 / a["target"]
+        check = kick_offset(a["wav"], a_start, b["wav"], b_start, a["target"], span_seconds)
+        nudge = None
+        if (check.verdict in ("flam", "off-beat (train-wreck risk)") and check.sharpness >= NUDGE_MIN_SHARPNESS
+                and 0 <= b_start + check.lag_seconds and b_start + check.lag_seconds + span_seconds <= CONFORMED_SECONDS - .5):
+            b_start = b_start + check.lag_seconds
+            after = kick_offset(a["wav"], a_start, b["wav"], b_start, a["target"], span_seconds)
+            nudge = {"seconds": check.lag_seconds, "after": after.to_dict()}
+        else:
+            after = check
         aligned.append({"id": f"{entry['a']}-{entry['b']}", "a": entry["a"], "b": entry["b"],
                         "a_start": round(a_start, 6), "b_start": round(b_start, 6),
                         "bpm": a["target"], "beats": TRANSITION_BEATS,
+                        "kick_alignment_before": check.to_dict(), "kick_nudge": nudge,
+                        "kick_alignment": after.verdict,
                         "alignment": "machine-proposed downbeat" if a["downbeats"] and b["downbeats"]
                         else "machine-proposed beat (downbeat abstained)"})
     final_manifest = root / "library-aligned.json"
     dump(final_manifest, {"schema_version": 1, "purpose": "real-cc-pilot-machine-prepared",
                           "tracks": manifest_tracks,
-                          "pairs": [{k: v for k, v in p.items() if k != "alignment"} for p in aligned]})
+                          "pairs": [{k: v for k, v in p.items() if k in PAIR_FIELDS} for p in aligned]})
     receipt = build_pack(final_manifest, study_path, root / "pack")
     report.update(study_id=study["study_id"], pairs=aligned, receipt=str(receipt.relative_to(root)),
                   evaluation_tracks=len(split["evaluation"]), development_tracks=len(split["development"]),
                   tempo_groups={str(k): len(v) for k, v in sorted(groups.items())}, possible_pairs=possible,
                   limitations=["tempo, beat alignment and keys are machine proposals, not human-verified",
                                "excerpts are tempo-conformed with ffmpeg atempo (pitch-preserving)",
-                               "common gain, not loudness-matched", "no listener ratings yet"])
+                               "integrated BS.1770-4 loudness matched per trial (study_pack); not short-term matched",
+                               "kick alignment is a measured proxy, not a listening result", "no listener ratings yet"])
     (root / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True))
     return report
 
