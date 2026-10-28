@@ -1,0 +1,493 @@
+"""Regression invariants for PCM16 stream chunk boundaries (synthetic only).
+
+An audio preflight must not change its result because a 4096-frame read
+ends inside an isolated click, a 50ms dropout or a channel dropout.
+This suite deliberately does not touch renderer, evaluation or private audio.
+"""
+from __future__ import annotations
+
+from array import array
+import json
+import math
+import random
+from pathlib import Path
+from unittest import mock
+import struct
+import sys
+import tempfile
+import unittest
+import wave
+
+from mixlab.quality import compare_wavs, scan_wav, _scan_wav_with_digest
+
+
+RATE = 8000
+FRAMES = 10003
+CHUNK = 4096
+
+
+def _write(path: Path, channels: int, frames: list[tuple[int, ...]], *,
+           extra_chunk: bool = False, sample_rate: int = RATE) -> None:
+    pcm = array("h", (sample for frame in frames for sample in frame))
+    if sys.byteorder != "little":
+        pcm.byteswap()
+    raw = pcm.tobytes()
+    if extra_chunk:
+        # RIFF JUNK is not part of the audible PCM and must not alter
+        # the private stream fingerprint or computed signal metrics.
+        fmt = struct.pack("<HHIIHH", 1, channels, sample_rate, sample_rate * channels * 2,
+                          channels * 2, 16)
+        chunks = ((b"fmt ", fmt), (b"JUNK", b"synthetic-not-private"),
+                  (b"data", raw))
+        body = b"".join(tag + struct.pack("<I", len(payload)) + payload +
+                        (b"\x00" if len(payload) & 1 else b"")
+                        for tag, payload in chunks)
+        path.write_bytes(b"RIFF" + struct.pack("<I", len(body) + 4) + b"WAVE" + body)
+    else:
+        with wave.open(str(path), "wb") as output:
+            output.setnchannels(channels)
+            output.setsampwidth(2)
+            output.setframerate(sample_rate)
+            output.writeframes(raw)
+
+
+class StreamingChunkInvariants(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _make(self, name: str, channels: int, *, spike=None, gap=None,
+              left_gap=None, extra_chunk=False, amplitude=4000, sample_rate=RATE, gap_frames=480):
+        frames = [[amplitude] * channels for _ in range(FRAMES)]
+        if spike is not None:
+            for offset in (-1, 1):
+                frames[spike + offset] = [0] * channels
+            frames[spike] = [10000] * channels
+        if gap is not None:
+            for index in range(gap, gap + gap_frames):
+                frames[index] = [0] * channels
+        if left_gap is not None:
+            self.assertEqual(channels, 2)
+            for index in range(left_gap, left_gap + gap_frames):
+                frames[index][0] = 0
+        result = self.root / name
+        _write(result, channels, [tuple(f) for f in frames],
+               extra_chunk=extra_chunk, sample_rate=sample_rate)
+        return result
+
+    def test_isolated_click_detected_on_both_sides_of_read_boundary(self):
+        for channels in (1, 2):
+            reference = None
+            for position in (CHUNK - 2, CHUNK - 1, CHUNK, CHUNK + 1):
+                with self.subTest(channels=channels, position=position):
+                    sample = self._make(f"click-{channels}-{position}.wav",
+                                        channels, spike=position)
+                    metrics = scan_wav(sample)
+                    self.assertTrue(metrics["isolated_sample_impulse_risk"])
+                    self.assertEqual(metrics["isolated_sample_impulse_count"], channels)
+                    self.assertEqual(metrics["frames"], FRAMES)
+                    # Adjacent jumps and peak, unlike timing envelopes, must
+                    # remain invariant under moving an identical isolated spike.
+                    stable = (metrics["max_adjacent_sample_jump"],
+                              metrics["peak"], metrics["near_full_scale_fraction"])
+                    if reference is None:
+                        reference = stable
+                    self.assertEqual(stable, reference)
+
+    def test_chunk_click_detection_across_supported_sample_rates(self):
+        # A readframe(4096) split is measured in frames, not seconds.
+        # Preserve sample-local impulse detection at 8k, 16k, 48k and 96k.
+        for rate in (8000, 16000, 48000, 96000):
+            for channels in (1, 2):
+                with self.subTest(rate=rate, channels=channels):
+                    path = self._make(f"rate-{rate}-{channels}.wav", channels,
+                                      spike=CHUNK, sample_rate=rate)
+                    result = scan_wav(path)
+                    self.assertEqual(result["sample_rate"], rate)
+                    self.assertEqual(result["frames"], FRAMES)
+                    self.assertEqual(result["isolated_sample_impulse_count"],
+                                     channels)
+                    self.assertTrue(result["isolated_sample_impulse_risk"])
+
+    def test_global_pcm_dropout_straddling_internal_read_boundary(self):
+        for channels in (1, 2):
+            for start in (CHUNK - 240, CHUNK - 1, CHUNK + 1):
+                with self.subTest(channels=channels, start=start):
+                    path = self._make(f"gap-{channels}-{start}.wav",
+                                      channels, gap=start)
+                    metrics = scan_wav(path)
+                    self.assertTrue(metrics["short_interior_pcm_dropout_risk"])
+                    self.assertGreaterEqual(
+                        metrics["longest_interior_quiet_pcm_gap_ms"], 60)
+                    self.assertFalse(metrics["interior_silent_gap_risk"])
+
+    def test_one_channel_dropout_straddling_internal_read_boundary(self):
+        for start in (CHUNK - 240, CHUNK - 1, CHUNK + 1):
+            with self.subTest(start=start):
+                path = self._make(f"stereo-{start}.wav", 2, left_gap=start)
+                metrics = scan_wav(path)
+                self.assertTrue(metrics["short_interior_stereo_channel_dropout_risk"])
+                self.assertGreaterEqual(
+                    metrics["longest_interior_stereo_channel_quiet_gap_ms"], 60)
+                self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_exact_fifty_millisecond_dropout_threshold_across_rates(self):
+        # A 50ms threshold must not turn into 49.9ms or 50.1ms when
+        # samples span readframes(4096). 44.1kHz is intentionally non-round.
+        for rate in (8000, 16000, 44100, 96000):
+            limit = rate // 20
+            for frames in (limit - 1, limit):
+                start = CHUNK - 3
+                with self.subTest(rate=rate, length=frames, kind="all"):
+                    sample = self._make(f"all-{rate}-{frames}.wav", 2,
+                                        gap=start, gap_frames=frames,
+                                        sample_rate=rate)
+                    metrics = scan_wav(sample)
+                    self.assertEqual(metrics["short_interior_pcm_dropout_risk"],
+                                     frames >= limit)
+                with self.subTest(rate=rate, length=frames, kind="left"):
+                    sample = self._make(f"left-{rate}-{frames}.wav", 2,
+                                        left_gap=start, gap_frames=frames,
+                                        sample_rate=rate)
+                    metrics = scan_wav(sample)
+                    self.assertEqual(
+                        metrics["short_interior_stereo_channel_dropout_risk"],
+                        frames >= limit)
+                    self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_clean_periodic_audio_does_not_create_fake_read_boundary_clicks(self):
+        # Use a real continuous, non-DC procedural tone, rather than the
+        # constant baseline used to isolate particular positive cases.
+        for channels in (1, 2):
+            with self.subTest(channels=channels):
+                baseline = self.root / f"clean-{channels}.wav"
+                candidate = self.root / f"quiet-clean-{channels}.wav"
+                def tone(amplitude):
+                    return [tuple(round(amplitude * math.sin(2 * math.pi * 220 * i / RATE))
+                                  for _ in range(channels)) for i in range(FRAMES)]
+                _write(baseline, channels, tone(6000))
+                _write(candidate, channels, tone(5600))
+                for path in (baseline, candidate):
+                    result = scan_wav(path)
+                    self.assertFalse(result["isolated_sample_impulse_risk"])
+                    self.assertFalse(result["severe_sample_discontinuity_risk"])
+                    self.assertFalse(result["short_interior_pcm_dropout_risk"])
+                    self.assertFalse(result["dc_offset_risk"])
+                    if channels == 2:
+                        self.assertFalse(result["short_interior_stereo_channel_dropout_risk"])
+                        self.assertFalse(result["mono_fold_down_cancellation_risk"])
+                report = compare_wavs(baseline, [candidate])
+                self.assertFalse(report["baseline_warnings"])
+                self.assertFalse(report["candidates"][0]["warnings"])
+                self.assertTrue(report["candidates"][0]["level_comparable_for_blind_ab"])
+                self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_leading_and_trailing_silence_are_not_interior_dropouts(self):
+        # Starting/ending a listening excerpt in silence is not itself a
+        # mid-playback transport gap. Cover both stereo projected-channel
+        # and full-channel PCM runs, alongside the positive interior oracle.
+        for channels in (1, 2):
+            for offset in (0, FRAMES - 480):
+                with self.subTest(channels=channels, edge=offset, kind="all"):
+                    sample = self._make(f"edge-all-{channels}-{offset}.wav",
+                                        channels, gap=offset)
+                    metrics = scan_wav(sample)
+                    self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+                    self.assertFalse(metrics["interior_silent_gap_risk"])
+                if channels == 2:
+                    with self.subTest(channels=channels, edge=offset, kind="left"):
+                        sample = self._make(f"edge-left-{offset}.wav", 2,
+                                            left_gap=offset)
+                        metrics = scan_wav(sample)
+                        self.assertFalse(
+                            metrics["short_interior_stereo_channel_dropout_risk"])
+                        self.assertFalse(metrics["short_interior_pcm_dropout_risk"])
+
+    def test_signed_minimum_sample_at_read_boundary_is_bounded(self):
+        # -32768 cannot be safely sign-inverted as signed PCM16. The
+        # fingerprint must abstain, not wrap to a bogus negative/positive
+        # match. The valid original source must still scan and warn.
+        for channels in (1, 2):
+            for offset in (CHUNK - 1, CHUNK):
+                with self.subTest(channels=channels, offset=offset):
+                    frames = [(4000,) * channels for _ in range(FRAMES)]
+                    frames[offset] = (-32768,) * channels
+                    sample = self.root / f"min-{channels}-{offset}.wav"
+                    _write(sample, channels, frames)
+                    metrics, digest, _, swapped, inverted = _scan_wav_with_digest(sample)
+                    self.assertEqual(metrics["frames"], FRAMES)
+                    self.assertEqual(len(digest), 32)
+                    self.assertIsNone(inverted)
+                    self.assertGreater(metrics["near_full_scale_fraction"], 0)
+                    self.assertTrue(metrics["severe_sample_discontinuity_risk"])
+                    self.assertEqual(swapped is not None, channels == 2)
+
+    def test_pcm_digest_ignores_non_audio_riff_chunks(self):
+        for channels in (1, 2):
+            with self.subTest(channels=channels):
+                canonical = self._make(f"plain-{channels}.wav", channels)
+                decorated = self._make(f"junk-{channels}.wav", channels,
+                                       extra_chunk=True)
+                clean = _scan_wav_with_digest(canonical)
+                other = _scan_wav_with_digest(decorated)
+                self.assertEqual(clean, other)
+                self.assertEqual(scan_wav(canonical)["window_count"], 13)
+                self.assertEqual(scan_wav(decorated)["frames"], FRAMES)
+                report = compare_wavs(canonical, [decorated])
+                self.assertNotIn(str(self.root), json.dumps(report))
+                self.assertTrue(report["human_preference_test_required"])
+
+    def test_candidate_chunk_click_survives_ab_comparison(self):
+        baseline = self._make("baseline.wav", 2)
+        variant = self._make("variant.wav", 2, spike=CHUNK)
+        report = compare_wavs(baseline, [variant])
+        self.assertIn("isolated_sample_impulse_inspect_for_clicks",
+                      report["candidates"][0]["warnings"])
+        self.assertEqual(report["candidates"][0]["candidate_id"], "candidate-01")
+        self.assertFalse(report["contains_source_paths_or_audio"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_public_review_rejects_riff_metadata_families_in_both_locations(self):
+        from mixlab.quality.pack import inspect_review_pack
+        review = self.root / "metadata-families"
+        review.mkdir()
+        baseline = review / "trial-001-A.wav"
+        suspect = review / "trial-001-B.wav"
+        frames = [(3000, 2000)] * 8000
+        _write(baseline, 2, frames)
+        private_marker = b"hidden-private-label"
+        for tag in (b"LIST", b"bext", b"iXML", b"JUNK"):
+            for placement in ("before", "after"):
+                with self.subTest(tag=tag, placement=placement):
+                    _write(suspect, 2, frames, extra_chunk=(placement == "before"))
+                    source = suspect.read_bytes()
+                    if placement == "before":
+                        # Replace only the optional RIFF tag, not PCM/audio
+                        # or the private metadata payload.
+                        self.assertEqual(source[36:40], b"JUNK")
+                        source = source[:36] + tag + source[40:]
+                    else:
+                        extra = (tag + struct.pack("<I", len(private_marker))
+                                 + private_marker
+                                 + (bytes(1) if len(private_marker) & 1 else b""))
+                        source = (source[:4]
+                                  + struct.pack("<I", len(source) - 8 + len(extra))
+                                  + source[8:] + extra)
+                    suspect.write_bytes(source)
+                    # Scanner admits a harmless RIFF extension as PCM16.
+                    self.assertEqual(scan_wav(suspect)["frames"], len(frames))
+                    # But publishing *any* hidden metadata alongside A/B
+                    # evidence is forbidden before opening private PCM.
+                    with mock.patch("mixlab.quality.pack.compare_wavs",
+                                    side_effect=AssertionError("scanned private PCM")):
+                        with self.assertRaises(ValueError):
+                            inspect_review_pack(review)
+
+    def test_public_review_rejects_unaccounted_trailing_bytes(self):
+        from mixlab.quality.pack import inspect_review_pack
+        review = self.root / "trailing-wav-bytes"
+        review.mkdir()
+        baseline = review / "trial-001-A.wav"
+        suspect = review / "trial-001-B.wav"
+        _write(baseline, 2, [(1500, 1800)] * 8000)
+        _write(suspect, 2, [(1500, 1800)] * 8000)
+        suspect.write_bytes(suspect.read_bytes() + b"not-public")
+        self.assertEqual(scan_wav(suspect)["frames"], 8000)
+        with mock.patch("mixlab.quality.pack.compare_wavs",
+                        side_effect=AssertionError("scanned private PCM")):
+            with self.assertRaises(ValueError):
+                inspect_review_pack(review)
+
+    def test_public_review_rejects_extra_riff_metadata_before_pcm_scan(self):
+        from mixlab.quality.pack import inspect_review_pack
+
+        review = self.root / "review"
+        review.mkdir()
+        _write(review / "trial-001-A.wav", 2, [(4000, 4000)] * 8000)
+        _write(review / "trial-001-B.wav", 2, [(4000, 4000)] * 8000,
+               extra_chunk=True)
+        # Internal scanner allows a valid JUNK chunk because it diagnoses
+        # PCM, but the *public* listener pack must refuse it: textual RIFF
+        # metadata can leak artist/variant identities during blind review.
+        self.assertEqual(scan_wav(review / "trial-001-B.wav")["frames"], 8000)
+        # Metadata must be rejected from header admission *before* a
+        # potentially expensive/private PCM scan is even invoked.
+        with mock.patch("mixlab.quality.pack.compare_wavs",
+                        side_effect=AssertionError("unexpected PCM scan")):
+            with self.assertRaises(ValueError):
+                inspect_review_pack(review)
+
+    def test_multicandidate_swapped_and_inverted_pcm_stays_detectable(self):
+        # A source reused after a stereo L/R swap or sign inversion is still
+        # the same listening evidence. Assert the real comparison path,
+        # including a sample change exactly on both sides of readframes(4096).
+        frames = [
+            (round(4700 * math.sin(2 * math.pi * 220 * i / RATE)),
+             round(3700 * math.sin(2 * math.pi * 330 * i / RATE)))
+            for i in range(FRAMES)
+        ]
+        for pos in (CHUNK - 1, CHUNK):
+            with self.subTest(position=pos):
+                original = list(frames)
+                original[pos] = (7139, -3941)
+                root = self.root / f"source-{pos}.wav"
+                swapped = self.root / f"swap-{pos}.wav"
+                inverted = self.root / f"invert-{pos}.wav"
+                duplicate = self.root / f"dupe-{pos}.wav"
+                _write(root, 2, original)
+                _write(swapped, 2, [(right, left) for left, right in original])
+                _write(inverted, 2, [(-left, -right) for left, right in original])
+                _write(duplicate, 2, original, extra_chunk=True)
+                comparison = compare_wavs(root, [swapped, inverted, duplicate])
+                rows = comparison["candidates"]
+                self.assertEqual(rows[0]["stereo_swapped_pcm_of"], "baseline")
+                self.assertIn("stereo_channel_swapped_pcm_inspect_for_reused_audio",
+                              rows[0]["warnings"])
+                self.assertEqual(rows[1]["polarity_inverted_pcm_of"], "baseline")
+                self.assertIn("polarity_inverted_pcm_inspect_for_reused_audio",
+                              rows[1]["warnings"])
+                self.assertEqual(rows[2]["duplicate_pcm_of"], "baseline")
+                self.assertIn("identical_pcm_to_baseline_inspect_for_noop",
+                              rows[2]["warnings"])
+                self.assertFalse(comparison["contains_source_paths_or_audio"])
+                self.assertNotIn(str(self.root), json.dumps(comparison))
+
+    def test_seeded_dropouts_do_not_depend_on_internal_chunk_alignment(self):
+        # Boundary tests at just 4095/4096 can overfit: protect against
+        # accidental state reset at *all* interior offsets in a deterministic
+        # sparse sample, with both just-below and exact 50ms fenceposts.
+        rng = random.Random(0x7B0C2026)
+        offsets = {CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK - 1}
+        offsets.update(rng.sample(range(1200, FRAMES - 500), 16))
+        for start in sorted(offsets):
+            for length in (399, 400):
+                with self.subTest(start=start, samples=length):
+                    path = self._make(f"seeded-{start}-{length}.wav", 2,
+                                      gap=start, gap_frames=length)
+                    report = scan_wav(path)
+                    self.assertEqual(report["short_interior_pcm_dropout_risk"],
+                                     length == 400)
+                    self.assertFalse(report["interior_silent_gap_risk"])
+                    self.assertEqual(report["frames"], FRAMES)
+
+    def test_global_rms_15db_fencepost_across_chunk_boundary(self):
+        # The canonical preflight is an RMS diagnostic, not loudness:
+        # a 1.5dB tolerance should remain stable after an arbitrary
+        # 4096-frame read split, even when A/B PCM has a different RIFF body.
+        for channels in (1, 2):
+            base = self._make(f"reference-level-{channels}.wav", channels,
+                              amplitude=4000)
+            low = self._make(f"near-level-{channels}.wav", channels,
+                             amplitude=4700, extra_chunk=True)
+            high = self._make(f"over-level-{channels}.wav", channels,
+                              amplitude=4800, extra_chunk=True)
+            report = compare_wavs(base, [low, high])
+            with self.subTest(channels=channels):
+                self.assertTrue(
+                    report["candidates"][0]["level_comparable_for_blind_ab"])
+                self.assertFalse(
+                    report["candidates"][1]["level_comparable_for_blind_ab"])
+                self.assertLess(abs(report["candidates"][0]["rms_delta_db_vs_baseline"]), 1.5)
+                self.assertGreater(abs(report["candidates"][1]["rms_delta_db_vs_baseline"]), 1.5)
+                self.assertIn("rms_level_mismatch_not_lufs",
+                              report["candidates"][1]["warnings"])
+                self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_short_valid_pcm_window_fenceposts_have_finite_public_metrics(self):
+        # Legitimate one-frame files have no full RMS window. Zero-duration
+        # and missing data must be rejected, but 1, 2, 159/160 or 4095/4096
+        # frames cannot spuriously divide by zero or export NaN/Infinity.
+        for channels in (1, 2):
+            for rate in (8000, 96000):
+                for period_ms in (20, 1000):
+                    window_frames = max(1, round(rate * period_ms / 1000))
+                    for frames in (1, 2, 159, 160, 4095, 4096, 4097):
+                        with self.subTest(channels=channels, rate=rate,
+                                          period=period_ms, frames=frames):
+                            path = self.root / (
+                                f"short-{channels}-{rate}-{period_ms}-{frames}.wav")
+                            sample = tuple([500] * channels)
+                            _write(path, channels, [sample] * frames,
+                                   sample_rate=rate)
+                            report = scan_wav(path, window_ms=period_ms)
+                            self.assertEqual(report["frames"], frames)
+                            self.assertEqual(report["window_count"],
+                                             (frames - 1) // window_frames + 1)
+                            self.assertFalse(report["short_interior_pcm_dropout_risk"])
+                            self.assertFalse(report["short_interior_stereo_channel_dropout_risk"])
+                            self.assertEqual(report["channels"], channels)
+                            # Numeric public reports are strict JSON: NaN/Inf
+                            # must never leak from the finite one-frame edge.
+                            json.dumps(report, allow_nan=False)
+
+    def test_real_two_million_frame_stereo_rate_ceiling_streams_under_ci_cap(self):
+        # This is the actual upper accepted production-format frame count,
+        # not a mocked MAX_SOURCE_FRAMES or a giant in-memory fixture.
+        # At 96 kHz stereo PCM16 this checks a real ~8 MiB source in
+        # time-bounded CI under the same 192 MiB virtual address-space cap.
+        count = 2_000_000
+        rate = 96_000
+        gap_start = 4096 * 460 - 2
+        gap_frames = rate // 20
+        path = self.root / "real-capacity-2m-stereo.wav"
+
+        def write_segment(writer, frames, frame):
+            while frames:
+                take = min(4096, frames)
+                writer.writeframesraw(frame * take)
+                frames -= take
+
+        with wave.open(str(path), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(rate)
+            left_right = struct.pack("<hh", 4200, -5100)
+            write_segment(writer, gap_start, left_right)
+            write_segment(writer, gap_frames, bytes(4))
+            write_segment(writer, count - gap_start - gap_frames, left_right)
+
+        self.assertLess(path.stat().st_size, 32 * 1024 * 1024)
+        result = scan_wav(path)
+        self.assertEqual(result["sample_rate"], rate)
+        self.assertEqual(result["channels"], 2)
+        self.assertEqual(result["frames"], count)
+        self.assertTrue(result["short_interior_pcm_dropout_risk"])
+        self.assertGreaterEqual(result["longest_interior_quiet_pcm_gap_ms"], 50)
+        self.assertFalse(result["short_interior_stereo_channel_dropout_risk"])
+
+        # A *real* full-length PCM source one frame over the declared
+        # maximum must be rejected, without swapping in a mocked limit.
+        oversized = self.root / "over-capacity.wav"
+        with wave.open(str(oversized), "wb") as writer:
+            writer.setnchannels(2)
+            writer.setsampwidth(2)
+            writer.setframerate(rate)
+            write_segment(writer, count + 1, left_right)
+        with self.assertRaisesRegex(ValueError, "Frames"):
+            scan_wav(oversized)
+
+    def test_truncation_in_each_streaming_read_rejected(self):
+        # A valid header can still lie about available source frames.
+        # Cut both inside the first chunk and just after a complete first
+        # chunk; never promote an incomplete remaining read to a clean scan.
+        for channels in (1, 2):
+            sample = self._make(f"trunc-source-{channels}.wav", channels)
+            content = sample.read_bytes()
+            header_length = len(content) - FRAMES * channels * 2
+            for have in (1, CHUNK - 1, CHUNK, CHUNK + 1, FRAMES - 1):
+                with self.subTest(channels=channels, frames_available=have):
+                    sample.write_bytes(content[:header_length + have * channels * 2])
+                    with self.assertRaises((ValueError, OSError, EOFError)):
+                        scan_wav(sample)
+
+    def test_truncated_declared_wav_never_pretends_valid(self):
+        sample = self._make("truncated.wav", 1)
+        data = sample.read_bytes()
+        sample.write_bytes(data[:-9])
+        with self.assertRaises((ValueError, OSError, EOFError)):
+            scan_wav(sample)
+
+
+if __name__ == "__main__":
+    unittest.main()
