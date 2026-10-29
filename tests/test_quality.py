@@ -56,7 +56,10 @@ class QualityTests(unittest.TestCase):
         check = subprocess.run(
             [sys.executable, "-m", "unittest", "discover",
              "-s", "tests", "-p", sibling_pattern, "-v"],
-            cwd=project_root, capture_output=True, text=True, timeout=150,
+            cwd=project_root, capture_output=True, text=True,
+            # Volledige sibling-suite duurt ~16 min na de M1-merges (gemeten 2026-10-29);
+            # 150 s was een limiet van de oorspronkelijke, kleinere suite.
+            timeout=1500,
         )
         self.assertEqual(
             0, check.returncode,
