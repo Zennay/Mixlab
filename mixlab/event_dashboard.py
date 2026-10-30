@@ -5,6 +5,8 @@ No embedded source music, external scripts, uploads or preference claims.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -203,10 +205,7 @@ def create_dashboard(private_session, complete_wav, new_html, *,
     page = _PAGE.replace("__DATA__", blob).encode("utf-8")
     if len(page) > 512 * 1024:
         raise ValueError("Private event dashboard exceeds 512 KiB")
-    with target.open("xb") as output:
-        os.fchmod(output.fileno(), 0o600)
-        output.write(page)
-    return target
+    return write_private_new(target, page)
 
 
 def main():

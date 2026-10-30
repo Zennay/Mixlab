@@ -5,6 +5,8 @@ audio, accesses no cloud service, and cannot infer rights or authenticity.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import hashlib
 import json
@@ -336,9 +338,7 @@ def build_vault(new_private_html, *event_directories):
     page = _PAGE.replace("__DATA__", blob).encode("utf-8")
     if len(page) > 512 * 1024:
         raise ValueError("Private event library exceeds its page budget")
-    with target.open("xb") as output:
-        os.fchmod(output.fileno(), 0o600)
-        output.write(page)
+    write_private_new(target, page)
     return {"private_event_vault":str(target), "events":len(records),
             "original_canonical":sum(x["evidence"]=="canonical" for x in records),
             "restored_private_packages":sum(x["evidence"]=="bundle" for x in records),
