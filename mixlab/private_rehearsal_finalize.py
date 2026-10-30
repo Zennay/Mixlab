@@ -10,6 +10,8 @@ import json
 import math
 import os
 from pathlib import Path
+
+from .private_output import write_private_new
 import tempfile
 import wave
 
@@ -148,12 +150,9 @@ def finalize(comparison_workspace, human_decision_json, output_reel):
             "human_take_decision_sha256":decision_sha,"chapters":chapters,
         }
         receipt_path=stage/"receipt.json"
-        receipt_path.write_text(json.dumps(receipt,indent=2,sort_keys=True,allow_nan=False)+"\n",
-                                encoding="utf-8")
-        receipt_path.chmod(0o600)
+        write_private_new(receipt_path, (json.dumps(receipt,indent=2,sort_keys=True,allow_nan=False)+"\n").encode("utf-8"))
         page=stage/"index.html"
-        page.write_text(_reel_page(receipt,_sha(receipt_path)),encoding="utf-8")
-        page.chmod(0o600)
+        write_private_new(page, (_reel_page(receipt,_sha(receipt_path))).encode("utf-8"))
         target.mkdir(mode=0o700)
         saved=[]
         try:

@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+
+from .private_output import write_private_new
 import tempfile
 import wave
 
@@ -167,9 +169,7 @@ def render_mixdown(reel_dir, output_wav, *, order_json=None, gap_ms=350):
             "rights_verified": False, "blind_preference_verified": False,
         }
         prepared_receipt = stage / "private-rehearsal.json"
-        prepared_receipt.write_text(json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n",
-                                    encoding="utf-8")
-        prepared_receipt.chmod(0o600)
+        write_private_new(prepared_receipt, (json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8"))
         # Atomic no-clobber publication of each file; sidecar failure rolls
         # back only our own newly linked WAV.
         os.link(generated, output)

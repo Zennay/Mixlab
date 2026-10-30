@@ -13,7 +13,7 @@ import stat
 import tempfile
 
 from .models import FAMILY_NAMES
-from .private_output import open_private_new
+from .private_output import open_private_new, write_private_new
 
 MAX_JSON_BYTES = 65536
 MAX_WAV_BYTES = 32 * 1024 * 1024
@@ -176,9 +176,7 @@ def export_choice(gallery_dir, choice_file, output_wav):
         }
         staged_wav.chmod(0o600)
         staged_evidence = Path(stage) / "chosen.choice.json"
-        staged_evidence.write_text(json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n",
-                                   encoding="utf-8")
-        staged_evidence.chmod(0o600)
+        write_private_new(staged_evidence, (json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8"))
         # File hardlinks on one filesystem only, exclusively (EEXIST refuses
         # colliding paths/symlinks). Roll back our own WAV if sidecar linking fails.
         os.link(staged_wav, output)

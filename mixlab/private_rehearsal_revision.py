@@ -11,6 +11,8 @@ import json
 import math
 import os
 from pathlib import Path
+
+from .private_output import write_private_new
 import tempfile
 
 from .models import FAMILY_NAMES
@@ -279,12 +281,9 @@ def prepare(original_reel, galleries, destination, *, debrief=None, mixdown_rece
             "total_audio_bytes":total,"chapters":results,
         }
         receipt_path = stage / "receipt.json"
-        receipt_path.write_text(json.dumps(document,indent=2,sort_keys=True,allow_nan=False)+"\n",
-                                encoding="utf-8")
-        receipt_path.chmod(0o600)
+        write_private_new(receipt_path, (json.dumps(document,indent=2,sort_keys=True,allow_nan=False)+"\n").encode("utf-8"))
         page = stage / "index.html"
-        page.write_text(_prepare_page(document, _hash(receipt_path)),encoding="utf-8")
-        page.chmod(0o600)
+        write_private_new(page, (_prepare_page(document, _hash(receipt_path))).encode("utf-8"))
         _private_publish(stage,target,outputs+["receipt.json","index.html"])
     return target / "index.html"
 
@@ -383,12 +382,9 @@ def apply(studio_dir, decision_file, destination):
                  "revision_source_studio_sha256":document_sha,
                  "human_revision_decision_sha256":plan_sha,"chapters":rendered}
         receipt_path=stage/"receipt.json"
-        receipt_path.write_text(json.dumps(receipt,indent=2,sort_keys=True,allow_nan=False)+"\n",
-                                encoding="utf-8")
-        receipt_path.chmod(0o600)
+        write_private_new(receipt_path, (json.dumps(receipt,indent=2,sort_keys=True,allow_nan=False)+"\n").encode("utf-8"))
         page=stage/"index.html"
-        page.write_text(_reel_page(receipt,_hash(receipt_path)),encoding="utf-8")
-        page.chmod(0o600)
+        write_private_new(page, (_reel_page(receipt,_hash(receipt_path))).encode("utf-8"))
         _private_publish(stage,target,files+["receipt.json","index.html"])
     return target/"index.html"
 
