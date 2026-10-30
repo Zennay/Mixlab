@@ -856,7 +856,7 @@ def prepare(source_manifest, output_html):
     return _publish_new_private(output, raw)
 
 
-def apply(source_manifest, selection_json, destination):
+def apply(source_manifest, selection_json, destination, *, require_change=False):
     """Apply exact-source browser cue choices to a NEW canonical manifest."""
     source_manifest = Path(source_manifest).absolute()
     destination = Path(destination).absolute()
@@ -868,6 +868,7 @@ def apply(source_manifest, selection_json, destination):
            (destination.parent, *destination.parent.parents)):
         raise ValueError("Never publish a private cue manifest inside a Git checkout")
     original, _tracks, pairs = _admit_library(source_manifest, calculate_waveforms=False)
+    before_cues = [(p["a_start_seconds"], p["b_start_seconds"]) for p in original["pairs"]]
     choices = _read_spec(Path(selection_json).absolute())
     if (choices.get("kind") != "manual-cue-overrides"
             or choices.get("manifest_sha256") != digest(source_manifest)):
@@ -928,12 +929,20 @@ def apply(source_manifest, selection_json, destination):
                     " overlapt de vorige inkomende overgang; "
                     "schuif de cue later voordat je opslaat")
         previous = pair
+    # The optional before/after report has no honest comparison when every
+    # selected value resolves to the original PCM cue. Fail *before* writing
+    # a redundant revised manifest, including sub-microsecond round trips.
+    if require_change and all(
+        (pair["a_start_seconds"], pair["b_start_seconds"]) == old
+        for pair, old in zip(original["pairs"], before_cues)
+    ):
+        raise ValueError("No cue positions changed; original source remains untouched")
     raw = (json.dumps(original, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
     return _publish_new_private(destination, raw)
 
 
 def apply_with_private_plan(source_manifest, selection_json, destination,
-                            *, verify_wavs=False):
+                            *, verify_wavs=False, require_change=False):
     """Save manually revised cues AND a separate offline preview, no audio."""
     destination = Path(destination).absolute()
     parent = destination.parent.parent
@@ -948,7 +957,8 @@ def apply_with_private_plan(source_manifest, selection_json, destination,
     _valid_destination(planned_wav, planned_session)
     if html.exists() or html.is_symlink():
         raise ValueError('Private planned-mix HTML already exists; choose a fresh manifest name')
-    result = apply(source_manifest, selection_json, destination)
+    result = apply(source_manifest, selection_json, destination,
+                   require_change=require_change)
     try:
         from .party_mix import render_party_mix
         new_source = _read_spec(result)
@@ -1000,13 +1010,15 @@ def main():
         elif args.plan_html:
             result, preview = apply_with_private_plan(
                 args.source_manifest, args.selection_json, args.output_manifest,
-                verify_wavs=args.plan_verify_wavs)
+                verify_wavs=args.plan_verify_wavs,
+                require_change=bool(args.compare_html))
             extra = {"private_plan_html": preview["preview_html"],
                      "actual_wav_rendered": False,
                      "planned_mix_seconds": (preview["complete_mix_duration"]
                                              if args.plan_verify_wavs else None)}
         else:
-            result = apply(args.source_manifest, args.selection_json, args.output_manifest)
+            result = apply(args.source_manifest, args.selection_json, args.output_manifest,
+                           require_change=bool(args.compare_html))
         if args.mode == "apply" and args.compare_html:
             from .cue_compare import compare, write_html
             try:
