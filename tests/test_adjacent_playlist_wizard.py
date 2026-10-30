@@ -98,3 +98,38 @@ class AdjacentPlaylistWizardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class WAVCueDurationAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "synthetic-cues"
+        self.root.mkdir()
+        for name in ("alpha.wav", "beta.wav"):
+            with wave.open(str(self.root / name), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(8000)
+                output.writeframes(b"\x00\x00" * 8000 * 8)
+
+    def run_wizard(self, a_cue, b_cue, dest):
+        answers = iter(["1,2"] + ["120", "", "synthetic", "source: fictional PCM"] * 2
+                       + ["8", str(a_cue), str(b_cue)])
+        return create_manifest(self.root, self.root / dest, adjacent_playlist=True,
+                               read=lambda _: next(answers), write=lambda _: None)
+
+    def test_outgoing_wav_cue_must_contain_all_transition_frames(self):
+        with self.assertRaisesRegex(ValueError, "outside.*WAV"):
+            self.run_wizard(7, 0, "bad-outgoing.json")
+        self.assertFalse((self.root/"bad-outgoing.json").exists())
+
+    def test_incoming_wav_cue_must_contain_all_transition_frames(self):
+        with self.assertRaisesRegex(ValueError, "outside.*WAV"):
+            self.run_wizard(0, 7, "bad-incoming.json")
+        self.assertFalse((self.root/"bad-incoming.json").exists())
+
+    def test_exact_cue_window_boundary_still_works(self):
+        manifest = self.run_wizard(4, 4, "valid-boundary.json")
+        data = json.loads(manifest.read_text())
+        self.assertEqual(data["pairs"][0]["a_start_seconds"], 4)
+        self.assertEqual(data["pairs"][0]["b_start_seconds"], 4)
