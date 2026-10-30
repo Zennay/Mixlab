@@ -134,9 +134,15 @@ def _transcode(source, target, ffmpeg, timeout_seconds):
            "-c:a", "pcm_s16le", "-f", "wav", "-fs", str(MAX_SOURCE_BYTES),
            "-n", str(target)]
     try:
+        # The media decoder creates the WAV itself, so chmod-after-write would
+        # briefly expose private audio under a permissive parent umask. Give
+        # the POSIX child its own restrictive umask without changing the
+        # caller's process permissions or the original no-overwrite contract.
+        child_permissions = {"umask": 0o077} if os.name == "posix" else {}
         with subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                               stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL) as child:
+                              stderr=subprocess.DEVNULL,
+                              **child_permissions) as child:
             try:
                 child.wait(timeout=timeout_seconds)
             except subprocess.TimeoutExpired as exc:
