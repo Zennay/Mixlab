@@ -15,6 +15,7 @@ import tempfile
 
 from .dsp import render as render_transition
 from .models import FAMILY_NAMES, Recipe
+from .private_output import write_private_new
 
 
 def _sha256(path):
@@ -218,10 +219,14 @@ def create_gallery(source_a, source_b, output_dir, *, bpm, beats=8,
             "gain_policy": "common-attenuation-only; no limiter or per-family gain",
             "renders": rendered,
         }
-        (complete / "receipt.json").write_text(
-            json.dumps(receipt, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+        write_private_new(
+            complete / "receipt.json",
+            (json.dumps(receipt, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8"),
         )
-        (complete / "index.html").write_text(_gallery_html(receipt, _sha256(complete / "receipt.json")), encoding="utf-8")
+        write_private_new(
+            complete / "index.html",
+            _gallery_html(receipt, _sha256(complete / "receipt.json")).encode("utf-8"),
+        )
         # Exclusive mkdir + hardlinks: no existing gallery or source can be
         # overwritten, even if another operator creates the destination.
         destination.mkdir(mode=0o700)
