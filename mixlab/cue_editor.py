@@ -868,7 +868,10 @@ def apply(source_manifest, selection_json, destination, *, require_change=False)
            (destination.parent, *destination.parent.parents)):
         raise ValueError("Never publish a private cue manifest inside a Git checkout")
     original, _tracks, pairs = _admit_library(source_manifest, calculate_waveforms=False)
-    before_cues = [(p["a_start_seconds"], p["b_start_seconds"]) for p in original["pairs"]]
+    # Match _admit_library: a missing optional cue start means second zero.
+    # A valid minimal source must remain editable and preserve no-op detection.
+    before_cues = [(p.get("a_start_seconds", 0), p.get("b_start_seconds", 0))
+                   for p in original["pairs"]]
     choices = _read_spec(Path(selection_json).absolute())
     if (choices.get("kind") != "manual-cue-overrides"
             or choices.get("manifest_sha256") != digest(source_manifest)):
