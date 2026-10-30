@@ -60,9 +60,11 @@ def _float_between(minimum, maximum):
 def _selection(maximum):
     def check(value):
         pieces = [s.strip() for s in value.split(",")]
-        if len(pieces) != len(set(pieces)):
-            raise ValueError("Each song can be selected once")
         indexes = [_integer_between(1, maximum)(s) for s in pieces]
+        # Numeric aliases (01 and 1) are the same local song. Compare
+        # canonical indices rather than raw prompt spellings.
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("Each song can be selected once")
         if not 2 <= len(indexes) <= 20:
             raise ValueError("Select 2..20 songs")
         return indexes
@@ -113,7 +115,12 @@ def create_manifest(source_directory, output_manifest, *,
     """
     if partition not in ("development", "evaluation"):
         raise ValueError("Partition must be development or evaluation")
-    source_root = Path(source_directory).absolute().resolve(strict=True)
+    # Resolve only after rejecting a user-selected symlink: resolving first
+    # erased the very alias that _media_listing intended to refuse.
+    requested_root = Path(source_directory).absolute()
+    if requested_root.is_symlink():
+        raise ValueError("Choose a non-symlink private music directory")
+    source_root = requested_root.resolve(strict=True)
     output = Path(output_manifest).absolute()
     if output.parent != source_root or output.suffix.lower() != ".json":
         raise ValueError("Save the new .json manifest in the music directory")
