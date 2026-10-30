@@ -388,12 +388,12 @@ def finish_approved_ideas(source_manifest, suggestions_file, selection_file,
     try:
         composer = create_composer(destination)
     except (ValueError, OSError, TypeError, KeyError) as exc:
-        warnings.append("Optional Set Composer unavailable: " + str(exc))
+        warnings.append("Optional Set Composer unavailable. Private Studio remains available.")
     normalized = destination / "sources" / "source_manifest.json"
     try:
         editor = prepare_visual_editor(normalized, destination / "sources" / "cue-editor.html")
     except (ValueError, OSError, TypeError, KeyError) as exc:
-        warnings.append("Optional visual editor unavailable: " + str(exc))
+        warnings.append("Optional visual editor unavailable. Private Studio remains available.")
     return {
         "ready": True, "mode": "local-manually-approved-transition-renders",
         "approved_manifest": str(saved_manifest),

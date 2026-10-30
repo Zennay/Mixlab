@@ -125,13 +125,13 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
     except (ValueError, TypeError, OSError, KeyError) as exc:
         # A successfully produced WAV must NEVER be deleted or masquerade as
         # incomplete because the optional operator companion cannot publish.
-        warnings.append("Full WAV exists; optional event runbook unavailable: " + str(exc))
+        warnings.append("Full WAV exists; optional event runbook unavailable.")
 
     rehearsal = None
     try:
         rehearsal = create_rehearsal(session, wav, target / "final-set.rehearsal.private.html")
     except (ValueError, TypeError, OSError, KeyError) as exc:
-        warnings.append("Full WAV exists; optional offline rehearsal page unavailable: " + str(exc))
+        warnings.append("Full WAV exists; optional offline rehearsal page unavailable.")
 
     dashboard = None
     try:
@@ -142,7 +142,7 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
             rehearsal=rehearsal
         )
     except (ValueError, TypeError, OSError, KeyError) as exc:
-        warnings.append("Full WAV exists; optional private event landing page unavailable: " + str(exc))
+        warnings.append("Full WAV exists; optional private event landing page unavailable.")
 
     bundle_result = None
     if bundle:
@@ -156,7 +156,7 @@ def publish_event(music_folder, private_plan, private_approval, new_output_root,
         except (ValueError, TypeError, OSError, KeyError) as exc:
             # Optional packaging must not undo the existing real WAV or the
             # verified local event players and paper showbook.
-            warnings.append("Completed WAV exists; optional portable ZIP unavailable: " + str(exc))
+            warnings.append("Completed WAV exists; optional portable ZIP unavailable.")
 
     return {
         "ready": True,

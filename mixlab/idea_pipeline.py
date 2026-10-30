@@ -108,11 +108,11 @@ def finish_ideas(session, downloaded_approval, new_session, *,
         cue_editor = prepare_visual_editor(
             normalized, destination / "sources" / "cue-editor.html")
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        warnings.append("Optional waveform cue editor unavailable: " + str(exc))
+        warnings.append("Optional waveform cue editor unavailable. Private Studio remains available.")
     try:
         composer = create_composer(destination)
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        warnings.append("Optional Set Composer unavailable: " + str(exc))
+        warnings.append("Optional Set Composer unavailable. Private Studio remains available.")
     result = {"stage": "rendered-studio-ready", "private_studio": str(studio_index),
               "private_composer": str(composer) if composer else None,
               "visual_cue_editor": str(cue_editor) if cue_editor else None,
@@ -128,7 +128,7 @@ def finish_ideas(session, downloaded_approval, new_session, *,
                 destination, full_set_wav, family=family,
                 delivery=delivery, bitrate_kbps=bitrate_kbps)
         except (OSError, ValueError, TypeError, KeyError) as exc:
-            warnings.append("Private Studio completed, but optional full-set export failed: " + str(exc))
+            warnings.append("Private Studio completed, but optional full-set export failed. Keep the source manifest to retry.")
     return result
 
 

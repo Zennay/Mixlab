@@ -180,7 +180,7 @@ def export_delivery(session, verified_wav, new_compressed,
             stream.write(raw_page)
         result["offline_player"] = str(player_file)
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        result["player_warning"] = "Compressed music and receipt were published; optional player failed: " + str(exc)
+        result["player_warning"] = "Compressed music and receipt were published; optional player failed."
     return result
 
 
