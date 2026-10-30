@@ -1,6 +1,8 @@
 """Private offline energy curve and manual track ordering board."""
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -103,10 +105,7 @@ def create_board(music_folder, private_plan, new_html):
     content = _PAGE.replace("__SEED__", data).encode("utf-8")
     if len(content) > 1024 * 1024:
         raise ValueError("Private board exceeds 1 MiB")
-    with target.open("xb") as output:
-        os.fchmod(output.fileno(), 0o600)
-        output.write(content)
-    return target
+    return write_private_new(target, content)
 
 
 def main():
