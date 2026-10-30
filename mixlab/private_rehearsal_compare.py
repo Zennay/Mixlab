@@ -9,6 +9,8 @@ import html
 import json
 import os
 from pathlib import Path
+
+from .private_output import write_private_new
 import tempfile
 
 from .private_transition_selection import _read_json_and_digest, _copy_and_verify_wav
@@ -144,12 +146,9 @@ def prepare(original_reel_dir,revised_reel_dir,destination):
                   "revised_reel_receipt_sha256":revised_sha,
                   "chapter_count":len(entries),"total_pcm_bytes":total,"chapters":entries}
         receipt_file=stage/"receipt.json"
-        receipt_file.write_text(json.dumps(document,indent=2,sort_keys=True,allow_nan=False)+"\n",
-                                encoding="utf-8")
-        receipt_file.chmod(0o600)
+        write_private_new(receipt_file, (json.dumps(document,indent=2,sort_keys=True,allow_nan=False)+"\n").encode("utf-8"))
         html_file=stage/"index.html"
-        html_file.write_text(_page(document,_digest(receipt_file)),encoding="utf-8")
-        html_file.chmod(0o600)
+        write_private_new(html_file, (_page(document,_digest(receipt_file))).encode("utf-8"))
         target.mkdir(mode=0o700)
         published=[]
         try:
