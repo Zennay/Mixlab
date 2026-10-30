@@ -5,6 +5,8 @@ All sensitive source paths and hashes stay in a local private JSON file.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -185,13 +187,7 @@ def create_manifest(source_directory, output_manifest, *,
     raw = (json.dumps(data, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
     if len(raw) > 1024 * 1024:
         raise ValueError("Manifest exceeds private parser limit")
-    try:
-        with output.open("xb") as target:
-            os.fchmod(target.fileno(), 0o600)
-            target.write(raw)
-    except BaseException:
-        output.unlink(missing_ok=True)
-        raise
+    write_private_new(output, raw)
     write("Private manifest created. You can now run mixlab.session using this JSON file.")
     return output
 
