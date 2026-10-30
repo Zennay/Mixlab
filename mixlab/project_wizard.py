@@ -107,7 +107,8 @@ def _media_listing(source_root):
 
 
 def create_manifest(source_directory, output_manifest, *,
-                    read=input, write=print, partition="development"):
+                    read=input, write=print, partition="development",
+                    adjacent_playlist=False):
     """Interactively create a private media-import manifest without guessing.
 
     output_manifest MUST be in the same folder as the selected source files,
@@ -115,6 +116,8 @@ def create_manifest(source_directory, output_manifest, *,
     """
     if partition not in ("development", "evaluation"):
         raise ValueError("Partition must be development or evaluation")
+    if type(adjacent_playlist) is not bool:
+        raise ValueError("Adjacent playlist must be a boolean")
     # Resolve only after rejecting a user-selected symlink: resolving first
     # erased the very alias that _media_listing intended to refuse.
     requested_root = Path(source_directory).absolute()
@@ -136,6 +139,8 @@ def create_manifest(source_directory, output_manifest, *,
         write(f"{index:>3}. {name}")
     indexes = _ask(read, write, "Select 2..20 song numbers separated by commas: ",
                    _selection(len(files)))
+    if adjacent_playlist and len(indexes) > 11:
+        raise ValueError("Adjacent playlist accepts at most 11 songs (10 pairs)")
     choices = [files[i - 1] for i in indexes]
     tracks = []
     write("For each chosen song, provide actual BPM, source rights and provenance.")
@@ -158,22 +163,35 @@ def create_manifest(source_directory, output_manifest, *,
         if first_downbeat is not None:
             track["first_downbeat_seconds"] = first_downbeat
         tracks.append(track)
-    write("Select A and B from this verified local track set:")
-    for index, track in enumerate(tracks, 1):
-        write(f"{index}. {choices[index - 1]} | {track['bpm']} BPM | {track['id']}")
-    pair_count = _ask(read, write, "Number of transition pairs (1..10): ",
-                      _integer_between(1, 10))
+    if adjacent_playlist:
+        pair_count = len(tracks) - 1
+        write("Preserving the selected playlist order; adjacent songs become pairs.")
+        write("BPM compatibility and cue points remain manually verified.")
+    else:
+        write("Select A and B from this verified local track set:")
+        for index, track in enumerate(tracks, 1):
+            write(f"{index}. {choices[index - 1]} | {track['bpm']} BPM | {track['id']}")
+        pair_count = _ask(read, write, "Number of transition pairs (1..10): ",
+                          _integer_between(1, 10))
     pairs = []
     for k in range(pair_count):
         write(f"Pair {k + 1}/{pair_count}")
-        a_index = _ask(read, write, "Outgoing track number: ",
-                       _integer_between(1, len(tracks)))
-        def target_index(value):
-            chosen = _integer_between(1, len(tracks))(value)
-            if chosen == a_index or tracks[chosen - 1]["bpm"] != tracks[a_index - 1]["bpm"]:
-                raise ValueError("Distinct track with matching manually verified BPM required")
-            return chosen
-        b_index = _ask(read, write, "Incoming track number (matching BPM): ", target_index)
+        if adjacent_playlist:
+            a_index, b_index = k + 1, k + 2
+            if tracks[a_index - 1]["bpm"] != tracks[b_index - 1]["bpm"]:
+                raise ValueError(
+                    f"Adjacent songs {a_index} and {b_index} have different verified BPM; "
+                    "no transition or source manifest was guessed"
+                )
+        else:
+            a_index = _ask(read, write, "Outgoing track number: ",
+                           _integer_between(1, len(tracks)))
+            def target_index(value):
+                chosen = _integer_between(1, len(tracks))(value)
+                if chosen == a_index or tracks[chosen - 1]["bpm"] != tracks[a_index - 1]["bpm"]:
+                    raise ValueError("Distinct track with matching manually verified BPM required")
+                return chosen
+            b_index = _ask(read, write, "Incoming track number (matching BPM): ", target_index)
         bpm = tracks[a_index - 1]["bpm"]
         beats = _ask(read, write, "Transition beat count (1..64, try 16): ",
                      _integer_between(1, 64))
@@ -206,10 +224,12 @@ def main():
     parser.add_argument("manifest", help="New .json file in the same directory; not already existing")
     parser.add_argument("--partition", choices=("development", "evaluation"),
                         default="development")
+    parser.add_argument("--adjacent-playlist", action="store_true",
+                        help="Connect neighboring selected songs in order, with manual cue entry (2..11 songs)")
     args = parser.parse_args()
     try:
         result = create_manifest(args.music_directory, args.manifest,
-                                 partition=args.partition)
+                                 partition=args.partition, adjacent_playlist=args.adjacent_playlist)
     except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
         parser.exit(2, "MixLab wizard: cancelled or invalid input; no existing files overwritten\n")
     print(json.dumps({"ready": True, "private_manifest": str(result),
