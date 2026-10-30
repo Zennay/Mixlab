@@ -159,6 +159,11 @@ def write_html(report, destination, source_manifest, revised_manifest):
     if (digest(source_manifest) != report["source_manifest_sha256_before"] or
             digest(revised_manifest) != report["source_manifest_sha256_after"]):
         raise ValueError("Cue source changed since comparison; compare again")
+    # Manifests can stay byte-identical while an underlying original WAV is
+    # replaced. Re-admit every PCM source and re-evaluate the exact timeline
+    # before publishing a report labelled as source-verified.
+    if compare(source_manifest, revised_manifest) != report:
+        raise ValueError("Cue timeline or source audio changed since comparison")
     output = Path(destination).absolute()
     source_root = Path(source_manifest).absolute().parent
     if output.suffix.lower() != ".html" or output.parent != source_root:
