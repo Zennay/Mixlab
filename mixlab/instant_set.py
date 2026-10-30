@@ -105,16 +105,19 @@ def render_instant_set(session, new_wav, *, family="bass_swap", styles=(),
     # must not remove it or disguise that it was successfully exported.
     try:
         response["offline_player"] = str(publish_player(root, wav, display_names=display_names))
-    except (OSError, ValueError, KeyError, TypeError, wave.Error) as exc:
-        response["player_warning"] = "Completed WAV exists; optional HTML player unavailable: " + str(exc)
+    except (OSError, ValueError, KeyError, TypeError, wave.Error):
+        response["player_warning"] = (
+            "Completed WAV exists; optional HTML player unavailable. "
+            "Check local output permissions before retrying the player.")
     if delivery is not None:
         try:
             from .delivery import export_delivery
             response["compressed_delivery"] = export_delivery(
                 root, wav, delivery, bitrate_kbps=bitrate_kbps)
-        except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+        except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
             response["delivery_warning"] = (
-                "Completed PCM16 WAV exists; optional MP3/FLAC delivery unavailable: " + str(exc))
+                "Completed PCM16 WAV exists; optional MP3/FLAC delivery unavailable. "
+                "Check local encoder availability and output permissions.")
     return response
 
 
