@@ -133,3 +133,47 @@ class WAVCueDurationAdmissionTests(unittest.TestCase):
         data = json.loads(manifest.read_text())
         self.assertEqual(data["pairs"][0]["a_start_seconds"], 4)
         self.assertEqual(data["pairs"][0]["b_start_seconds"], 4)
+
+class SessionSourceManifestRaceTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.source = self.root / "original-synthetic"
+        self.source.mkdir()
+        for name in ("alpha.wav", "beta.wav"):
+            with wave.open(str(self.source/name), "wb") as w:
+                w.setparams((1, 2, 44100, 0, "NONE", "not compressed"))
+                w.writeframes(b"\x00\x00"*(44100*8))
+        answers = iter(["1,2"] + ["120","","synthetic","local synthetic PCM"]*2
+                       + ["8","4","4"])
+        self.manifest = create_manifest(
+            self.source, self.source / "playlist.json", adjacent_playlist=True,
+            read=lambda _:next(answers), write=lambda _:None)
+
+    def test_manifest_changed_after_import_cannot_receive_ready_receipt(self):
+        from mixlab import session
+        from unittest.mock import patch
+        destination = self.root / "new-private-studio"
+        original_import = session.import_library
+        def altered_source_after_real_import(*args, **kwargs):
+            converted = original_import(*args, **kwargs)
+            # Same valid JSON semantics but changed original source bytes;
+            # the emitted source receipt must never claim this new snapshot.
+            self.manifest.write_bytes(self.manifest.read_bytes()+b" ")
+            return converted
+        with patch.object(session, "import_library",side_effect=altered_source_after_real_import):
+            with self.assertRaisesRegex(ValueError,"source manifest changed"):
+                session.make_session(self.manifest,destination,pair="pair-001")
+        self.assertFalse(destination.exists())
+        self.assertTrue(self.manifest.is_file())
+
+    def test_unchanged_synthetic_original_receipt_binds_exact_bytes(self):
+        import hashlib
+        from mixlab.session import make_session
+        destination = self.root / "studio-ok"
+        page = make_session(self.manifest,destination,pair="pair-001")
+        receipt = json.loads((destination/"session-receipt.private.json").read_text())
+        self.assertEqual(receipt["stage"],"studio-ready")
+        self.assertEqual(receipt["source_manifest_sha256"],hashlib.sha256(self.manifest.read_bytes()).hexdigest())
+        self.assertTrue(page.is_file())
