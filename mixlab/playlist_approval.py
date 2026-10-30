@@ -447,9 +447,26 @@ def prepare_form(music_folder, private_plan, new_html):
             .replace("__DRAFT_JS__", DRAFT_JS)).encode("utf-8")
     if len(data) > MAX_FORM:
         raise ValueError("Offline approval page is too large")
-    with html.open("xb") as stream:
-        os.fchmod(stream.fileno(), 0o600)
-        stream.write(data)
+    # The rights/cue form is private from inode birth, even under umask 000.
+    # Opening with Path.open("xb") would expose 0666 until fchmod runs.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(html, flags, 0o600)
+    owned = os.fstat(fd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        # Never delete another writer's file after a replacement/race.
+        try:
+            current = os.stat(html, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                os.unlink(html)
+        except FileNotFoundError:
+            pass
+        raise
     return html
 
 
