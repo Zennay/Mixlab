@@ -389,11 +389,11 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     try:
         editor = prepare_visual_editor(normalized, destination / "sources" / "cue-editor.html")
     except (ValueError, OSError, TypeError, KeyError) as exc:
-        warnings.append("Optional cue editor unavailable: " + str(exc))
+        warnings.append("Optional cue editor unavailable. Reopen the saved Studio and check output permissions.")
     try:
         composer = create_composer(destination)
     except (ValueError, OSError, TypeError, KeyError) as exc:
-        warnings.append("Optional Set Composer unavailable: " + str(exc))
+        warnings.append("Optional Set Composer unavailable. Reopen the saved Studio and check output permissions.")
     if ideas:
         try:
             # Generate the same manually gridded number of beats as the actual
@@ -404,7 +404,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                 normalized, ideas_path,
                 destination / "sources" / "transition-ideas.html")
         except (ValueError, OSError, TypeError, KeyError) as exc:
-            warnings.append("Optional cue idea board unavailable: " + str(exc))
+            warnings.append("Optional cue idea board unavailable. Saved Studio remains available.")
     instant_set = None
     if full_set_wav is not None:
         try:
@@ -421,7 +421,7 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
                                              bitrate_kbps=bitrate_kbps,
                                              display_names=names)
         except (ValueError, OSError, TypeError, KeyError) as exc:
-            warnings.append("Private Studio exists, but optional complete-set WAV failed: " + str(exc))
+            warnings.append("Private Studio exists, but optional complete-set WAV failed. Review source and output permissions.")
     with manifest.open("r", encoding="utf-8") as reader:
         summary = json.load(reader)
     payload = {"ready": True, "private_source_manifest": str(manifest),
