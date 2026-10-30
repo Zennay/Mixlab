@@ -6,6 +6,8 @@ development manifests only after the DJ explicitly selects every transition.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import copy
 import json
@@ -273,10 +275,7 @@ def prepare_board(source_manifest, suggestions_file, output_html):
     rendered = HTML.replace("__BOARD__", raw).encode("utf-8")
     if len(rendered) > MAX_BOARD_BYTES:
         raise ValueError("Idea Board HTML exceeds 2 MiB")
-    with output.open("xb") as out:
-        os.fchmod(out.fileno(), 0o600)
-        out.write(rendered)
-    return output
+    return write_private_new(output, rendered)
 
 
 def apply_board(source_manifest, suggestions_file, selection_file, new_source_manifest):
@@ -344,10 +343,7 @@ def apply_board(source_manifest, suggestions_file, selection_file, new_source_ma
     payload = (json.dumps(renewed, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     if len(payload) > 1024 * 1024:
         raise ValueError("Revised private manifest too large")
-    with target.open("xb") as out:
-        os.fchmod(out.fileno(), 0o600)
-        out.write(payload)
-    return target
+    return write_private_new(target, payload)
 
 
 
