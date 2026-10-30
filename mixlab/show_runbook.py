@@ -6,6 +6,8 @@ all selected transition receipts before providing the authoritative timeline.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -245,10 +247,7 @@ def create_runbook(session_directory, complete_wav, new_html, *, start=None):
     page = _PAGE.replace("__DATA__", blob).encode("utf-8")
     if len(page) > 512 * 1024:
         raise ValueError("Show runbook is too large")
-    with target.open("xb") as output:
-        os.fchmod(output.fileno(), 0o600)
-        output.write(page)
-    return target
+    return write_private_new(target, page)
 
 
 def main():
