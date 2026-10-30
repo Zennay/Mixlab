@@ -13,11 +13,12 @@ import os
 from pathlib import Path
 import re
 import stat
+import wave
 
 from .cueprep import _number
 from .media_import import (
     SOURCE_FORMATS, MAX_INPUT_BYTES, OUTPUT_RATE, _fingerprint,
-    _regular_source,
+    _regular_source, _file_identity,
 )
 from .ingest import MAX_FRAMES, RIGHTS
 
@@ -106,6 +107,42 @@ def _media_listing(source_root):
     return files
 
 
+def _wav_frame_bounds(source, expected_identity):
+    """Inspect a SHA-pinned WAV header without following changed source links.
+
+    Only uncompressed PCM16 has a verified sample window at wizard time.
+    Other formats are explicitly deferred to the canonical local decoder.
+    """
+    if source.suffix.lower() != ".wav":
+        return None
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(source, flags)
+    except OSError as exc:
+        raise ValueError("Selected media changed during WAV cue inspection") from exc
+    with os.fdopen(fd, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        if not stat.S_ISREG(before.st_mode) or _file_identity(before) != expected_identity:
+            raise ValueError("Selected media changed during WAV cue inspection")
+        try:
+            with wave.open(handle, "rb") as audio:
+                channels, width, rate, frames, compression, _ = audio.getparams()
+        except (wave.Error, EOFError):
+            return None
+        after = os.fstat(handle.fileno())
+    try:
+        current = source.lstat()
+    except OSError as exc:
+        raise ValueError("Selected media changed during WAV cue inspection") from exc
+    if (_file_identity(before) != _file_identity(after) or
+            _file_identity(before) != _file_identity(current) or
+            not stat.S_ISREG(current.st_mode)):
+        raise ValueError("Selected media changed during WAV cue inspection")
+    if channels not in (1, 2) or width != 2 or compression != "NONE" or not 8000 <= rate <= 96000:
+        return None
+    return (rate, frames)
+
+
 def create_manifest(source_directory, output_manifest, *,
                     read=input, write=print, partition="development",
                     adjacent_playlist=False):
@@ -143,6 +180,7 @@ def create_manifest(source_directory, output_manifest, *,
         raise ValueError("Adjacent playlist accepts at most 11 songs (10 pairs)")
     choices = [files[i - 1] for i in indexes]
     tracks = []
+    verified_wav_bounds = []
     write("For each chosen song, provide actual BPM, source rights and provenance.")
     for index, name in enumerate(choices, 1):
         write(f"Song {index}/{len(choices)}: {name}")
@@ -155,7 +193,8 @@ def create_manifest(source_directory, output_manifest, *,
                       _rights)
         provenance = _ask(read, write, "Source provenance (required): ", _nonblank)
         source = _regular_source(source_root, name)
-        sha, _ = _fingerprint(source)
+        sha, identity = _fingerprint(source)
+        verified_wav_bounds.append(_wav_frame_bounds(source, identity))
         track = {"id": f"track-{index:03d}", "path": name,
                  "sha256": sha, "bpm": bpm, "rights": rights,
                  "provenance": provenance, "partition": partition,
@@ -201,6 +240,20 @@ def create_manifest(source_directory, output_manifest, *,
                        _float_between(0, 900))
         b_start = _ask(read, write, "Incoming cue start seconds (verified by listening): ",
                        _float_between(0, 900))
+        # Catch impossible WAV cue windows before publishing a manifest which
+        # the local excerpt renderer would reject. Never guess compressed-media
+        # duration, source BPM, musical cues or license authority.
+        for song_index, cue in ((a_index, a_start), (b_index, b_start)):
+            bounds = verified_wav_bounds[song_index - 1]
+            if bounds is not None:
+                rate, frame_count = bounds
+                start_frame = round(cue * rate)
+                transition_frames = round(beats * 60 / bpm * rate)
+                if start_frame + transition_frames > frame_count:
+                    raise ValueError(
+                        f"Cue window for song {song_index} is outside verified WAV duration; "
+                        "no source manifest was published"
+                    )
         pairs.append({"id": f"pair-{k + 1:03d}",
                       "a": tracks[a_index - 1]["id"],
                       "b": tracks[b_index - 1]["id"],
