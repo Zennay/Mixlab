@@ -806,6 +806,32 @@ refresh();
 '''
 
 
+
+def _publish_new_private(path, payload):
+    """Create private editor/manifest bytes without a transient public inode.
+
+    Do not remove a different writer's file if O_EXCL admission fails. If our
+    own write fails, only clean up the same inode this invocation created.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    owned = os.fstat(fd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        try:
+            current = os.stat(path, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return path
+
 def prepare(source_manifest, output_html):
     """Generate a browser-playable offline editor beside the private WAVs."""
     manifest = Path(source_manifest).absolute()
@@ -827,14 +853,7 @@ def prepare(source_manifest, output_html):
     raw = rendered.encode("utf-8")
     if len(raw) > MAX_EDITOR_BYTES:
         raise ValueError("Waveform editor exceeds private 2 MiB HTML limit; prepare fewer tracks")
-    try:
-        with output.open("xb") as target:
-            os.fchmod(target.fileno(), 0o600)
-            target.write(raw)
-    except BaseException:
-        output.unlink(missing_ok=True)
-        raise
-    return output
+    return _publish_new_private(output, raw)
 
 
 def apply(source_manifest, selection_json, destination):
@@ -845,6 +864,9 @@ def apply(source_manifest, selection_json, destination):
         raise ValueError("Save new cue manifest alongside the source WAV manifest")
     if destination.exists() or destination.is_symlink():
         raise ValueError("Do not overwrite an existing or frozen source manifest")
+    if any((ancestor / ".git").exists() for ancestor in
+           (destination.parent, *destination.parent.parents)):
+        raise ValueError("Never publish a private cue manifest inside a Git checkout")
     original, _tracks, pairs = _admit_library(source_manifest, calculate_waveforms=False)
     choices = _read_spec(Path(selection_json).absolute())
     if (choices.get("kind") != "manual-cue-overrides"
@@ -907,14 +929,7 @@ def apply(source_manifest, selection_json, destination):
                     "schuif de cue later voordat je opslaat")
         previous = pair
     raw = (json.dumps(original, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
-    try:
-        with destination.open("xb") as output:
-            os.fchmod(output.fileno(), 0o600)
-            output.write(raw)
-    except BaseException:
-        destination.unlink(missing_ok=True)
-        raise
-    return destination
+    return _publish_new_private(destination, raw)
 
 
 def apply_with_private_plan(source_manifest, selection_json, destination,
