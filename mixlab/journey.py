@@ -5,6 +5,8 @@ No audio decoding, networking or source modifications. Plans are SHA-pinned.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import hashlib
 import json
@@ -87,10 +89,7 @@ def _write_json(path, data):
                       allow_nan=False) + "\n").encode("utf-8")
     if len(raw) > LIMIT:
         raise ValueError("Private planning JSON exceeds 1 MiB")
-    with path.open("xb") as stream:
-        os.fchmod(stream.fileno(), 0o600)
-        stream.write(raw)
-    return path
+    return write_private_new(path, raw)
 
 
 def _tags(raw):
