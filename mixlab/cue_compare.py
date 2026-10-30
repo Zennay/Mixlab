@@ -197,9 +197,17 @@ def write_html(report, destination, source_manifest, revised_manifest):
         (ancestor / ".git").exists() for ancestor in (output.parent, *output.parent.parents)
     ):
         raise ValueError("Private cue report cannot overwrite data or be stored in Git")
-    with output.open("xb") as stream:
+    # Python's default exclusive create can briefly expose 0644 files before
+    # fchmod when the process umask is permissive. The HTML contains private
+    # review timing: create with 0600 atomically, with no symlink following.
+    payload = _private_html(report).encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(output, flags, 0o600)
+    with os.fdopen(fd, "wb") as stream:
         os.fchmod(stream.fileno(), 0o600)
-        stream.write(_private_html(report).encode("utf-8"))
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
     return output
 
 
