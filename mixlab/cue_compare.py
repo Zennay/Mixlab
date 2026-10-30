@@ -119,6 +119,18 @@ def compare(old_manifest, new_manifest):
 
 
 def _private_html(report):
+    # A later transition may move even when its own manual cue was untouched.
+    # Surface this distinction without claiming musical quality or an A/B win.
+    shifted = sum(
+        not item["cues_changed"] and item["start_shift_frames"] != 0
+        for item in report["pairs"]
+    )
+    def status(item):
+        if item["cues_changed"]:
+            return "Cue handmatig aangepast"
+        if item["start_shift_frames"] != 0:
+            return "Verschoven door eerdere cue"
+        return "Ongewijzigd"
     rows = "".join(
         "<tr><th scope='row'>" + escape(item["pair_id"], quote=True) +
         "</th><td>" + str(item["outgoing_cue_before_seconds"]) + " → " +
@@ -126,7 +138,7 @@ def _private_html(report):
         str(item["incoming_cue_before_seconds"]) + " → " +
         str(item["incoming_cue_after_seconds"]) + "</td><td>" +
         str(round(item["start_shift_frames"] / report["sample_rate"], 6)) +
-        " s</td><td>" + ("Ja" if item["cues_changed"] else "Nee") +
+        " s</td><td>" + status(item) +
         "</td></tr>" for item in report["pairs"]
     )
     return ("""<!doctype html><html lang="nl"><head><meta charset="utf-8">
@@ -136,7 +148,11 @@ def _private_html(report):
 :root{font:16px system-ui;color:#ecedf7;background:#10121b;color-scheme:dark}
 main{max-width:940px;margin:5vh auto;padding:24px}
 h1{font-size:clamp(2rem,5vw,3.5rem);letter-spacing:-.04em}
-p{line-height:1.5;color:#bec4d8}table{width:100%;border-collapse:collapse}
+p{line-height:1.5;color:#bec4d8}
+strong{color:#f3f9dc}.steps{padding-left:1.35rem;line-height:1.6;color:#d4dfd8}
+.table-scroll{overflow-x:auto;max-width:100%;border:1px solid #414961;border-radius:12px}
+.table-scroll:focus-visible{outline:3px solid #d9f4ac;outline-offset:4px}
+table{width:100%;min-width:690px;border-collapse:collapse}
 th,td{text-align:left;padding:13px 9px;border-bottom:1px solid #414961}
 caption{text-align:left;margin:20px 0;font-weight:700}
 @media(max-width:650px){table{font-size:.85rem}th,td{padding:8px 4px}}
@@ -146,11 +162,20 @@ Dit is geen automatische BPM/key-analyse of blinde luistertest.</p>
 <p>Complete set: """ + str(report["duration_seconds_before"]) + " → " +
             str(report["duration_seconds_after"]) + " seconden · " +
             str(report["edited_pair_count"]) + """ overgang(en) aangepast.</p>
-<table><caption>Per overgang — bron-SHA van beide versies gecontroleerd</caption>
+<p><strong>Leeswijzer:</strong> een ongewijzigde cue kan toch later in de set starten
+doordat een eerdere overgang is verplaatst. Tijdverschuiving is geen oordeel over mixkwaliteit.</p>
+<ol class="steps"><li>Bekijk eerst de handmatig aangepaste cues.</li>
+<li>Controleer welke andere overgangen indirect verschoven.</li>
+<li>Luister met toegestane originele audio vóór je een versie kiest.</li></ol>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Vergelijk voor en na per overgang">
+<table><caption>Per overgang — originele audio-SHA opnieuw gecontroleerd</caption>
 <thead><tr><th scope='col'>Paar</th><th scope='col'>Deck A (s)</th>
 <th scope='col'>Deck B (s)</th><th scope='col'>Startverschil</th>
-<th scope='col'>Cue aangepast?</th></tr></thead><tbody>""" + rows +
-            "</tbody></table></main></body></html>")
+<th scope='col'>Oorzaak</th></tr></thead><tbody>""" + rows +
+            "</tbody></table></div><p>Indirect verschoven overgangen: <strong>" +
+            str(shifted) + "</strong>. Vergelijk de versies na luisteren naar " +
+            "originele, toegestane audio. Geen audio gerenderd of geüpload.</p>" +
+            "</main></body></html>")
 
 
 def write_html(report, destination, source_manifest, revised_manifest):
