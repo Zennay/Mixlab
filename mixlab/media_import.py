@@ -5,6 +5,8 @@ Other formats require already-installed local FFmpeg+FFprobe; no downloads or up
 """
 from __future__ import annotations
 
+from .private_output import open_private_new
+
 import argparse
 from array import array
 import hashlib
@@ -190,8 +192,7 @@ def _copy_canonical_pcm(source, target, info, expected_identity):
                     info["channels"], 2, OUTPUT_RATE, info["frames"]
                 ):
                     _error("WAV source format changed before normalization")
-                with target.open("xb") as output:
-                    os.fchmod(output.fileno(), 0o600)
+                with open_private_new(target) as output:
                     with wave.open(output, "wb") as writer:
                         writer.setparams((2, 2, OUTPUT_RATE, info["frames"],
                                           "NONE", "not compressed"))
