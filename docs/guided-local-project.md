@@ -43,6 +43,30 @@ plek als de bronmuziek. Er wordt niets overschreven. Bestanden in
 Git-projecten en onveilige symlinks worden geweigerd; de JSON krijgt
 bestandsrechten 0600.
 
+### Sneller: één doorlopende playlist zonder per overgang twee nummers kiezen
+
+Wil je een route van maximaal **11 nummers** in jouw eigen volgorde,
+gebruik dan dezelfde wizard met `--adjacent-playlist`:
+
+```bash
+python3 -m mixlab.project_wizard /private/muziek /private/muziek/mijn-playlist.json --adjacent-playlist
+```
+
+Kies 2–11 nummers in afspeelvolgorde, bijvoorbeeld `3,1,2`. MixLab
+maakt dan precies de overgangen 3→1 en 1→2, zonder het herhaald kiezen
+van een uitgaand en inkomend tracknummer. Je geeft nog steeds per track
+de originele rechtenverklaring, herkomst en gecontroleerde BPM op,
+en **per overgang** zelf het aantal beats en de uitgaande en inkomende
+startcue. Er wordt geen beatmatching, tempo-aanpassing of muzieklicentie
+geraden. Zijn twee opeenvolgende BPM-waarden niet gelijk, dan stopt
+de wizard zonder manifest. Bij meer dan 11 nummers zou het bestaande
+maximum van tien overgangen worden overschreden: kies dan een kortere
+route of werk in losse sessies. Zonder deze optie blijft de bestaande
+vrije paarselectie exact zoals voorheen.
+
+De daaropvolgende sessie is gelijk aan stap 3 hieronder; de manifesten
+blijven lokaal en SHA-gebonden aan je originele bronbestanden.
+
 **3. Start de complete MixLab sessie:**
 
 ```bash
