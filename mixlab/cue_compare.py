@@ -96,6 +96,8 @@ def compare(old_manifest, new_manifest):
                 for side in ("a_start_seconds", "b_start_seconds")
             ),
         })
+    if not any(item["cues_changed"] for item in edits):
+        raise ValueError("No manual cue positions changed; only manifest formatting differs")
     return {
         "kind": "private-manual-cue-comparison",
         "source_audio_sha256_verified": True,
@@ -151,7 +153,12 @@ Dit is geen automatische BPM/key-analyse of blinde luistertest.</p>
             "</tbody></table></main></body></html>")
 
 
-def write_html(report, destination, source_manifest):
+def write_html(report, destination, source_manifest, revised_manifest):
+    # The source reports can be edited between comparison and publication.
+    # Never publish a stale or misleading source-SHA receipt as a new HTML.
+    if (digest(source_manifest) != report["source_manifest_sha256_before"] or
+            digest(revised_manifest) != report["source_manifest_sha256_after"]):
+        raise ValueError("Cue source changed since comparison; compare again")
     output = Path(destination).absolute()
     source_root = Path(source_manifest).absolute().parent
     if output.suffix.lower() != ".html" or output.parent != source_root:
@@ -175,7 +182,7 @@ def main():
     try:
         report = compare(args.original_manifest, args.revised_manifest)
         if args.html:
-            write_html(report, args.html, args.original_manifest)
+            write_html(report, args.html, args.original_manifest, args.revised_manifest)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.exit(2, "MixLab cue comparison: " + str(exc) + "\n")
     print(json.dumps(report, sort_keys=True, allow_nan=False))
