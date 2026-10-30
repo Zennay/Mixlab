@@ -12,12 +12,40 @@ import math
 import os
 from pathlib import Path
 import shutil
+import stat
 
-from .cueprep import _read_spec, compile_cues
+from .cueprep import MAX_SOURCE_MANIFEST_BYTES, _read_spec, compile_cues
 from .cue_suggest import suggest
 from .media_import import OUTPUT_RATE, import_library
 from .studio import build_studio
 from .ingest import MAX_FRAMES
+
+
+def _bound_source_manifest_sha256(path):
+    """Bind a single regular 1 MiB source inode without following aliases."""
+    if path.is_symlink():
+        raise ValueError("source manifest changed during session")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("source manifest changed during session") from exc
+    with os.fdopen(fd, "rb") as source:
+        before = os.fstat(source.fileno())
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_SOURCE_MANIFEST_BYTES:
+            raise ValueError("source manifest changed during session")
+        raw = source.read(MAX_SOURCE_MANIFEST_BYTES + 1)
+        after = os.fstat(source.fileno())
+    try:
+        current = path.lstat()
+    except OSError as exc:
+        raise ValueError("source manifest changed during session") from exc
+    def identity(item):
+        return (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+    if (len(raw) != before.st_size or not stat.S_ISREG(current.st_mode)
+            or identity(before) != identity(after) or identity(before) != identity(current)):
+        raise ValueError("source manifest changed during session")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _private_project_dir(destination, source_manifest):
@@ -73,7 +101,10 @@ def _receipt_json(data):
 def make_session(source_manifest, destination, *, suggestions=False, pair=None,
                  timeout_seconds=600):
     source_manifest = Path(source_manifest).absolute()
+    source_sha = _bound_source_manifest_sha256(source_manifest)
     manifest = _read_spec(source_manifest)
+    if _bound_source_manifest_sha256(source_manifest) != source_sha:
+        raise ValueError("source manifest changed during session")
     _manual_cues_present(manifest)
     if suggestions:
         tracks = manifest.get("tracks", [])
@@ -89,6 +120,8 @@ def make_session(source_manifest, destination, *, suggestions=False, pair=None,
         imported = destination / "sources"
         converted_manifest = import_library(source_manifest, imported,
                                            timeout_seconds=timeout_seconds)
+        if _bound_source_manifest_sha256(source_manifest) != source_sha:
+            raise ValueError("source manifest changed during session")
         if suggestions:
             suggest(converted_manifest, destination / "cue-suggestions.private.json")
         # All original pairs are generated into a bounded shared excerpt
@@ -97,12 +130,14 @@ def make_session(source_manifest, destination, *, suggestions=False, pair=None,
         excerpt_manifest = compile_cues(converted_manifest, excerpts)
         studio_index = build_studio(excerpt_manifest, destination / "studio", pair_id=pair)
         manifest_data = excerpt_manifest.read_bytes()
+        if _bound_source_manifest_sha256(source_manifest) != source_sha:
+            raise ValueError("source manifest changed during session")
         studio_receipt = destination / "studio" / "studio-receipt.private.json"
         result = {
             "schema_version": 1,
             "kind": "offline-manual-transition-session",
             "stage": "studio-ready",
-            "source_manifest_sha256": hashlib.sha256(source_manifest.read_bytes()).hexdigest(),
+            "source_manifest_sha256": source_sha,
             "normalized_manifest": "sources/source_manifest.json",
             "prepared_manifest": "excerpts/library.json",
             "prepared_manifest_sha256": hashlib.sha256(manifest_data).hexdigest(),
