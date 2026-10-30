@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import tempfile
 
+from .private_output import write_private_new
 from .private_transition_selection import (
     _read_json_and_digest, _verified_choice, _copy_and_verify_wav,
 )
@@ -206,12 +207,12 @@ def create_reel(pairs, destination):
             "human_reordered_in_browser_only": False, "chapters": chapters,
         }
         receipt_file = stage / "receipt.json"
-        receipt_file.write_text(json.dumps(receipt, sort_keys=True, indent=2, allow_nan=False) + "\n",
-                                encoding="utf-8")
-        receipt_file.chmod(0o600)
+        write_private_new(
+            receipt_file,
+            (json.dumps(receipt, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8"),
+        )
         page_file = stage / "index.html"
-        page_file.write_text(_page(receipt, _digest(receipt_file)), encoding="utf-8")
-        page_file.chmod(0o600)
+        write_private_new(page_file, _page(receipt, _digest(receipt_file)).encode("utf-8"))
         files = [p.name for p in stage.iterdir() if p.is_file()]
         output.mkdir(mode=0o700)
         published = []
