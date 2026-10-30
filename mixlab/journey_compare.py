@@ -4,6 +4,8 @@ This is a creative planning UI; no audio inference, network or preference model.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import math
@@ -140,10 +142,7 @@ def compare_journeys(music_folder, private_notes, new_html, *, tracks=5,
     html = _PAGE.replace("__SEED__", embedded).encode("utf-8")
     if len(html) > 1024 * 1024:
         raise ValueError("Offline journey comparison exceeds 1 MiB")
-    with output.open("xb") as stream:
-        os.fchmod(stream.fileno(), 0o600)
-        stream.write(html)
-    return output
+    return write_private_new(output, html)
 
 
 def main():
