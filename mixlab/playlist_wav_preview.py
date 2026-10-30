@@ -10,9 +10,26 @@ from .set_export import MAX_SET_BYTES
 
 def inspect_playlist(manifest_path, catalog, route, transitions):
     source = Path(manifest_path).absolute().parent.resolve(strict=True)
-    tracks = {t['id']: t for t in catalog}
-    if len(tracks) != len(catalog) or len(route) != len(catalog):
+    # The source hashes alone cannot prove that this preview represents a
+    # complete set: an omitted transition previously produced a plausible
+    # duration for only the final song while claiming a verified playlist.
+    if (not isinstance(catalog, (list, tuple)) or not 2 <= len(catalog) <= 11 or
+            any(not isinstance(t, dict) or type(t.get('id')) is not str or
+                not t['id'] for t in catalog)):
         raise ValueError('Invalid source catalog for complete WAV preview')
+    tracks = {t['id']: t for t in catalog}
+    if (len(tracks) != len(catalog) or not isinstance(route, (list, tuple)) or
+            len(route) != len(catalog) or
+            any(type(ident) is not str for ident in route) or
+            len(set(route)) != len(route) or set(route) != set(tracks)):
+        raise ValueError('Complete WAV preview must include every song exactly once')
+    if (not isinstance(transitions, (list, tuple)) or
+            len(transitions) != len(route) - 1 or
+            any(not isinstance(item, dict) or
+                item.get('from_track') != route[index] or
+                item.get('to_track') != route[index + 1]
+                for index, item in enumerate(transitions))):
+        raise ValueError('Complete WAV preview requires every adjacent transition')
     frames = {}
     for ident in route:
         entry = tracks[ident]
