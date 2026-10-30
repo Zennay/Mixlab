@@ -7,6 +7,8 @@ HTTP server, musical preference claim, or long in-memory audio buffers.
 """
 from __future__ import annotations
 
+from .private_output import open_private_new, write_private_new
+
 import argparse
 from array import array
 import html
@@ -177,8 +179,7 @@ Download complete WAV</a></p></div>
 transition follows, then song B plays to its end. Nothing was uploaded.
 This is a local creative mix, not licensed distribution or blind listening proof.</p></main></body></html>"""
     page_path = output / "index.html"
-    page_path.write_text(page, encoding="utf-8")
-    page_path.chmod(0o600)
+    write_private_new(page_path, page.encode("utf-8"))
 
 
 def full_mix(source_manifest, destination, *, pair_id, family="bass_swap", gain_db=-9):
@@ -216,8 +217,7 @@ def full_mix(source_manifest, destination, *, pair_id, family="bass_swap", gain_
         tmp_transition = workspace / "transition.wav"
         dsp_receipt = render(first, second, tmp_transition, recipe)
         output = destination / MIX_NAME
-        with output.open("xb") as handle:
-            os.fchmod(handle.fileno(), 0o600)
+        with open_private_new(output) as handle:
             with wave.open(handle, "wb") as writer:
                 writer.setparams((channels, 2, rate, selection["total"], "NONE", "not compressed"))
                 # 1. Song A from the beginning up to the outgoing cue.
@@ -252,9 +252,10 @@ def full_mix(source_manifest, destination, *, pair_id, family="bass_swap", gain_
                            "not independently measured DJ quality or listener preference"]
         }
         receipt_path = destination / "full-mix-receipt.private.json"
-        with receipt_path.open("xb") as handle:
-            os.fchmod(handle.fileno(), 0o600)
-            handle.write((json.dumps(receipt, sort_keys=True, indent=2, allow_nan=False) + "\n").encode())
+        write_private_new(
+            receipt_path,
+            (json.dumps(receipt, sort_keys=True, indent=2, allow_nan=False) + "\n").encode(),
+        )
         _private_page(destination, pair=selection, family=family, gain_db=gain_db)
         shutil.rmtree(workspace)
         return output
