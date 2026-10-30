@@ -386,7 +386,7 @@ def main():
                 from .set_player import publish_player
                 payload["offline_player"] = str(publish_player(args.session, file))
             except (ValueError, OSError, TypeError, KeyError, wave.Error) as exc:
-                payload["player_warning"] = str(exc)
+                payload["player_warning"] = "Completed WAV remains available; optional offline player unavailable."
             # Optional portable delivery never invalidates a completed WAV,
             # its source receipt or already published offline player.
             if args.portable_mp3:
@@ -397,7 +397,7 @@ def main():
                         timeout_seconds=args.portable_timeout_seconds)
                 except (ValueError, OSError, TypeError, KeyError, wave.Error,
                         subprocess.SubprocessError) as exc:
-                    payload["portable_warning"] = str(exc)
+                    payload["portable_warning"] = "Completed WAV remains available; optional portable MP3 delivery unavailable."
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.exit(2, "MixLab Set Composer: " + str(exc) + "\n")
     payload.update({"mode": "offline-manual-creative", "automatic_beatmatching": False,
