@@ -8,10 +8,9 @@ from __future__ import annotations
 import argparse
 from html import escape
 import json
-import os
 from pathlib import Path
 
-from .cue_editor import _admit_library
+from .cue_editor import _admit_library, _publish_new_private
 from .ingest import digest
 
 
@@ -197,18 +196,9 @@ def write_html(report, destination, source_manifest, revised_manifest):
         (ancestor / ".git").exists() for ancestor in (output.parent, *output.parent.parents)
     ):
         raise ValueError("Private cue report cannot overwrite data or be stored in Git")
-    # Python's default exclusive create can briefly expose 0644 files before
-    # fchmod when the process umask is permissive. The HTML contains private
-    # review timing: create with 0600 atomically, with no symlink following.
-    payload = _private_html(report).encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(output, flags, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        os.fchmod(stream.fileno(), 0o600)
-        stream.write(payload)
-        stream.flush()
-        os.fsync(stream.fileno())
-    return output
+    # Reuse the editor's 0600-from-inode-birth, no-clobber publisher:
+    # a failed fsync must not leave a misleading partial final report.
+    return _publish_new_private(output, _private_html(report).encode("utf-8"))
 
 
 def main():
