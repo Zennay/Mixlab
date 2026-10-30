@@ -5,6 +5,8 @@ points; no automatic music discovery, source upload or implicit tempo matching.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -187,9 +189,7 @@ def create_playlist_manifest(music_directory, output_manifest, new_session,
         raise ValueError("Private source manifest exceeds 1 MiB")
     # Constructing the manifest is a separate durable product operation: if
     # decoding later fails, the user can retry with this exact unchanged spec.
-    with manifest_path.open("xb") as target:
-        os.fchmod(target.fileno(), 0o600)
-        target.write(raw)
+    write_private_new(manifest_path, raw)
     write(f"\nSaved {len(catalog)} SHA-bound songs and {len(pairs)} manual transitions: {manifest_path}")
     write("Only permitted local material will be imported; sources remain untouched.")
     return manifest_path

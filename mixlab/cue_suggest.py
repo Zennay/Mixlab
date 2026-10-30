@@ -5,6 +5,8 @@ lyric or musical-quality assertion is made. A DJ must approve every cue.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 from array import array
 import hashlib
@@ -198,13 +200,8 @@ def suggest(spec_path, output_path, *, track_id=None, beats=16, phrase_bars=8, m
     for ancestor in (destination, *destination.parents):
         if (ancestor / ".git").exists():
             raise ValueError("Keep private cue suggestions outside Git checkouts")
-    try:
-        with destination.open("xb") as out:
-            os.fchmod(out.fileno(), 0o600)
-            out.write(raw)
-    except BaseException:
-        destination.unlink(missing_ok=True)
-        raise
+    # Exclusive inode-owned publication never deletes another writer's file.
+    write_private_new(destination, raw)
     return len(proposals)
 
 
