@@ -4,6 +4,8 @@ This is a local private practice player, not a live mixer or audio analysis.
 """
 from __future__ import annotations
 
+from .private_output import write_private_new
+
 import argparse
 import json
 import os
@@ -220,10 +222,7 @@ def create_rehearsal(private_session, complete_wav, new_html):
     page = _PAGE.replace("__DATA__", serialized).encode("utf-8")
     if len(page) > 512 * 1024:
         raise ValueError("Private rehearsal HTML exceeds 512 KiB")
-    with target.open("xb") as result:
-        os.fchmod(result.fileno(), 0o600)
-        result.write(page)
-    return target
+    return write_private_new(target, page)
 
 
 def main():
