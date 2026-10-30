@@ -6,17 +6,19 @@ No network, disk discovery, permissions escalation or overwrite capability.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 
 
-def write_private_new(path, raw):
-    """Create at 0600 even with umask 000; never erase a rival's path."""
+@contextmanager
+def open_private_new(path):
+    """Bounded streaming publication, private from birth and rollback-owned."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     owned = os.fstat(fd)
     try:
         with os.fdopen(fd, "wb") as stream:
             os.fchmod(stream.fileno(), 0o600)
-            stream.write(raw)
+            yield stream
             stream.flush()
             os.fsync(stream.fileno())
     except BaseException:
@@ -27,4 +29,10 @@ def write_private_new(path, raw):
         except FileNotFoundError:
             pass
         raise
+
+
+def write_private_new(path, raw):
+    """Create one bounded private artifact without overwriting another."""
+    with open_private_new(path) as stream:
+        stream.write(raw)
     return path

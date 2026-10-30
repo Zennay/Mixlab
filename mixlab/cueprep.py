@@ -6,6 +6,8 @@ machine. It does not write audio to git, web services, or standard output.
 """
 from __future__ import annotations
 
+from .private_output import open_private_new
+
 import argparse
 import hashlib
 import json
@@ -147,7 +149,7 @@ def _extract(source, target, start_frame, frame_count, info):
                 audio.getnframes()) != (info["channels"], info["rate"], 2, info["frames"]):
                 _fail("Full-track WAV format changed")
             audio.setpos(start_frame)
-            with target.open("xb") as output:
+            with open_private_new(target) as output:
                 with wave.open(output, "wb") as excerpt:
                     excerpt.setnchannels(info["channels"])
                     excerpt.setsampwidth(2)
