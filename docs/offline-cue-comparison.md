@@ -12,6 +12,9 @@ python3 -m mixlab.cue_compare /private/music/source_manifest.json /private/music
 
 De standaarduitvoer is JSON zonder audiopaden. Het optionele, statische lokale HTML-bestand heeft permissies **0600**, bevat geen scripts, netwerkbronnen, audio of volledige originele bestandslocaties en overschrijft nooit een bestaand bestand.
 
+**Privé-bestanden vanaf het eerste moment:** ook het brongebonden HTML-cue-editorbestand (`cue_editor prepare`) en het nieuw opgeslagen cue-manifest (`cue_editor apply`) worden voortaan exclusief als `0600` aangemaakt, dus nooit tijdelijk als voor anderen leesbaar bestand bij een permissieve `umask`. Als een andere bewerking intussen dezelfde bestandsnaam aanmaakt, blijft diens bestand ongemoeid; een mislukte schijfsynchronisatie ruimt alleen het eigen, zojuist gemaakte bestand op. Nieuw aangebrachte cues worden ook niet in een Git-checkout opgeslagen. De originele WAV's en manifesten blijven onveranderd.
+
+
 ### Menselijk vóór/na-oordeel
 
 De nieuwe mobiele HTML-weergave onderscheidt expliciet **cue handmatig aangepast**, **verschoven door eerdere cue** en **ongewijzigd**. Een ongewijzigde overgang kan namelijk toch later beginnen omdat een vorige overgang werd verschoven. Een aparte samenvatting telt deze indirect verplaatste overgangen. De vergelijking bevat een toetsenbord-focusbare horizontale tabel voor smalle schermen, zonder script of externe diensten. Gebruik deze timingverklaring om met toegestaan origineel materiaal zelf A en B te beluisteren; een grotere of kleinere verschuiving betekent niet automatisch dat een mix beter klinkt.
