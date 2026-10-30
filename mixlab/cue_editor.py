@@ -975,6 +975,7 @@ def main():
     p.add_argument("source_manifest")
     p.add_argument("selection_json")
     p.add_argument("output_manifest")
+    p.add_argument("--compare-html", help="Create a new private before/after HTML review beside the original WAVs")
     p.add_argument("--plan-html", action="store_true",
                    help="Also create a new private visual full-set plan, without a Studio or WAV")
     p.add_argument("--plan-verify-wavs", action="store_true",
@@ -982,6 +983,16 @@ def main():
     args = parser.parse_args()
     try:
         extra = {}
+        if args.mode == "apply" and args.compare_html:
+            # Refuse occupied/unsafe HTML destinations before we commit the
+            # newly edited source manifest. The actual publisher repeats
+            # these checks with O_EXCL once it has SHA-verified both versions.
+            target = Path(args.compare_html).absolute()
+            original_dir = Path(args.source_manifest).absolute().parent
+            if target.parent != original_dir or target.suffix.lower() != ".html":
+                raise ValueError("Save comparison HTML beside the original WAV manifest")
+            if target.exists() or target.is_symlink():
+                raise ValueError("The private comparison report already exists")
         if args.mode == "prepare":
             result = prepare(args.source_manifest, args.output_html)
         elif args.plan_verify_wavs and not args.plan_html:
@@ -996,6 +1007,22 @@ def main():
                                              if args.plan_verify_wavs else None)}
         else:
             result = apply(args.source_manifest, args.selection_json, args.output_manifest)
+        if args.mode == "apply" and args.compare_html:
+            from .cue_compare import compare, write_html
+            try:
+                receipt = compare(args.source_manifest, result)
+                review_html = write_html(receipt, args.compare_html, args.source_manifest, result)
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                # A valid, independently authored manual cue manifest must
+                # never disappear because an optional HTML view failed.
+                raise ValueError("New private cue manifest is preserved, but the "
+                                 "optional before/after review failed: " + str(exc)) from exc
+            extra["private_comparison_html"] = str(review_html)
+            extra["manually_edited_pairs"] = receipt["edited_pair_count"]
+            extra["indirectly_shifted_pairs"] = sum(
+                not pair["cues_changed"] and pair["start_shift_frames"] != 0
+                for pair in receipt["pairs"]
+            )
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.exit(2, "MixLab cue editor: " + str(exc) + "\n")
     print(json.dumps({"ready": True, "private_file": str(result),
