@@ -10,6 +10,17 @@ python3 -m mixlab.cue_compare /private/music/source_manifest.json /private/music
 python3 -m mixlab.cue_compare /private/music/source_manifest.json /private/music/revised.json --html /private/music/cue-comparison.html
 ```
 
+### Makkelijker: bewaar de nieuwe cuepunten en de voor/na-review in één opdracht
+
+Na het downloaden van je handmatige keuzes vanuit de offline editor:
+
+```bash
+python3 -m mixlab.cue_editor apply /private/music/source_manifest.json /private/music/mixlab-cue-selections.json /private/music/revised.json --compare-html /private/music/cue-comparison.html
+```
+
+De nieuwe privé `revised.json` en het duidelijke mobiele vergelijkingsrapport worden afzonderlijk SHA-gecontroleerd en exclusief aangemaakt met `0600`-bestandsrechten, zonder je originele tracks of bronmanifest te wijzigen. De JSON-consolebevestiging toont het aantal handmatig gewijzigde en indirect verschoven overgangen. Als de rapportnaam al bestaat, stopt de opdracht vóór het maken van een nieuwe manifestversie; als de optionele vergelijking daarna faalt, blijft het geldige nieuwe manifest behouden en staat de fout helder in de terminal. Dit is geen export van audio of automatische kwaliteitskeuring.
+
+
 De standaarduitvoer is JSON zonder audiopaden. Het optionele, statische lokale HTML-bestand heeft permissies **0600**, bevat geen scripts, netwerkbronnen, audio of volledige originele bestandslocaties en overschrijft nooit een bestaand bestand.
 
 Het brongeverifieerde HTML-vergelijkingsrapport gebruikt dezelfde exclusieve privé-schrijver als de editor en de nieuwe cue-manifesten. Een mislukte schijfsynchronisatie laat geen gedeeltelijk rapport met een definitieve naam achter, en een ander proces dat de gekozen bestandsnaam eerder claimt, verliest zijn bestand niet.
