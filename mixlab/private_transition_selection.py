@@ -13,6 +13,7 @@ import stat
 import tempfile
 
 from .models import FAMILY_NAMES
+from .private_output import open_private_new
 
 MAX_JSON_BYTES = 65536
 MAX_WAV_BYTES = 32 * 1024 * 1024
@@ -103,6 +104,11 @@ def _verified_choice(receipt, receipt_sha, choice):
 
 
 def _copy_and_verify_wav(source_path, target_temp, expected_sha):
+    """Create only a private, exclusive WAV with verified original identity.
+
+    A wrong hash, changed source, read failure or rival destination cannot leave
+    an unverified or world-readable handoff in any downstream rehearsal stage.
+    """
     source_fd = os.open(source_path, READ_FLAGS)
     try:
         before = os.fstat(source_fd)
@@ -110,7 +116,9 @@ def _copy_and_verify_wav(source_path, target_temp, expected_sha):
             raise ValueError("Selected PCM16 WAV must be a bounded regular file")
         checksum = hashlib.sha256()
         total = 0
-        with open(target_temp, "wb") as dest:
+        # The existing private writer guarantees 0600 from creation, O_EXCL
+        # and O_NOFOLLOW, with same-inode cleanup on failure.
+        with open_private_new(target_temp) as dest:
             while True:
                 chunk = os.read(source_fd, 1024 * 1024)
                 if not chunk:
@@ -120,13 +128,13 @@ def _copy_and_verify_wav(source_path, target_temp, expected_sha):
                     raise ValueError("Selected WAV changed or exceeded size cap")
                 checksum.update(chunk)
                 dest.write(chunk)
-        after = os.fstat(source_fd)
-        if (total != before.st_size or
-                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
-                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
-            raise ValueError("Selected WAV changed during copy")
-        if checksum.hexdigest() != expected_sha:
-            raise ValueError("Selected WAV differs from the original render receipt")
+            after = os.fstat(source_fd)
+            if (total != before.st_size or
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                raise ValueError("Selected WAV changed during copy")
+            if checksum.hexdigest() != expected_sha:
+                raise ValueError("Selected WAV differs from the original render receipt")
     finally:
         os.close(source_fd)
     return total
