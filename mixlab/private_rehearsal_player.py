@@ -13,6 +13,7 @@ import tempfile
 import wave
 
 from .private_transition_selection import _read_json_and_digest, _valid_sha, READ_FLAGS
+from .private_output import open_private_new, write_private_new
 
 MAX_WAV_BYTES = 128 * 1024 * 1024
 MAX_CHAPTERS = 8
@@ -81,6 +82,7 @@ def _admit_source_receipt(data):
 
 
 def _copy_private_audio(source, destination, expected_sha):
+    """Publish audio private from birth; only leave an exact source-bound copy."""
     fd = os.open(source, READ_FLAGS)
     try:
         before = os.fstat(fd)
@@ -88,7 +90,9 @@ def _copy_private_audio(source, destination, expected_sha):
             raise ValueError("Rehearsal WAV must be one bounded regular file")
         h = hashlib.sha256()
         count = 0
-        with open(destination, "wb") as out:
+        # O_EXCL/O_NOFOLLOW prevents replacing a rival, while the private
+        # writer unlinks only its own inode on any copy/provenance failure.
+        with open_private_new(destination) as out:
             while True:
                 block = os.read(fd, 1024 * 1024)
                 if not block:
@@ -98,16 +102,15 @@ def _copy_private_audio(source, destination, expected_sha):
                     raise ValueError("Rehearsal WAV exceeds bounded audio size")
                 h.update(block)
                 out.write(block)
-        after = os.fstat(fd)
-        if (count != before.st_size or
-                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
-                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
-            raise ValueError("Rehearsal WAV changed during local handoff")
-        if h.hexdigest() != expected_sha:
-            raise ValueError("Rehearsal audio differs from its original mixdown receipt")
+            after = os.fstat(fd)
+            if (count != before.st_size or
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                raise ValueError("Rehearsal WAV changed during local handoff")
+            if h.hexdigest() != expected_sha:
+                raise ValueError("Rehearsal audio differs from its original mixdown receipt")
     finally:
         os.close(fd)
-    destination.chmod(0o600)
 
 
 def _timecode(seconds):
@@ -318,9 +321,10 @@ def create_player(source_wav, dest_dir):
         except (wave.Error, EOFError) as exc:
             raise ValueError("Invalid original rehearsal WAV") from exc
         page = stage / "index.html"
-        page.write_text(_player_html(chapters, receipt["audio_sha256"], receipt_sha, frames/rate),
-                        encoding="utf-8")
-        page.chmod(0o600)
+        write_private_new(
+            page,
+            _player_html(chapters, receipt["audio_sha256"], receipt_sha, frames/rate).encode("utf-8"),
+        )
         # Copy the original private receipt only after a second no-follow
         # descriptor read and exact SHA match; never trust a reopened path.
         receipt_copy = stage / "original-receipt.json"
@@ -338,8 +342,7 @@ def create_player(source_wav, dest_dir):
                 raise ValueError("Original private receipt changed before publication")
         finally:
             os.close(fd)
-        receipt_copy.write_bytes(raw)
-        receipt_copy.chmod(0o600)
+        write_private_new(receipt_copy, raw)
         destination.mkdir(mode=0o700)
         published = []
         try:
