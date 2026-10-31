@@ -270,8 +270,14 @@ def create_manifest(source_directory, output_manifest, *,
     return output
 
 
+class _PrivateManifestParser(argparse.ArgumentParser):
+    """Do not copy private music paths or invalid CLI values to logs."""
+    def error(self, message):
+        self.exit(2, "MixLab wizard: invalid arguments (private details withheld); see --help\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _PrivateManifestParser(
         description="Guide local rights/BPM/cue entry and build a SHA-pinned MixLab source manifest")
     parser.add_argument("music_directory", help="Private local folder of permitted audio files")
     parser.add_argument("manifest", help="New .json file in the same directory; not already existing")
