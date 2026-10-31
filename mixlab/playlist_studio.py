@@ -442,8 +442,14 @@ def build_playlist_studio(music_directory, output_manifest, new_session,
     return payload
 
 
+class _PrivateStudioParser(argparse.ArgumentParser):
+    """Never echo private song paths or user input on rejected CLI flags."""
+    def error(self, message):
+        self.exit(2, "MixLab Playlist Studio: invalid arguments (details withheld); see --help\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _PrivateStudioParser(
         description="Guided offline manual playlist -> real rendered Studio -> Set Composer")
     parser.add_argument("private_music_directory", help="Local folder of permitted WAV/MP3/FLAC/etc.")
     parser.add_argument("new_source_manifest", help="New private JSON inside the music directory")
@@ -493,8 +499,10 @@ def main():
             journey_plan=args.journey_plan, approval_file=args.approval_file,
             plan_html=args.plan_html, plan_verify_wavs=args.plan_verify_wavs,
             plan_cue_editor=args.plan_cue_editor)
-    except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt) as exc:
-        parser.exit(2, f"MixLab Playlist Studio: {exc}\n")
+    except (ValueError, TypeError, OSError, EOFError, KeyboardInterrupt):
+        # Local original song names/paths may appear in underlying errors.
+        # Preserve a safe generic message for captured scheduler stderr.
+        parser.exit(2, "MixLab Playlist Studio: invalid private source or selection (details withheld)\n")
     print(json.dumps(result, ensure_ascii=False))
     if args.full_set_wav is not None and not result["complete_set_ready"]:
         parser.exit(2, "MixLab Playlist Studio: complete WAV export failed; "
