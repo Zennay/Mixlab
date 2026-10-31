@@ -398,8 +398,14 @@ def import_library(spec_path, destination, *, timeout_seconds=600):
         raise
 
 
+class _PrivateMediaImportParser(argparse.ArgumentParser):
+    """Do not log caller-supplied audio paths, values or unknown options."""
+    def error(self, message):
+        self.exit(2, "MixLab media import: invalid arguments (private details withheld); see --help\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _PrivateMediaImportParser(
         description="Import private permitted MP3/FLAC/M4A/audio into MixLab PCM16 sources")
     parser.add_argument("source_manifest", help="Private source spec JSON with SHA and rights")
     parser.add_argument("destination", help="New private directory outside Git/source music")
@@ -409,7 +415,7 @@ def main():
         result = import_library(args.source_manifest, args.destination,
                                 timeout_seconds=args.timeout_seconds)
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        parser.exit(2, f"MixLab media import: {exc}\n")
+        parser.exit(2, "MixLab media import: invalid private source or settings (details withheld)\n")
     print(json.dumps({"source_manifest": str(result),
                       "status": "imported-local-only", "review_cues_manually": True}))
 

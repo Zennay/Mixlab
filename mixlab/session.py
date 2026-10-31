@@ -164,8 +164,14 @@ def make_session(source_manifest, destination, *, suggestions=False, pair=None,
         raise
 
 
+class _PrivateSessionParser(argparse.ArgumentParser):
+    """Do not log caller-supplied audio paths, values or unknown options."""
+    def error(self, message):
+        self.exit(2, "MixLab session: invalid arguments (private details withheld); see --help\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _PrivateSessionParser(
         description="Import permitted songs and make a complete private DJ audition in one command")
     parser.add_argument("source_manifest", help="Private source JSON with SHA, rights, BPM and A/B cue seconds")
     parser.add_argument("destination", help="New private project folder outside input and Git")
@@ -180,7 +186,7 @@ def main():
                             suggestions=args.suggestions, pair=args.pair,
                             timeout_seconds=args.timeout_seconds)
     except (ValueError, OSError, TypeError, KeyError) as exc:
-        parser.exit(2, f"MixLab session: {exc}\n")
+        parser.exit(2, "MixLab session: invalid private source or settings (details withheld)\n")
     print(json.dumps({"ready": True, "private_studio": str(page),
                       "workflow": "local-import -> manual-cues -> real-render -> creative-audition",
                       "musical_quality_claim": False}))
