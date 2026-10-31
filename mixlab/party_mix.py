@@ -161,8 +161,14 @@ def render_party_mix(manifest, session_directory, output_wav, transitions=(),
     return response
 
 
+class _PrivatePartyParser(argparse.ArgumentParser):
+    """Argparse otherwise echoes private filenames and invalid option values."""
+    def error(self, message):
+        self.exit(2, "MixLab party mix: invalid arguments (details withheld); see --help\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = _PrivatePartyParser(
         description="One-command local permitted music -> transition Studio -> continuous WAV")
     parser.add_argument("source_manifest", help="Private SHA-pinned permitted local music manifest")
     parser.add_argument("new_session_directory", help="New private session directory outside source music and Git")
@@ -190,8 +196,10 @@ def main():
                                   suggestions=args.suggestions, preview=args.preview,
                                   verify_wavs=args.verify_wavs,
                                   preview_html=args.preview_html)
-    except (ValueError, TypeError, OSError, KeyError) as exc:
-        parser.exit(2, f"MixLab party mix: {exc}\n")
+    except (ValueError, TypeError, OSError, KeyError):
+        # CLI output may be captured by scheduler logs. Do not echo local
+        # paths, source names or private manifest content from exceptions.
+        parser.exit(2, "MixLab party mix: invalid private source or selection (details withheld)\n")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
